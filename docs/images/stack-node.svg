@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="430" viewBox="0 0 980 430" role="img" aria-labelledby="title desc">
+  <title id="title">NO8D-LoRA stack node illustration</title>
+  <desc id="desc">An illustration of the LoRA stack node with multiple LoRA rows, enable buttons, sliders, numeric weights, and settings buttons.</desc>
+  <rect width="980" height="430" rx="24" fill="#101820"/>
+  <rect x="42" y="38" width="896" height="350" rx="18" fill="#19361f" stroke="#2d5a35"/>
+  <rect x="42" y="38" width="896" height="42" rx="18" fill="#18291c"/>
+  <text x="76" y="66" fill="#d8e7d8" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22" font-weight="700">NO8D-LoRA stack</text>
+  <circle cx="61" cy="59" r="7" fill="#77867b"/>
+  <text x="74" y="111" fill="#c9c9c9" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="15">model</text>
+  <text x="861" y="111" fill="#c9c9c9" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="15">model</text>
+  <circle cx="61" cy="105" r="6" fill="#c9a5ff"/>
+  <circle cx="918" cy="105" r="6" fill="#c9a5ff"/>
+  <rect x="58" y="134" width="864" height="226" rx="8" fill="#151515" stroke="#2b2b2b"/>
+  <rect x="72" y="151" width="92" height="38" rx="6" fill="#20222a" stroke="#2d7dff"/>
+  <text x="112" y="176" fill="#eaf2ff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="20" font-weight="700">+</text>
+  <rect x="805" y="151" width="92" height="38" rx="6" fill="#20222a" stroke="#2d7dff"/>
+  <text x="833" y="176" fill="#eaf2ff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18" font-weight="700">Invert</text>
+
+  <g font-family="Inter,Segoe UI,Arial,sans-serif" font-size="17">
+    <g transform="translate(78 207)">
+      <text x="0" y="26" fill="#9db0a7" font-size="26">⠿</text>
+      <rect x="38" y="0" width="38" height="34" rx="6" fill="#132235" stroke="#2d7dff"/>
+      <text x="48" y="23" fill="#dceeff" font-size="15">👁</text>
+      <rect x="90" y="0" width="300" height="34" rx="6" fill="#0e1728" stroke="#2d7dff"/>
+      <text x="104" y="23" fill="#dceeff">NO8D-klein</text>
+      <line x1="420" y1="17" x2="740" y2="17" stroke="#6c6c6c" stroke-width="8" stroke-linecap="round"/>
+      <line x1="420" y1="17" x2="607" y2="17" stroke="#67b7ff" stroke-width="8" stroke-linecap="round"/>
+      <circle cx="607" cy="17" r="11" fill="#67b7ff"/>
+      <rect x="758" y="0" width="96" height="34" rx="6" fill="#0e1728" stroke="#2d7dff"/>
+      <text x="770" y="23" fill="#dceeff">0.9</text>
+      <rect x="866" y="0" width="38" height="34" rx="6" fill="#202020" stroke="#4a4a4a"/>
+      <text x="877" y="23" fill="#dddddd">⚙</text>
+    </g>
+    <g transform="translate(78 264)">
+      <text x="0" y="26" fill="#9db0a7" font-size="26">⠿</text>
+      <rect x="38" y="0" width="38" height="34" rx="6" fill="#132235" stroke="#2d7dff"/>
+      <text x="48" y="23" fill="#dceeff" font-size="15">👁</text>
+      <rect x="90" y="0" width="300" height="34" rx="6" fill="#0e1728" stroke="#2d7dff"/>
+      <text x="104" y="23" fill="#dceeff">Eye_9B_Patreon</text>
+      <line x1="420" y1="17" x2="740" y2="17" stroke="#6c6c6c" stroke-width="8" stroke-linecap="round"/>
+      <line x1="420" y1="17" x2="520" y2="17" stroke="#67b7ff" stroke-width="8" stroke-linecap="round"/>
+      <circle cx="520" cy="17" r="11" fill="#67b7ff"/>
+      <rect x="758" y="0" width="96" height="34" rx="6" fill="#0e1728" stroke="#2d7dff"/>
+      <text x="770" y="23" fill="#dceeff">-1.5</text>
+      <rect x="866" y="0" width="38" height="34" rx="6" fill="#202020" stroke="#4a4a4a"/>
+      <text x="877" y="23" fill="#dddddd">⚙</text>
+    </g>
+    <g transform="translate(78 321)">
+      <text x="0" y="26" fill="#9db0a7" font-size="26">⠿</text>
+      <rect x="38" y="0" width="38" height="34" rx="6" fill="#132235" stroke="#2d7dff"/>
+      <text x="48" y="23" fill="#dceeff" font-size="15">👁</text>
+      <rect x="90" y="0" width="300" height="34" rx="6" fill="#0e1728" stroke="#2d7dff"/>
+      <text x="104" y="23" fill="#dceeff">breast_patreon</text>
+      <line x1="420" y1="17" x2="740" y2="17" stroke="#6c6c6c" stroke-width="8" stroke-linecap="round"/>
+      <line x1="420" y1="17" x2="730" y2="17" stroke="#67b7ff" stroke-width="8" stroke-linecap="round"/>
+      <circle cx="730" cy="17" r="11" fill="#67b7ff"/>
+      <rect x="758" y="0" width="96" height="34" rx="6" fill="#0e1728" stroke="#2d7dff"/>
+      <text x="770" y="23" fill="#dceeff">9.0</text>
+      <rect x="866" y="0" width="38" height="34" rx="6" fill="#202020" stroke="#4a4a4a"/>
+      <text x="877" y="23" fill="#dddddd">⚙</text>
+    </g>
+  </g>
+</svg>
