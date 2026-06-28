@@ -1,5 +1,5 @@
 import { app } from "../../scripts/app.js";
-import { t } from "./no8d_i18n.js";
+import { no8dLocale, t } from "./no8d_i18n.js";
 
 const PROMPT_PLUS = "NO8DPromptPlus";
 const PROMPT_VIEW = "NO8DPromptView";
@@ -16,7 +16,13 @@ const WIDGET_LABELS = {
     edited_text: "promptEditedText",
     send_seq: "promptSendSeq",
 };
+const SLOT_LABELS = {
+    text: "promptTextInput",
+    image: "promptImageInput",
+    positive: "promptPositiveOutput",
+};
 const PROMPT_PLUS_WIDGET_ORDER = ["prompt_rules", "style_preset", "extra_rules", "seed"];
+let activeLocale = "";
 
 function nodeClass(node) {
     return node?.comfyClass || node?.type || "";
@@ -54,6 +60,16 @@ function orderPromptPlusWidgets(node) {
     });
 }
 
+function applySlotLabels(slots) {
+    for (const slot of slots || []) {
+        const key = SLOT_LABELS[slot.name];
+        if (!key) continue;
+        const label = t(key);
+        slot.label = label;
+        slot.localized_name = label;
+    }
+}
+
 function applyWidgetLabels(node) {
     const cls = nodeClass(node);
     if (cls !== PROMPT_PLUS && cls !== PROMPT_VIEW) return;
@@ -69,6 +85,13 @@ function applyWidgetLabels(node) {
             widget.options.label = t("promptViewSend");
             continue;
         }
+        if (typeof widget.name === "string" && /control_after_generate/i.test(widget.name)) {
+            const label = t("promptSeedControl");
+            widget.label = label;
+            widget.options = widget.options || {};
+            widget.options.label = label;
+            continue;
+        }
         const key = WIDGET_LABELS[widget.name];
         if (!key) continue;
         const label = t(key);
@@ -76,6 +99,8 @@ function applyWidgetLabels(node) {
         widget.options = widget.options || {};
         widget.options.label = label;
     }
+    applySlotLabels(node.inputs);
+    applySlotLabels(node.outputs);
     node.graph?.setDirtyCanvas?.(true, true);
     app?.canvas?.setDirty?.(true, true);
 }
@@ -84,11 +109,22 @@ function applyAllPromptLabels() {
     for (const node of app?.graph?._nodes || []) applyWidgetLabels(node);
 }
 
+function applyAllPromptLabelsIfNeeded(force = false) {
+    const locale = no8dLocale();
+    if (!force && locale === activeLocale) return;
+    activeLocale = locale;
+    applyAllPromptLabels();
+}
+
 app.registerExtension({
     name: "NO8D.Control.PromptNodeI18N",
     async setup() {
-        setTimeout(applyAllPromptLabels, 500);
-        setTimeout(applyAllPromptLabels, 1500);
+        activeLocale = no8dLocale();
+        setTimeout(() => applyAllPromptLabelsIfNeeded(true), 500);
+        setTimeout(() => applyAllPromptLabelsIfNeeded(true), 1500);
+        window.addEventListener("storage", () => applyAllPromptLabelsIfNeeded(true));
+        window.addEventListener("languagechange", () => applyAllPromptLabelsIfNeeded(true));
+        setInterval(applyAllPromptLabelsIfNeeded, 1000);
     },
     async nodeCreated(node) {
         applyWidgetLabels(node);

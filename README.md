@@ -5,6 +5,8 @@
 
 English | [简体中文](./README.zh-CN.md)
 
+![ComfyUI-NO8D-control](docs/images/no8d-control-banner.png)
+
 ComfyUI-NO8D-control is a ComfyUI custom node pack for LoRA control, inpainting, A/B image comparison, and prompt expansion or image caption reverse engineering through an OpenAI-compatible API.
 
 It is designed for practical image iteration: adjust LoRA weights, draw local masks, compare image versions, and prepare positive prompts without leaving the ComfyUI workflow.
@@ -53,7 +55,7 @@ Text or image -> NO8D-Prompt-plus -> NO8D-Prompt-view -> positive prompt input
 
 `NO8D-LoRA stack` loads LoRAs and controls LoRA weights. It does not need a CLIP input.
 
-![NO8D-LoRA stack illustration](docs/images/stack-node.svg)
+![NO8D-LoRA stack illustration](docs/images/stack-node.png)
 
 Features:
 
@@ -78,7 +80,7 @@ This node works with ordinary LoRAs and Slider LoRAs. NO8D publishes Slider LoRA
 
 It does not load LoRAs by itself. LoRA changes should come from `NO8D-LoRA stack` or another upstream model node.
 
-![NO8D-Inpainting illustration](docs/images/inpainting-node.svg)
+![NO8D-Inpainting illustration](docs/images/inpainting-node.png)
 
 Controls:
 
@@ -98,7 +100,7 @@ History is session-only and uses ComfyUI preview references. It does not write p
 
 `NO8D-A/B preview` compares the current image against the previous image or a selected session-history image.
 
-![NO8D-A/B preview illustration](docs/images/ab-preview-node.svg)
+![NO8D-A/B preview illustration](docs/images/ab-preview-node.png)
 
 Features:
 
@@ -111,6 +113,8 @@ Features:
 ## NO8D-Prompt-Plus
 
 `NO8D-Prompt-plus` uses a configured OpenAI-compatible API to generate a positive prompt.
+
+![NO8D-Prompt-plus illustration](docs/images/prompt-plus-node.png)
 
 Inputs:
 
@@ -135,6 +139,8 @@ For image reverse engineering, the node compresses the input image before sendin
 ## NO8D-Prompt-View
 
 `NO8D-Prompt-view` displays and optionally edits prompt text.
+
+![NO8D-Prompt-view illustration](docs/images/prompt-view-node.png)
 
 - `Auto output` on: pass received text through automatically.
 - `Auto output` off: block downstream execution until the `Send` button is clicked.

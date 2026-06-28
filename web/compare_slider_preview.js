@@ -5,18 +5,6 @@ const MIN_WIDTH = 260;
 const MIN_HEIGHT = 320;
 const HISTORY_LIMIT = 8;
 const HISTORY_STORAGE_KEY = "NO8D_AB_PREVIEW_HISTORY";
-const NODE_SIDE_GUTTER = 28;
-
-function widgetHeightForNode(node) {
-    const nodeHeight = Number(node?.size?.[1] || 0);
-    return Math.max(nodeHeight - 70, MIN_HEIGHT);
-}
-
-function widgetWidthForNode(node, fallbackWidth = 0) {
-    const nodeWidth = Number(node?.size?.[0] || 0);
-    const innerWidth = nodeWidth > 0 ? nodeWidth - NODE_SIDE_GUTTER : 0;
-    return Math.max(Math.floor(innerWidth), Math.floor(fallbackWidth || 0), MIN_WIDTH);
-}
 
 const passThroughStyle = document.createElement("style");
 passThroughStyle.textContent = `
@@ -168,21 +156,16 @@ function syncCompareFrame(node) {
     const els = node._no8dCompareEls;
     if (!els) return;
 
-    const width = widgetWidthForNode(node);
-    const height = widgetHeightForNode(node);
     const wrapper = els.root.closest(".dom-widget");
     if (wrapper) {
         wrapper.classList.remove("no8d-compare-widget");
         wrapper.classList.add("no8d-compare-fit-widget");
-        wrapper.style.width = `${width}px`;
-        wrapper.style.maxWidth = `${width}px`;
-        wrapper.style.height = `${height}px`;
         wrapper.style.boxSizing = "border-box";
         wrapper.style.overflow = "hidden";
     }
-    els.root.style.width = `${width}px`;
-    els.root.style.maxWidth = `${width}px`;
-    els.root.style.height = `${height}px`;
+    els.root.style.width = "100%";
+    els.root.style.maxWidth = "100%";
+    els.root.style.height = "100%";
 }
 
 function renderHistory(node) {
@@ -462,16 +445,15 @@ async function createCompareWidget(node) {
     const widget = node.addDOMWidget("no8d_compare_slider", "preview", root, {
         serialize: false,
         hideOnZoom: false,
-        getMinHeight: () => MIN_HEIGHT,
-        margin: 10,
-        afterResize: () => renderCompare(node),
     });
     widget.serialize = false;
     node._no8dCompareWidget = widget;
-    widget.computeSize = (width) => [widgetWidthForNode(node, width), widgetHeightForNode(node)];
-    if (typeof node.setSize === "function" && (!node.size || node.size[0] < MIN_WIDTH || node.size[1] < MIN_HEIGHT + 40)) {
-        node.setSize([Math.max(node.size?.[0] || 0, MIN_WIDTH), Math.max(node.size?.[1] || 0, MIN_HEIGHT + 70)]);
-    }
+    widget.computeLayoutSize = () => ({
+        minWidth: MIN_WIDTH,
+        minHeight: MIN_HEIGHT,
+        maxWidth: 1_000_000,
+        maxHeight: 1_000_000,
+    });
     const markWrapper = () => {
         syncCompareFrame(node);
     };
