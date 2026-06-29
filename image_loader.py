@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -14,8 +15,15 @@ try:
 except Exception:
     folder_paths = None
 
+try:
+    from aiohttp import web
+    from server import PromptServer
+except Exception:
+    web = None
+    PromptServer = None
 
-_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
+
+_API_PREFIX = "/no8d-control/api"
 
 
 def _input_directory():
@@ -25,13 +33,6 @@ def _input_directory():
         except Exception:
             pass
     return os.getcwd()
-
-
-def _safe_int(value, default=0):
-    try:
-        return int(float(value))
-    except Exception:
-        return default
 
 
 def _base_directory(image_type):
@@ -82,10 +83,16 @@ def _ref_to_path(ref):
         raise ValueError("NO8D-Load-images: image reference missing name.")
     subfolder = str(ref.get("subfolder") or "").strip().strip("/\\")
     image_type = str(ref.get("type") or "input").strip() or "input"
-    path = _base_directory(image_type)
+    base = _base_directory(image_type)
+    path = base
     if subfolder:
         path = path / subfolder
-    return (path / name).resolve()
+    resolved = (path / name).resolve()
+    try:
+        resolved.relative_to(base)
+    except ValueError as exc:
+        raise ValueError("NO8D-Load-images: image reference escapes its base directory.") from exc
+    return resolved
 
 
 def _load_image(path):
@@ -98,11 +105,16 @@ def _load_image(path):
     return torch.from_numpy(arr)[None,]
 
 
-def _fingerprint(paths, image_files, start_index, max_images):
+def _thumbnail_resample():
+    try:
+        return Image.Resampling.LANCZOS
+    except AttributeError:
+        return Image.LANCZOS
+
+
+def _fingerprint(paths, image_files):
     h = hashlib.sha1()
     h.update(str(image_files or "").encode("utf-8", errors="ignore"))
-    h.update(str(start_index).encode())
-    h.update(str(max_images).encode())
     for path in paths:
         try:
             stat = path.stat()
@@ -120,43 +132,62 @@ class NO8DLoadImages:
         return {
             "required": {
                 "image_files": ("STRING", {"default": "[]", "multiline": False}),
-                "start_index": ("INT", {"default": 0, "min": 0, "max": 1000000, "step": 1}),
-                "max_images": ("INT", {"default": 0, "min": 0, "max": 1000000, "step": 1}),
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "STRING", "STRING", "INT")
-    RETURN_NAMES = ("images", "paths", "filenames", "count")
-    OUTPUT_IS_LIST = (True, True, True, False)
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("images",)
+    OUTPUT_IS_LIST = (True,)
     FUNCTION = "load"
     CATEGORY = "NO8D-control"
 
     @classmethod
-    def IS_CHANGED(cls, image_files="[]", start_index=0, max_images=0):
+    def IS_CHANGED(cls, image_files="[]"):
         refs = _parse_image_refs(image_files)
         paths = [_ref_to_path(ref) for ref in refs]
-        start = max(0, _safe_int(start_index, 0))
-        limit = max(0, _safe_int(max_images, 0))
-        selected = paths[start:] if limit <= 0 else paths[start:start + limit]
-        return _fingerprint(selected, image_files, start, limit)
+        return _fingerprint(paths, image_files)
 
-    def load(self, image_files="[]", start_index=0, max_images=0):
+    def load(self, image_files="[]"):
         refs = _parse_image_refs(image_files)
         paths = [_ref_to_path(ref) for ref in refs]
-        start = max(0, _safe_int(start_index, 0))
-        limit = max(0, _safe_int(max_images, 0))
-        selected = paths[start:] if limit <= 0 else paths[start:start + limit]
-        if not selected:
+        if not paths:
             raise ValueError("NO8D-Load-images: no images selected.")
 
-        missing = [str(path) for path in selected if not path.is_file()]
+        missing = [str(path) for path in paths if not path.is_file()]
         if missing:
             raise FileNotFoundError("NO8D-Load-images: image not found: " + missing[0])
 
-        images = [_load_image(path) for path in selected]
-        path_texts = [str(path) for path in selected]
-        filenames = [path.name for path in selected]
-        return (images, path_texts, filenames, len(images))
+        images = [_load_image(path) for path in paths]
+        return (images,)
+
+
+if PromptServer is not None and web is not None:
+    @PromptServer.instance.routes.get(f"{_API_PREFIX}/load-images/thumbnail")
+    async def no8d_load_images_thumbnail(request):
+        try:
+            size = int(float(request.rel_url.query.get("size", 96)))
+        except Exception:
+            size = 96
+        size = max(48, min(512, size))
+        ref = {
+            "name": request.rel_url.query.get("name", ""),
+            "subfolder": request.rel_url.query.get("subfolder", ""),
+            "type": request.rel_url.query.get("type", "input"),
+        }
+        try:
+            path = _ref_to_path(ref)
+            if not path.is_file():
+                return web.Response(status=404)
+            with Image.open(path) as image:
+                image = ImageOps.exif_transpose(image)
+                image.thumbnail((size, size), _thumbnail_resample())
+                image = image.convert("RGB")
+                buffer = BytesIO()
+                image.save(buffer, format="WEBP", quality=76, method=4)
+                buffer.seek(0)
+            return web.Response(body=buffer.read(), content_type="image/webp")
+        except Exception as exc:
+            return web.json_response({"error": str(exc)}, status=400)
 
 
 NODE_CLASS_MAPPINGS = {

@@ -6,14 +6,9 @@ const NODE_CLASS = "NO8DLoadImages";
 const HIDDEN_WIDGETS = new Set(["image_files"]);
 const WIDGET_LABELS = {
     image_files: "imageLoaderFiles",
-    start_index: "imageLoaderStartIndex",
-    max_images: "imageLoaderMaxImages",
 };
 const SLOT_LABELS = {
     images: "imageLoaderImages",
-    paths: "imageLoaderPaths",
-    filenames: "imageLoaderFilenames",
-    count: "imageLoaderCount",
 };
 const LOADER_MIN_WIDTH = 360;
 const LOADER_MIN_HEIGHT = 180;
@@ -24,22 +19,13 @@ function nodeClass(node) {
     return node?.comfyClass || node?.type || "";
 }
 
-function previewMode(node) {
-    const value = node.properties?.no8d_image_loader_mode;
-    return value === "grid" ? "grid" : "strip";
-}
-
 function imageWidget(node) {
     return (node.widgets || []).find((widget) => widget.name === "image_files");
 }
 
-function normalizeWidgetValues(node) {
-    for (const widget of node.widgets || []) {
-        if ((widget.name === "start_index" || widget.name === "max_images") && !Number.isFinite(Number(widget.value))) {
-            widget.value = 0;
-            widget.callback?.(widget.value);
-        }
-    }
+function thumbSize(node) {
+    const value = Number(node.properties?.no8d_image_loader_thumb_size);
+    return Number.isFinite(value) ? Math.max(56, Math.min(220, value)) : 96;
 }
 
 function parseRefs(node) {
@@ -72,6 +58,16 @@ function viewUrl(ref) {
     return api.apiURL(`/view?${params.toString()}`);
 }
 
+function thumbUrl(ref, size) {
+    if (!ref?.name) return "";
+    const params = new URLSearchParams();
+    params.set("name", ref.name);
+    params.set("type", ref.type || "input");
+    params.set("size", String(Math.round(size)));
+    if (ref.subfolder) params.set("subfolder", ref.subfolder);
+    return api.apiURL(`/no8d-control/api/load-images/thumbnail?${params.toString()}`);
+}
+
 function makeButton(label, onClick) {
     const button = document.createElement("button");
     button.type = "button";
@@ -94,17 +90,6 @@ function makeButton(label, onClick) {
         event.stopPropagation();
         onClick();
     });
-    return button;
-}
-
-function makeModeButton(node, mode) {
-    const button = makeButton("", () => {
-        node.properties = node.properties || {};
-        node.properties.no8d_image_loader_mode = mode;
-        renderLoader(node);
-    });
-    button.style.padding = "0 10px";
-    button.dataset.mode = mode;
     return button;
 }
 
@@ -138,18 +123,38 @@ function makeUi(node) {
 
     const clear = makeButton(t("imageLoaderClear"), () => setRefs(node, []));
 
-    const stripMode = makeModeButton(node, "strip");
-    const gridMode = makeModeButton(node, "grid");
-
     const status = document.createElement("div");
     status.style.cssText = "flex:1; min-width:0; color:#9ca3af; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;";
 
-    row.append(load, clear, stripMode, gridMode, status, input);
+    row.append(load, clear, status, input);
+
+    const sizeRow = document.createElement("div");
+    sizeRow.style.cssText = "display:flex; align-items:center; gap:8px;";
+
+    const sizeLabel = document.createElement("div");
+    sizeLabel.style.cssText = "color:#cbd5e1; white-space:nowrap; font-weight:600;";
+
+    const sizeRange = document.createElement("input");
+    sizeRange.type = "range";
+    sizeRange.min = "56";
+    sizeRange.max = "220";
+    sizeRange.step = "4";
+    sizeRange.value = String(thumbSize(node));
+    sizeRange.style.cssText = "flex:1; min-width:120px;";
+    sizeRange.addEventListener("pointerdown", (event) => event.stopPropagation());
+    sizeRange.addEventListener("input", () => {
+        node.properties = node.properties || {};
+        node.properties.no8d_image_loader_thumb_size = Number(sizeRange.value);
+        renderLoader(node);
+        node.graph?.setDirtyCanvas?.(true, true);
+        app?.canvas?.setDirty?.(true, true);
+    });
+    sizeRow.append(sizeLabel, sizeRange);
 
     const preview = document.createElement("div");
     preview.style.cssText = [
         "display:flex",
-        "gap:6px",
+        "gap:10px",
         "align-content:flex-start",
         "min-height:96px",
         "height:100%",
@@ -161,6 +166,7 @@ function makeUi(node) {
         "overflow-x:auto",
         "overflow-y:auto",
         "box-sizing:border-box",
+        "flex-wrap:wrap",
     ].join(";");
 
     input.addEventListener("change", async () => {
@@ -194,8 +200,8 @@ function makeUi(node) {
         }
     });
 
-    root.append(row, preview);
-    node._no8dImageLoaderEls = { root, load, clear, stripMode, gridMode, status, preview };
+    root.append(row, sizeRow, preview);
+    node._no8dImageLoaderEls = { root, load, clear, status, sizeLabel, sizeRange, preview };
     return root;
 }
 
@@ -203,21 +209,16 @@ function renderLoader(node) {
     const els = node._no8dImageLoaderEls;
     if (!els) return;
     const refs = parseRefs(node);
-    const mode = previewMode(node);
+    const size = thumbSize(node);
     els.load.textContent = t("imageLoaderLoad");
     els.clear.textContent = t("imageLoaderClear");
-    els.stripMode.textContent = t("imageLoaderStripMode");
-    els.gridMode.textContent = t("imageLoaderGridMode");
-    for (const button of [els.stripMode, els.gridMode]) {
-        const active = button.dataset.mode === mode;
-        button.style.borderColor = active ? "#3b82f6" : "#4b5563";
-        button.style.color = active ? "#bfdbfe" : "#f3f4f6";
-        button.style.background = active ? "#1e3a5f" : "#2b2b2b";
+    els.sizeLabel.textContent = `${t("imageLoaderThumbSize")}: ${Math.round(size)}px`;
+    if (Number(els.sizeRange.value) !== size) {
+        els.sizeRange.value = String(size);
     }
     els.status.textContent = refs.length ? `${refs.length} ${t("imageLoaderSelected")}` : t("imageLoaderEmpty");
     els.preview.replaceChildren();
-    els.preview.style.flexWrap = mode === "strip" ? "nowrap" : "wrap";
-    els.preview.style.alignItems = mode === "strip" ? "center" : "flex-start";
+    els.preview.style.alignItems = "flex-start";
     if (!refs.length) {
         const empty = document.createElement("div");
         empty.textContent = t("imageLoaderEmpty");
@@ -233,38 +234,42 @@ function renderLoader(node) {
             "gap:4px",
             "align-items:center",
             "flex:0 0 auto",
-            mode === "grid" ? "width:92px" : "width:76px",
+            `width:${Math.max(64, size + 12)}px`,
         ].join(";");
 
         const img = document.createElement("img");
-        img.src = viewUrl(ref);
+        img.loading = "lazy";
+        img.decoding = "async";
+        img.src = thumbUrl(ref, size);
+        img.onerror = () => {
+            img.onerror = null;
+            img.src = viewUrl(ref);
+        };
         img.title = ref.name || "";
         img.style.cssText = [
-            mode === "grid" ? "width:86px" : "width:70px",
-            mode === "grid" ? "height:86px" : "height:70px",
-            "object-fit:cover",
+            `width:${size}px`,
+            `height:${size}px`,
+            "object-fit:contain",
             "border:1px solid #3b82f6",
             "border-radius:4px",
             "background:#050505",
             "flex:0 0 auto",
         ].join(";");
         item.appendChild(img);
-        if (mode === "grid") {
-            const name = document.createElement("div");
-            name.textContent = ref.name || "";
-            name.title = ref.name || "";
-            name.style.cssText = [
-                "width:100%",
-                "font-size:10px",
-                "line-height:12px",
-                "color:#9ca3af",
-                "overflow:hidden",
-                "white-space:nowrap",
-                "text-overflow:ellipsis",
-                "text-align:center",
-            ].join(";");
-            item.appendChild(name);
-        }
+        const name = document.createElement("div");
+        name.textContent = ref.name || "";
+        name.title = ref.name || "";
+        name.style.cssText = [
+            "width:100%",
+            "font-size:10px",
+            "line-height:12px",
+            "color:#9ca3af",
+            "overflow:hidden",
+            "white-space:nowrap",
+            "text-overflow:ellipsis",
+            "text-align:center",
+        ].join(";");
+        item.appendChild(name);
         els.preview.appendChild(item);
     }
 }
@@ -290,7 +295,6 @@ function applySlotLabels(slots) {
 
 function applyLabels(node) {
     if (nodeClass(node) !== NODE_CLASS) return;
-    normalizeWidgetValues(node);
     node.title = t("imageLoaderTitle");
     for (const widget of node.widgets || []) {
         const key = WIDGET_LABELS[widget.name];
