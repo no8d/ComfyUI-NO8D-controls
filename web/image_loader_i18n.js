@@ -3,7 +3,7 @@ import { api } from "../../scripts/api.js";
 import { no8dLocale, t } from "./no8d_i18n.js";
 
 const NODE_CLASS = "NO8DLoadImages";
-const HIDDEN_WIDGETS = new Set(["image_files"]);
+const HIDDEN_WIDGETS = new Set(["image_files", "output_files"]);
 const WIDGET_LABELS = {
     image_files: "imageLoaderFiles",
 };
@@ -24,13 +24,32 @@ function imageWidget(node) {
     return (node.widgets || []).find((widget) => widget.name === "image_files");
 }
 
+function outputWidget(node) {
+    return (node.widgets || []).find((widget) => widget.name === "output_files");
+}
+
 function thumbSize(node) {
     const value = Number(node.properties?.no8d_image_loader_thumb_size);
     return Number.isFinite(value) ? Math.max(56, Math.min(220, value)) : 96;
 }
 
+function imageKey(ref) {
+    return [ref?.type || "input", ref?.subfolder || "", ref?.name || ""].join("/");
+}
+
 function parseRefs(node) {
     const widget = imageWidget(node);
+    if (!widget?.value) return [];
+    try {
+        const refs = JSON.parse(widget.value);
+        return Array.isArray(refs) ? refs : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function parseOutputRefs(node) {
+    const widget = outputWidget(node);
     if (!widget?.value) return [];
     try {
         const refs = JSON.parse(widget.value);
@@ -48,6 +67,43 @@ function setRefs(node, refs) {
     renderLoader(node);
     node.graph?.setDirtyCanvas?.(true, true);
     app?.canvas?.setDirty?.(true, true);
+}
+
+function setOutputRefs(node, refs) {
+    const widget = outputWidget(node);
+    if (!widget) return;
+    widget.value = JSON.stringify(refs);
+    widget.callback?.(widget.value);
+    renderLoader(node);
+    node.graph?.setDirtyCanvas?.(true, true);
+    app?.canvas?.setDirty?.(true, true);
+}
+
+function selectionMode(node) {
+    const mode = node.properties?.no8d_image_loader_select_mode;
+    return mode === "multi" || mode === "box" ? mode : "single";
+}
+
+function selectedSet(node) {
+    if (!node._no8dImageLoaderSelected) node._no8dImageLoaderSelected = new Set();
+    return node._no8dImageLoaderSelected;
+}
+
+function syncSelection(node, selected) {
+    node._no8dImageLoaderSelected = selected;
+    renderLoader(node);
+}
+
+function removeSelected(node) {
+    const refs = parseRefs(node);
+    const selected = selectedSet(node);
+    if (!selected.size) return;
+    const next = refs.filter((_, index) => !selected.has(index));
+    const outputKeys = new Set(parseOutputRefs(node).map(imageKey));
+    const nextOutput = next.filter((ref) => outputKeys.has(imageKey(ref)));
+    node._no8dImageLoaderSelected = new Set();
+    setRefs(node, next);
+    setOutputRefs(node, nextOutput);
 }
 
 function clearStaleSlots(node) {
@@ -72,7 +128,9 @@ function thumbUrl(ref, size) {
     return api.apiURL(`/no8d-control/api/load-images/thumbnail?${params.toString()}`);
 }
 
-function makeThumbItem(ref, size) {
+function makeThumbItem(node, ref, index, size, selected, outputKeys) {
+    const isSelected = selected.has(index);
+    const isOutput = outputKeys.has(imageKey(ref));
     const item = document.createElement("div");
     item.style.cssText = [
         "display:flex",
@@ -81,7 +139,25 @@ function makeThumbItem(ref, size) {
         "align-items:center",
         "flex:0 0 auto",
         `width:${Math.max(64, size + 12)}px`,
+        "cursor:pointer",
+        "user-select:none",
     ].join(";");
+    item.dataset.index = String(index);
+    item.addEventListener("pointerdown", (event) => event.stopPropagation());
+    item.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const mode = selectionMode(node);
+        const next = mode === "multi" ? new Set(selectedSet(node)) : new Set();
+        if (mode === "multi" && next.has(index)) next.delete(index);
+        else next.add(index);
+        syncSelection(node, next);
+    });
+    item.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setOutputRefs(node, [ref]);
+    });
 
     const img = document.createElement("img");
     img.loading = "lazy";
@@ -112,11 +188,12 @@ function makeThumbItem(ref, size) {
         `width:${size}px`,
         `height:${size}px`,
         "object-fit:contain",
-        "border:1px solid #3b82f6",
+        `border:${isSelected ? 3 : 1}px solid ${isOutput ? "#22c55e" : isSelected ? "#f59e0b" : "#3b82f6"}`,
         "border-radius:4px",
         "background:#050505",
         "flex:0 0 auto",
         "display:block",
+        "box-sizing:border-box",
     ].join(";");
     item.appendChild(img);
 
@@ -162,6 +239,17 @@ function makeButton(label, onClick) {
     return button;
 }
 
+function makeModeButton(node, mode) {
+    const button = makeButton("", () => {
+        node.properties = node.properties || {};
+        node.properties.no8d_image_loader_select_mode = mode;
+        renderLoader(node);
+    });
+    button.style.padding = "0 10px";
+    button.dataset.mode = mode;
+    return button;
+}
+
 function makeUi(node) {
     const root = document.createElement("div");
     root.className = "no8d-image-loader";
@@ -191,12 +279,20 @@ function makeUi(node) {
     load.style.borderColor = "#3b82f6";
     load.style.color = "#bfdbfe";
 
-    const clear = makeButton(t("imageLoaderClear"), () => setRefs(node, []));
+    const clear = makeButton(t("imageLoaderClear"), () => {
+        node._no8dImageLoaderSelected = new Set();
+        setOutputRefs(node, []);
+        setRefs(node, []);
+    });
+    const remove = makeButton(t("imageLoaderDeleteSelected"), () => removeSelected(node));
+    const single = makeModeButton(node, "single");
+    const multi = makeModeButton(node, "multi");
+    const box = makeModeButton(node, "box");
 
     const status = document.createElement("div");
     status.style.cssText = "flex:1; min-width:0; color:#9ca3af; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;";
 
-    row.append(load, clear, status, input);
+    row.append(load, clear, remove, single, multi, box, status, input);
 
     const sizeRow = document.createElement("div");
     sizeRow.style.cssText = "display:flex; align-items:center; gap:8px;";
@@ -243,10 +339,79 @@ function makeUi(node) {
         "border-radius:6px",
         "background:#111",
         "overflow-x:auto",
-        "overflow-y:auto",
+        "overflow-y:scroll",
         "box-sizing:border-box",
         "flex-wrap:wrap",
+        "position:relative",
     ].join(";");
+
+    const selectionBox = document.createElement("div");
+    selectionBox.style.cssText = [
+        "position:absolute",
+        "display:none",
+        "border:1px solid #38bdf8",
+        "background:rgba(56, 189, 248, 0.14)",
+        "pointer-events:none",
+        "z-index:2",
+    ].join(";");
+    preview.appendChild(selectionBox);
+
+    let boxStart = null;
+    preview.addEventListener("pointerdown", (event) => {
+        if (selectionMode(node) !== "box" || event.button !== 0) return;
+        if (event.target.closest("[data-index]")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const rect = preview.getBoundingClientRect();
+        boxStart = {
+            x: event.clientX - rect.left + preview.scrollLeft,
+            y: event.clientY - rect.top + preview.scrollTop,
+        };
+        preview.setPointerCapture?.(event.pointerId);
+        Object.assign(selectionBox.style, {
+            display: "block",
+            left: `${boxStart.x}px`,
+            top: `${boxStart.y}px`,
+            width: "0px",
+            height: "0px",
+        });
+    });
+    preview.addEventListener("pointermove", (event) => {
+        if (!boxStart) return;
+        event.preventDefault();
+        const rect = preview.getBoundingClientRect();
+        const x = event.clientX - rect.left + preview.scrollLeft;
+        const y = event.clientY - rect.top + preview.scrollTop;
+        const left = Math.min(boxStart.x, x);
+        const top = Math.min(boxStart.y, y);
+        const width = Math.abs(x - boxStart.x);
+        const height = Math.abs(y - boxStart.y);
+        Object.assign(selectionBox.style, {
+            left: `${left}px`,
+            top: `${top}px`,
+            width: `${width}px`,
+            height: `${height}px`,
+        });
+    });
+    const finishBoxSelect = (event) => {
+        if (!boxStart) return;
+        event.preventDefault();
+        const boxRect = selectionBox.getBoundingClientRect();
+        const next = new Set();
+        for (const item of preview.querySelectorAll("[data-index]")) {
+            const itemRect = item.getBoundingClientRect();
+            const overlaps = itemRect.left <= boxRect.right
+                && itemRect.right >= boxRect.left
+                && itemRect.top <= boxRect.bottom
+                && itemRect.bottom >= boxRect.top;
+            if (overlaps) next.add(Number(item.dataset.index));
+        }
+        selectionBox.style.display = "none";
+        boxStart = null;
+        syncSelection(node, next);
+    };
+    preview.addEventListener("pointerup", finishBoxSelect);
+    preview.addEventListener("pointercancel", finishBoxSelect);
 
     input.addEventListener("change", async () => {
         const files = Array.from(input.files || []);
@@ -269,6 +434,8 @@ function makeUi(node) {
                     type: data.type || "input",
                 });
             }
+            node._no8dImageLoaderSelected = new Set();
+            setOutputRefs(node, []);
             setRefs(node, refs);
         } catch (error) {
             console.error("[NO8D-Load-images]", error);
@@ -280,7 +447,7 @@ function makeUi(node) {
     });
 
     root.append(row, sizeRow, preview);
-    node._no8dImageLoaderEls = { root, load, clear, status, sizeLabel, sizeRange, preview };
+    node._no8dImageLoaderEls = { root, load, clear, remove, single, multi, box, status, sizeLabel, sizeRange, preview, selectionBox };
     return root;
 }
 
@@ -290,15 +457,32 @@ function renderLoader(node) {
     clearStaleSlots(node);
     const seq = ++renderSeq;
     const refs = parseRefs(node);
+    const selected = selectedSet(node);
+    const outputRefs = parseOutputRefs(node);
+    const outputKeys = new Set(outputRefs.map(imageKey));
     const size = thumbSize(node);
     els.load.textContent = t("imageLoaderLoad");
     els.clear.textContent = t("imageLoaderClear");
+    els.remove.textContent = t("imageLoaderDeleteSelected");
+    els.single.textContent = t("imageLoaderSelectSingle");
+    els.multi.textContent = t("imageLoaderSelectMulti");
+    els.box.textContent = t("imageLoaderSelectBox");
+    for (const button of [els.single, els.multi, els.box]) {
+        const active = button.dataset.mode === selectionMode(node);
+        button.style.borderColor = active ? "#3b82f6" : "#4b5563";
+        button.style.color = active ? "#bfdbfe" : "#f3f4f6";
+        button.style.background = active ? "#1e3a5f" : "#2b2b2b";
+    }
     els.sizeLabel.textContent = `${t("imageLoaderThumbSize")}: ${Math.round(size)}px`;
     if (Number(els.sizeRange.value) !== size) {
         els.sizeRange.value = String(size);
     }
-    els.status.textContent = refs.length ? `${refs.length} ${t("imageLoaderSelected")}` : t("imageLoaderEmpty");
+    const outputText = outputRefs.length ? `, ${t("imageLoaderOutputSingle")}` : "";
+    els.status.textContent = refs.length
+        ? `${refs.length} ${t("imageLoaderSelected")}, ${selected.size} ${t("imageLoaderSelectedCount")}${outputText}`
+        : t("imageLoaderEmpty");
     els.preview.replaceChildren();
+    if (els.selectionBox) els.preview.appendChild(els.selectionBox);
     els.preview.style.alignItems = "flex-start";
     if (!refs.length) {
         const empty = document.createElement("div");
@@ -313,7 +497,7 @@ function renderLoader(node) {
         const fragment = document.createDocumentFragment();
         const end = Math.min(index + 12, refs.length);
         for (; index < end; index += 1) {
-            fragment.appendChild(makeThumbItem(refs[index], size));
+            fragment.appendChild(makeThumbItem(node, refs[index], index, size, selected, outputKeys));
         }
         els.preview.appendChild(fragment);
         if (index < refs.length) requestAnimationFrame(appendBatch);

@@ -107,6 +107,37 @@ def _load_image(path):
     return torch.from_numpy(arr)[None,]
 
 
+def _normalize_to_uint8(image):
+    arr = np.asarray(image)
+    if arr.dtype == np.uint8:
+        return image
+    arr = arr.astype(np.float32)
+    finite = np.isfinite(arr)
+    if not finite.any():
+        arr = np.zeros_like(arr, dtype=np.uint8)
+    else:
+        lo = float(arr[finite].min())
+        hi = float(arr[finite].max())
+        if hi > lo:
+            arr = (arr - lo) * (255.0 / (hi - lo))
+        else:
+            arr = np.zeros_like(arr)
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+    return Image.fromarray(arr)
+
+
+def _prepare_thumbnail_image(image):
+    image = ImageOps.exif_transpose(image)
+    if image.mode in ("I", "I;16", "I;16B", "I;16L", "F"):
+        image = _normalize_to_uint8(image)
+    if image.mode in ("RGBA", "LA") or ("transparency" in image.info):
+        rgba = image.convert("RGBA")
+        background = Image.new("RGBA", rgba.size, (17, 17, 17, 255))
+        background.alpha_composite(rgba)
+        return background.convert("RGB")
+    return image.convert("RGB")
+
+
 def _thumbnail_resample():
     try:
         return Image.Resampling.LANCZOS
@@ -141,6 +172,7 @@ class NO8DLoadImages:
         return {
             "required": {
                 "image_files": ("STRING", {"default": "[]", "multiline": False}),
+                "output_files": ("STRING", {"default": "[]", "multiline": False}),
             },
         }
 
@@ -151,13 +183,15 @@ class NO8DLoadImages:
     CATEGORY = "NO8D-control"
 
     @classmethod
-    def IS_CHANGED(cls, image_files="[]"):
-        refs = _parse_image_refs(image_files)
+    def IS_CHANGED(cls, image_files="[]", output_files="[]"):
+        output_refs = _parse_image_refs(output_files)
+        refs = output_refs or _parse_image_refs(image_files)
         paths = [_ref_to_path(ref) for ref in refs]
-        return _fingerprint(paths, image_files)
+        return _fingerprint(paths, f"{image_files}\n{output_files}")
 
-    def load(self, image_files="[]"):
-        refs = _parse_image_refs(image_files)
+    def load(self, image_files="[]", output_files="[]"):
+        output_refs = _parse_image_refs(output_files)
+        refs = output_refs or _parse_image_refs(image_files)
         paths = [_ref_to_path(ref) for ref in refs]
         if not paths:
             raise ValueError("NO8D-Load-images: no images selected.")
@@ -193,15 +227,8 @@ if PromptServer is not None and web is not None:
             if cached is not None:
                 return web.Response(body=cached, content_type="image/png")
             with Image.open(path) as image:
-                image = ImageOps.exif_transpose(image)
+                image = _prepare_thumbnail_image(image)
                 image.thumbnail((size, size), _thumbnail_resample())
-                if image.mode in ("RGBA", "LA") or ("transparency" in image.info):
-                    rgba = image.convert("RGBA")
-                    background = Image.new("RGBA", rgba.size, (17, 17, 17, 255))
-                    background.alpha_composite(rgba)
-                    image = background.convert("RGB")
-                else:
-                    image = image.convert("RGB")
                 buffer = BytesIO()
                 image.save(buffer, format="PNG", optimize=True)
                 buffer.seek(0)
