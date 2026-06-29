@@ -16,6 +16,31 @@ const LOADER_MIN_HEIGHT = 180;
 let activeLocale = "";
 let renderSeq = 0;
 
+function ensureStyleSheet() {
+    if (document.getElementById("no8d-image-loader-style")) return;
+    const style = document.createElement("style");
+    style.id = "no8d-image-loader-style";
+    style.textContent = `
+.no8d-image-loader-preview {
+    scrollbar-width: thin;
+    scrollbar-color: #6b7280 #111;
+}
+.no8d-image-loader-preview::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+.no8d-image-loader-preview::-webkit-scrollbar-track {
+    background: #111;
+}
+.no8d-image-loader-preview::-webkit-scrollbar-thumb {
+    background: #6b7280;
+    border: 2px solid #111;
+    border-radius: 999px;
+}
+`;
+    document.head.appendChild(style);
+}
+
 function nodeClass(node) {
     return node?.comfyClass || node?.type || "";
 }
@@ -26,6 +51,19 @@ function imageWidget(node) {
 
 function outputWidget(node) {
     return (node.widgets || []).find((widget) => widget.name === "output_files");
+}
+
+function ensureInternalWidgets(node) {
+    if (!node.widgets) node.widgets = [];
+    for (const name of HIDDEN_WIDGETS) {
+        let widget = (node.widgets || []).find((item) => item.name === name);
+        if (!widget && typeof node.addWidget === "function") {
+            widget = node.addWidget("text", name, "[]", () => {});
+        }
+        if (!widget) continue;
+        if (widget.value == null || widget.value === "") widget.value = "[]";
+    }
+    hideInternalWidgets(node);
 }
 
 function thumbSize(node) {
@@ -60,28 +98,27 @@ function parseOutputRefs(node) {
 }
 
 function setRefs(node, refs) {
+    ensureInternalWidgets(node);
     const widget = imageWidget(node);
     if (!widget) return;
     widget.value = JSON.stringify(refs);
     widget.callback?.(widget.value);
     renderLoader(node);
+    node.graph?.change?.();
     node.graph?.setDirtyCanvas?.(true, true);
     app?.canvas?.setDirty?.(true, true);
 }
 
 function setOutputRefs(node, refs) {
+    ensureInternalWidgets(node);
     const widget = outputWidget(node);
     if (!widget) return;
     widget.value = JSON.stringify(refs);
     widget.callback?.(widget.value);
     renderLoader(node);
+    node.graph?.change?.();
     node.graph?.setDirtyCanvas?.(true, true);
     app?.canvas?.setDirty?.(true, true);
-}
-
-function selectionMode(node) {
-    const mode = node.properties?.no8d_image_loader_select_mode;
-    return mode === "multi" || mode === "box" ? mode : "single";
 }
 
 function selectedSet(node) {
@@ -91,6 +128,8 @@ function selectedSet(node) {
 
 function syncSelection(node, selected) {
     node._no8dImageLoaderSelected = selected;
+    node.graph?.setDirtyCanvas?.(true, true);
+    app?.canvas?.setDirty?.(true, true);
     renderLoader(node);
 }
 
@@ -104,6 +143,12 @@ function removeSelected(node) {
     node._no8dImageLoaderSelected = new Set();
     setRefs(node, next);
     setOutputRefs(node, nextOutput);
+}
+
+function clearImages(node) {
+    node._no8dImageLoaderSelected = new Set();
+    setOutputRefs(node, []);
+    setRefs(node, []);
 }
 
 function clearStaleSlots(node) {
@@ -143,14 +188,30 @@ function makeThumbItem(node, ref, index, size, selected, outputKeys) {
         "user-select:none",
     ].join(";");
     item.dataset.index = String(index);
-    item.addEventListener("pointerdown", (event) => event.stopPropagation());
+    item.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+        node._no8dImageLoaderEls?.preview?.focus?.({ preventScroll: true });
+    });
     item.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        const mode = selectionMode(node);
-        const next = mode === "multi" ? new Set(selectedSet(node)) : new Set();
-        if (mode === "multi" && next.has(index)) next.delete(index);
-        else next.add(index);
+        const refs = parseRefs(node);
+        const current = selectedSet(node);
+        let next = new Set();
+        if (event.shiftKey && Number.isInteger(node._no8dImageLoaderAnchor)) {
+            const start = Math.max(0, Math.min(node._no8dImageLoaderAnchor, index));
+            const end = Math.min(refs.length - 1, Math.max(node._no8dImageLoaderAnchor, index));
+            next = event.ctrlKey || event.metaKey ? new Set(current) : new Set();
+            for (let itemIndex = start; itemIndex <= end; itemIndex += 1) next.add(itemIndex);
+        } else if (event.ctrlKey || event.metaKey) {
+            next = new Set(current);
+            if (next.has(index)) next.delete(index);
+            else next.add(index);
+            node._no8dImageLoaderAnchor = index;
+        } else {
+            next.add(index);
+            node._no8dImageLoaderAnchor = index;
+        }
         syncSelection(node, next);
     });
     item.addEventListener("dblclick", (event) => {
@@ -239,18 +300,8 @@ function makeButton(label, onClick) {
     return button;
 }
 
-function makeModeButton(node, mode) {
-    const button = makeButton("", () => {
-        node.properties = node.properties || {};
-        node.properties.no8d_image_loader_select_mode = mode;
-        renderLoader(node);
-    });
-    button.style.padding = "0 10px";
-    button.dataset.mode = mode;
-    return button;
-}
-
 function makeUi(node) {
+    ensureStyleSheet();
     const root = document.createElement("div");
     root.className = "no8d-image-loader";
     root.style.cssText = [
@@ -260,6 +311,7 @@ function makeUi(node) {
         "width:100%",
         "height:100%",
         "min-height:0",
+        "overflow:hidden",
         "box-sizing:border-box",
         "padding:4px 8px 8px",
         "font-family:Arial, sans-serif",
@@ -279,20 +331,10 @@ function makeUi(node) {
     load.style.borderColor = "#3b82f6";
     load.style.color = "#bfdbfe";
 
-    const clear = makeButton(t("imageLoaderClear"), () => {
-        node._no8dImageLoaderSelected = new Set();
-        setOutputRefs(node, []);
-        setRefs(node, []);
-    });
-    const remove = makeButton(t("imageLoaderDeleteSelected"), () => removeSelected(node));
-    const single = makeModeButton(node, "single");
-    const multi = makeModeButton(node, "multi");
-    const box = makeModeButton(node, "box");
-
     const status = document.createElement("div");
     status.style.cssText = "flex:1; min-width:0; color:#9ca3af; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;";
 
-    row.append(load, clear, remove, single, multi, box, status, input);
+    row.append(load, status, input);
 
     const sizeRow = document.createElement("div");
     sizeRow.style.cssText = "display:flex; align-items:center; gap:8px;";
@@ -325,24 +367,28 @@ function makeUi(node) {
     sizeRow.append(sizeLabel, sizeRange);
 
     const preview = document.createElement("div");
+    preview.className = "no8d-image-loader-preview";
+    preview.tabIndex = 0;
     preview.style.cssText = [
         "display:flex",
         "gap:10px",
         "align-content:flex-start",
-        "min-height:96px",
         "min-width:0",
         "min-height:0",
-        "height:100%",
-        "flex:1 1 auto",
+        "height:auto",
+        "flex:1 1 0",
         "padding:8px",
         "border:1px solid #333",
         "border-radius:6px",
         "background:#111",
         "overflow-x:auto",
         "overflow-y:scroll",
+        "scrollbar-gutter:stable",
+        "overscroll-behavior:contain",
         "box-sizing:border-box",
         "flex-wrap:wrap",
         "position:relative",
+        "outline:none",
     ].join(";");
 
     const selectionBox = document.createElement("div");
@@ -358,7 +404,8 @@ function makeUi(node) {
 
     let boxStart = null;
     preview.addEventListener("pointerdown", (event) => {
-        if (selectionMode(node) !== "box" || event.button !== 0) return;
+        preview.focus({ preventScroll: true });
+        if (event.button !== 0) return;
         if (event.target.closest("[data-index]")) return;
         event.preventDefault();
         event.stopPropagation();
@@ -412,6 +459,32 @@ function makeUi(node) {
     };
     preview.addEventListener("pointerup", finishBoxSelect);
     preview.addEventListener("pointercancel", finishBoxSelect);
+    preview.addEventListener("keydown", (event) => {
+        const ctrl = event.ctrlKey || event.metaKey;
+        if (ctrl && event.key.toLowerCase() === "a") {
+            event.preventDefault();
+            event.stopPropagation();
+            syncSelection(node, new Set(parseRefs(node).map((_, index) => index)));
+            return;
+        }
+        if ((event.key === "Delete" || event.key === "Backspace") && ctrl) {
+            event.preventDefault();
+            event.stopPropagation();
+            clearImages(node);
+            return;
+        }
+        if (event.key === "Delete" || event.key === "Backspace") {
+            event.preventDefault();
+            event.stopPropagation();
+            removeSelected(node);
+            return;
+        }
+        if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            syncSelection(node, new Set());
+        }
+    });
 
     input.addEventListener("change", async () => {
         const files = Array.from(input.files || []);
@@ -447,7 +520,7 @@ function makeUi(node) {
     });
 
     root.append(row, sizeRow, preview);
-    node._no8dImageLoaderEls = { root, load, clear, remove, single, multi, box, status, sizeLabel, sizeRange, preview, selectionBox };
+    node._no8dImageLoaderEls = { root, load, status, sizeLabel, sizeRange, preview, selectionBox };
     return root;
 }
 
@@ -462,17 +535,6 @@ function renderLoader(node) {
     const outputKeys = new Set(outputRefs.map(imageKey));
     const size = thumbSize(node);
     els.load.textContent = t("imageLoaderLoad");
-    els.clear.textContent = t("imageLoaderClear");
-    els.remove.textContent = t("imageLoaderDeleteSelected");
-    els.single.textContent = t("imageLoaderSelectSingle");
-    els.multi.textContent = t("imageLoaderSelectMulti");
-    els.box.textContent = t("imageLoaderSelectBox");
-    for (const button of [els.single, els.multi, els.box]) {
-        const active = button.dataset.mode === selectionMode(node);
-        button.style.borderColor = active ? "#3b82f6" : "#4b5563";
-        button.style.color = active ? "#bfdbfe" : "#f3f4f6";
-        button.style.background = active ? "#1e3a5f" : "#2b2b2b";
-    }
     els.sizeLabel.textContent = `${t("imageLoaderThumbSize")}: ${Math.round(size)}px`;
     if (Number(els.sizeRange.value) !== size) {
         els.sizeRange.value = String(size);
@@ -555,7 +617,7 @@ function applyAllLabelsIfNeeded(force = false) {
 
 function installLoaderUi(node) {
     if (node._no8dImageLoaderWidget || typeof node.addDOMWidget !== "function") return;
-    hideInternalWidgets(node);
+    ensureInternalWidgets(node);
     const root = makeUi(node);
     const widget = node.addDOMWidget("no8d_image_loader", "image_loader", root, {
         serialize: false,
@@ -574,6 +636,9 @@ function installLoaderUi(node) {
         wrapper.classList.add("no8d-image-loader-widget");
         wrapper.style.overflow = "hidden";
         wrapper.style.boxSizing = "border-box";
+        wrapper.style.minHeight = "0";
+        wrapper.style.display = "flex";
+        wrapper.style.flexDirection = "column";
     };
     markWrapper();
     requestAnimationFrame(markWrapper);
