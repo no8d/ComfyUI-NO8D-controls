@@ -15,6 +15,8 @@ const SLOT_LABELS = {
     filenames: "imageLoaderFilenames",
     count: "imageLoaderCount",
 };
+const LOADER_MIN_WIDTH = 360;
+const LOADER_MIN_HEIGHT = 180;
 
 let activeLocale = "";
 
@@ -114,6 +116,7 @@ function makeUi(node) {
         "flex-direction:column",
         "gap:8px",
         "width:100%",
+        "height:100%",
         "box-sizing:border-box",
         "padding:4px 8px 8px",
         "font-family:Arial, sans-serif",
@@ -150,6 +153,7 @@ function makeUi(node) {
         "align-content:flex-start",
         "min-height:96px",
         "height:100%",
+        "flex:1 1 auto",
         "padding:8px",
         "border:1px solid #333",
         "border-radius:6px",
@@ -323,10 +327,21 @@ function installLoaderUi(node) {
         hideOnZoom: false,
     });
     widget.serialize = false;
-    widget.computeSize = (width) => [
-        Math.max(width || 300, 300),
-        Math.max((node.size?.[1] || 260) - 120, 120),
-    ];
+    widget.computeLayoutSize = () => ({
+        minWidth: LOADER_MIN_WIDTH,
+        minHeight: LOADER_MIN_HEIGHT,
+        maxWidth: 1_000_000,
+        maxHeight: 1_000_000,
+    });
+    const markWrapper = () => {
+        const wrapper = root.closest(".dom-widget");
+        if (!wrapper) return;
+        wrapper.classList.add("no8d-image-loader-widget");
+        wrapper.style.overflow = "hidden";
+        wrapper.style.boxSizing = "border-box";
+    };
+    markWrapper();
+    requestAnimationFrame(markWrapper);
     node._no8dImageLoaderWidget = widget;
     renderLoader(node);
 }
