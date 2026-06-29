@@ -21,6 +21,7 @@ All nodes are available under the `NO8D-control` category.
 - `NO8D-Inpainting`
 - `NO8D-A/B preview`
 - `NO8D-Prompt-plus`
+- `NO8D-Batch-Prompt-plus`
 - `NO8D-Prompt-view`
 
 ## Installation
@@ -49,6 +50,12 @@ Prompt workflow:
 
 ```text
 Text or image -> NO8D-Prompt-plus -> NO8D-Prompt-view -> positive prompt input
+```
+
+Batch caption workflow:
+
+```text
+Image batch -> NO8D-Batch-Prompt-plus -> Save Image-Text (to Folder)
 ```
 
 ## NO8D-LoRA Stack
@@ -135,6 +142,27 @@ Built-in rule types:
 If both text and image are connected, the image is treated as visual evidence and the text is treated as user intent, correction, or emphasis.
 
 For image reverse engineering, the node compresses the input image before sending it to the API to reduce request size and latency.
+
+## NO8D-Batch-Prompt-Plus
+
+`NO8D-Batch-Prompt-plus` uses the same prompt rules, style presets, length presets, and API settings as `NO8D-Prompt-plus`, but reverse-engineers every image in an input batch.
+
+Inputs:
+
+- `images`: image batch input.
+- `prompt_rules`: choose a writing rule.
+- `style_preset`: choose the requested prompt style.
+- `length_preset`: choose standard or detailed length.
+- `output_language`: choose English or Chinese output.
+- `seed`: controls variation in each generated caption.
+- `extra_rules`: optional per-node instructions.
+
+Outputs:
+
+- `captions`: a string list, one caption per image. Connect it to ComfyUI's built-in `Save Image-Text (to Folder)` node to save images and matching `.txt` captions.
+- `combined`: all captions joined into one readable text block for previewing with `NO8D-Prompt-view` or another text preview node.
+
+This node has no text input port. It is dedicated to batch image caption reverse engineering.
 
 ## NO8D-Prompt-View
 

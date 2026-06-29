@@ -73,6 +73,12 @@ _LENGTH_PRESET_RULES = {
     "标准": "Target output length: standard, about 120-240 tokens. For natural-language output, write a compact single paragraph with about 3-5 clear sentences. Prioritize the subject, action, setting, composition, lighting, medium, and mood. Do not pad the prompt with secondary details.",
     "详细": "Target output length: detailed, about 240-480 tokens. For natural-language output, write a visibly longer single paragraph with about 6-10 rich sentences. Add more concrete visual evidence: subject details, pose, spatial layout, foreground and background, lighting direction, materials, textures, color relationships, camera or medium language, atmosphere, and visible text when present. The detailed result must be substantially more developed than the standard result while staying coherent and non-repetitive.",
 }
+_OUTPUT_LANGUAGES = ("英文", "中文")
+_OUTPUT_LANGUAGE_ALIASES = {
+    "English": "英文",
+    "Chinese": "中文",
+}
+_OUTPUT_LANGUAGE_INPUTS = _OUTPUT_LANGUAGES + tuple(_OUTPUT_LANGUAGE_ALIASES.keys())
 
 def _normalize_style_preset(style_preset):
     preset = str(style_preset or "").strip()
@@ -81,6 +87,10 @@ def _normalize_style_preset(style_preset):
 def _normalize_length_preset(length_preset):
     preset = str(length_preset or "").strip()
     return _LENGTH_PRESET_ALIASES.get(preset, preset) if preset else "标准"
+
+def _normalize_output_language(output_language):
+    language = str(output_language or "").strip()
+    return _OUTPUT_LANGUAGE_ALIASES.get(language, language) if language else "英文"
 
 def _endpoint_from_base_url(base_url):
     url = str(base_url or "").strip().strip('"').strip("'")
@@ -149,24 +159,50 @@ def _image_to_data_url(image):
         arr = np.asarray(arr)
         if arr.ndim == 4:
             arr = arr[0]
-        if arr.ndim != 3:
-            return "", ""
-        if arr.shape[-1] > 3:
-            arr = arr[..., :3]
-        arr = np.clip(arr * 255.0, 0, 255).astype(np.uint8)
-        pil = Image.fromarray(arr, "RGB")
-        max_edge = max(pil.size)
-        if max_edge > _IMAGE_MAX_EDGE:
-            scale = _IMAGE_MAX_EDGE / max_edge
-            size = (max(1, round(pil.width * scale)), max(1, round(pil.height * scale)))
-            resampling = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.BICUBIC)
-            pil = pil.resize(size, resampling)
-        buf = io.BytesIO()
-        pil.save(buf, format="JPEG", quality=_IMAGE_JPEG_QUALITY, optimize=True)
-        raw = buf.getvalue()
-        return "data:image/jpeg;base64," + base64.b64encode(raw).decode("ascii"), hashlib.sha1(raw).hexdigest()
+        return _image_array_to_data_url(arr)
     except Exception:
         return "", ""
+
+
+def _image_array_to_data_url(arr):
+    if arr.ndim != 3:
+        return "", ""
+    if arr.shape[-1] > 3:
+        arr = arr[..., :3]
+    arr = np.clip(arr * 255.0, 0, 255).astype(np.uint8)
+    pil = Image.fromarray(arr, "RGB")
+    max_edge = max(pil.size)
+    if max_edge > _IMAGE_MAX_EDGE:
+        scale = _IMAGE_MAX_EDGE / max_edge
+        size = (max(1, round(pil.width * scale)), max(1, round(pil.height * scale)))
+        resampling = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.BICUBIC)
+        pil = pil.resize(size, resampling)
+    buf = io.BytesIO()
+    pil.save(buf, format="JPEG", quality=_IMAGE_JPEG_QUALITY, optimize=True)
+    raw = buf.getvalue()
+    return "data:image/jpeg;base64," + base64.b64encode(raw).decode("ascii"), hashlib.sha1(raw).hexdigest()
+
+
+def _images_to_data_urls(images):
+    if images is None:
+        return []
+    try:
+        arr = images
+        if hasattr(arr, "detach"):
+            arr = arr.detach().cpu().numpy()
+        arr = np.asarray(arr)
+        if arr.ndim == 3:
+            arr = arr[None, ...]
+        if arr.ndim != 4:
+            return []
+        encoded = []
+        for item in arr:
+            data_url, image_hash = _image_array_to_data_url(item)
+            if data_url:
+                encoded.append((data_url, image_hash))
+        return encoded
+    except Exception:
+        return []
 
 
 def _clean_palette(value, limit):
@@ -295,7 +331,7 @@ You are a professional image-generation prompt expansion assistant.
 Prompt writing rules:
 {rule_text}
 
-Output only the final English positive prompt.
+Output only the final positive prompt.
 """.strip()
 
 
@@ -307,7 +343,7 @@ You are a professional image-generation caption expansion assistant.
 Prompt writing rules:
 {rule_text}
 
-Write all descriptive JSON string values in fluent, common, modern English.
+Write all descriptive JSON string values in the requested output language.
 """.strip()
 
 
@@ -316,7 +352,7 @@ def _style_preset_rule(style_preset):
     return _STYLE_PRESET_RULES.get(preset, _STYLE_PRESET_RULES[_STYLE_PRESETS[1]])
 
 
-def _build_messages(prompt_input, rule, extra_rules, seed, image_data_url="", style_preset="专业摄影", length_preset="标准"):
+def _build_messages(prompt_input, rule, extra_rules, seed, image_data_url="", style_preset="专业摄影", length_preset="标准", output_language="英文"):
     system = (
         _json_system_prompt(rule)
         if prompt_config_manager.prompt_rule_mode(rule) == "json"
@@ -332,6 +368,11 @@ def _build_messages(prompt_input, rule, extra_rules, seed, image_data_url="", st
         "\n\nOutput length:\n"
         f"{_LENGTH_PRESET_RULES.get(length_preset, _LENGTH_PRESET_RULES['标准'])}"
     )
+    output_language = _normalize_output_language(output_language)
+    if output_language == "中文":
+        system += "\n\nOutput language:\nWrite the final caption in fluent, natural Simplified Chinese. For JSON output, keep all keys exactly as required, but write descriptive string values in Simplified Chinese."
+    else:
+        system += "\n\nOutput language:\nWrite the final caption in fluent, common, modern English."
     if extra_rules and str(extra_rules).strip():
         system += "\n\nAdditional user rules:\n" + str(extra_rules).strip()
     prompt_text = str(prompt_input or "").strip()
@@ -535,6 +576,110 @@ class NO8DPromptPlus:
         return (result,)
 
 
+class NO8DBatchPromptPlus:
+    _cache = {}
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        prompt_rule_names = prompt_config_manager.prompt_rule_names()
+        prompt_rule_inputs = prompt_rule_names + [
+            name for name in ("Natural language", "JSON structure") if name not in prompt_rule_names
+        ]
+        return {
+            "required": {
+                "images": ("IMAGE",),
+                "prompt_rules": (prompt_rule_inputs, {"default": _RULE_NATURAL}),
+                "style_preset": (_STYLE_PRESET_INPUTS, {"default": "专业摄影"}),
+                "length_preset": (_LENGTH_PRESET_INPUTS, {"default": "标准"}),
+                "output_language": (_OUTPUT_LANGUAGE_INPUTS, {"default": "英文"}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFFFFFFFFFF, "control_after_generate": True}),
+                "extra_rules": ("STRING", {"default": "", "multiline": True}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("captions", "combined")
+    OUTPUT_IS_LIST = (True, False)
+    FUNCTION = "run"
+    CATEGORY = "NO8D-control"
+
+    @classmethod
+    def IS_CHANGED(cls, images, prompt_rules, style_preset="专业摄影", length_preset="标准", output_language="英文", seed=0, extra_rules=""):
+        service, model_cfg = prompt_config_manager.current_service()
+        encoded = _images_to_data_urls(images)
+        prompt_rule = prompt_config_manager.normalize_prompt_rule_name(prompt_rules)
+        style_preset = _normalize_style_preset(style_preset)
+        length_preset = _normalize_length_preset(length_preset)
+        output_language = _normalize_output_language(output_language)
+        payload = {
+            "image_hashes": [image_hash for _, image_hash in encoded],
+            "prompt_rules": prompt_rule,
+            "prompt_rule_text": prompt_config_manager.prompt_rule_text(prompt_rule),
+            "style_preset": style_preset,
+            "style_preset_rule": _style_preset_rule(style_preset),
+            "length_preset": length_preset,
+            "length_preset_rule": _LENGTH_PRESET_RULES.get(length_preset, _LENGTH_PRESET_RULES["标准"]),
+            "output_language": output_language,
+            "service_id": service.get("id"),
+            "api_base_url": service.get("base_url", ""),
+            "model": model_cfg.get("name", ""),
+            "api_key": _api_key_fingerprint(service.get("api_key", "")),
+            "temperature": _safe_float(model_cfg.get("temperature"), 0.7),
+            "seed": _safe_int(seed, 0),
+            "extra_rules": extra_rules,
+        }
+        return hashlib.sha1(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+    def run(self, images, prompt_rules, style_preset="专业摄影", length_preset="标准", output_language="英文", seed=0, extra_rules=""):
+        encoded = _images_to_data_urls(images)
+        if not encoded:
+            return ([], "")
+
+        service, model_cfg = prompt_config_manager.current_service()
+        api_base_url = service.get("base_url", "")
+        api_key = service.get("api_key", "") or os.getenv("NO8D_PROMPT_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
+        model = model_cfg.get("name", "")
+        temperature = _safe_float(model_cfg.get("temperature"), 0.7)
+        prompt_rule = prompt_config_manager.normalize_prompt_rule_name(prompt_rules)
+        if prompt_rule not in prompt_config_manager.prompt_rule_names():
+            prompt_rule = _RULE_NATURAL
+        style_preset = _normalize_style_preset(style_preset)
+        length_preset = _normalize_length_preset(length_preset)
+        output_language = _normalize_output_language(output_language)
+        max_tokens = _max_tokens_for_length(length_preset)
+        base_seed = _safe_int(seed, 0)
+        captions = []
+
+        for index, (image_data_url, image_hash) in enumerate(encoded):
+            effective_seed = base_seed + index if base_seed else 0
+            instruction = f"Reverse-engineer image {index + 1} of {len(encoded)} into a high-quality prompt following the selected output rules."
+            messages = _build_messages(instruction, prompt_rule, extra_rules, effective_seed, image_data_url, style_preset, length_preset, output_language)
+            cache_payload = {
+                "messages": _message_cache_text(messages),
+                "service_id": service.get("id"),
+                "base_url": api_base_url,
+                "model": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "seed": effective_seed,
+                "image": image_hash,
+                "output_language": output_language,
+            }
+            cache_key = hashlib.sha1(json.dumps(cache_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+            if cache_key in self._cache:
+                result = self._cache[cache_key]
+            else:
+                raw = _chat_completion(api_base_url, api_key, model, messages, temperature, max_tokens, effective_seed)
+                result = _clean_prompt_output(raw, prompt_rule)
+                self._cache[cache_key] = result
+                while len(self._cache) > 128:
+                    self._cache.pop(next(iter(self._cache)))
+            captions.append(result)
+
+        combined = "\n\n".join(f"[{index + 1:03d}]\n{caption}" for index, caption in enumerate(captions))
+        return (captions, combined)
+
+
 class NO8DPromptView:
     _last_send_seq = {}
 
@@ -592,10 +737,12 @@ class NO8DPromptView:
 
 NODE_CLASS_MAPPINGS = {
     "NO8DPromptPlus": NO8DPromptPlus,
+    "NO8DBatchPromptPlus": NO8DBatchPromptPlus,
     "NO8DPromptView": NO8DPromptView,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "NO8DPromptPlus": "NO8D-Prompt-plus",
+    "NO8DBatchPromptPlus": "NO8D-Batch-Prompt-plus",
     "NO8DPromptView": "NO8D-Prompt-view",
 }
