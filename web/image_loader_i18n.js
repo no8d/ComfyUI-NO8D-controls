@@ -10,7 +10,7 @@ const WIDGET_LABELS = {
 const SLOT_LABELS = {
     images: "imageLoaderImages",
 };
-const LOADER_MIN_WIDTH = 420;
+const LOADER_MIN_WIDTH = 390;
 const LOADER_MIN_HEIGHT = 180;
 const DRAG_MIME = "application/x-no8d-image-loader-index";
 
@@ -517,7 +517,9 @@ function makeUi(node) {
         "flex-direction:column",
         "gap:8px",
         "width:100%",
+        "max-width:100%",
         "height:100%",
+        "min-width:0",
         "min-height:0",
         "overflow:hidden",
         "box-sizing:border-box",
@@ -597,6 +599,7 @@ function makeUi(node) {
         "display:flex",
         "gap:10px",
         "align-content:flex-start",
+        "width:100%",
         "min-width:0",
         "min-height:0",
         "height:auto",
@@ -876,6 +879,8 @@ function installLoaderUi(node) {
         wrapper.classList.add("no8d-image-loader-widget");
         wrapper.style.overflow = "hidden";
         wrapper.style.boxSizing = "border-box";
+        wrapper.style.width = "100%";
+        wrapper.style.maxWidth = "100%";
         wrapper.style.minHeight = "0";
         wrapper.style.display = "flex";
         wrapper.style.flexDirection = "column";
