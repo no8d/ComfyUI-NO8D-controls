@@ -29,6 +29,7 @@ All nodes are available under the `NO8D-control` category.
 - `NO8D-Prompt`
 - `NO8D-Prompt-view`
 - `NO8D save`
+- `NO8D-Empty latent`
 
 ## Installation
 
@@ -64,6 +65,20 @@ Batch caption workflow:
 ```text
 NO8D-Load-images -> NO8D-Prompt -> NO8D save
 ```
+
+## NO8D-Empty Latent
+
+`NO8D-Empty latent` creates an empty latent with common aspect ratios and short-side sizes.
+
+![NO8D-Empty latent illustration](docs/images/empty-latent-node.png)
+
+Features:
+
+- Choose a model family: SD/SDXL, SD3/Flux/Krea2, or Flux2.
+- Choose common aspect ratios: 1:2, 9:16, 2:3, 3:4, 1:1, 4:3, 3:2, 16:9, and 2:1.
+- Choose a common short-side size.
+- Optionally enter manual width and height. If both are set, they override the aspect ratio. If only one is set, the other side is calculated from the selected aspect ratio.
+- Output the latent together with the calculated width and height.
 
 ## NO8D-LoRA Stack
 
