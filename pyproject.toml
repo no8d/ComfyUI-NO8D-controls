@@ -15,7 +15,7 @@ Repository = "https://github.com/no8d/ComfyUI-NO8D-controls"
 Issues = "https://github.com/no8d/ComfyUI-NO8D-controls/issues"
 
 [tool.comfy]
-PublisherId = "no8d"
+PublisherId = "no8day"
 DisplayName = "NO8D-controls"
 Icon = "https://raw.githubusercontent.com/no8d/ComfyUI-NO8D-controls/main/docs/images/no8d-icon.png"
 Banner = "https://raw.githubusercontent.com/no8d/ComfyUI-NO8D-controls/main/docs/images/no8d-banner-registry.jpg"
