@@ -51,7 +51,7 @@ NO8D-图像载入 -> NO8D-提示词 -> NO8D-提示词预览 / NO8D-图文保存
 
 用于在一个节点中组合多个 LoRA，并输出应用 LoRA 后的模型。
 
-![NO8D-LoRA 堆栈](docs/images/stack-node.png)
+![NO8D-LoRA 堆栈](docs/images/stack-node-readme.jpg)
 
 - 在一个节点里添加、删除、启用、关闭和排序多个 LoRA。
 - 用滑条或数字框调整每个 LoRA 的权重。
@@ -129,7 +129,7 @@ NO8D-图像载入 -> NO8D-提示词 -> NO8D-提示词预览 / NO8D-图文保存
 
 按常见模型类型、比例和短边尺寸创建空 latent。
 
-![NO8D-空 latent](docs/images/empty-latent-node.png)
+![NO8D-空 latent](docs/images/empty-latent-node-readme.jpg)
 
 - 支持 SD/SDXL、SD3/Flux/Krea2、Flux2 等尺寸预设。
 - 支持常见竖图比例和反转后的横图比例。

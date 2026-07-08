@@ -54,7 +54,7 @@ NO8D-Load-images -> NO8D-Prompt -> NO8D-Prompt-view / NO8D save
 
 Applies multiple LoRAs to a model without requiring a CLIP input.
 
-![NO8D-LoRA stack](docs/images/stack-node.png)
+![NO8D-LoRA stack](docs/images/stack-node-readme.jpg)
 
 - Add, delete, enable, disable, and reorder LoRAs in one node.
 - Adjust LoRA strength with a slider or a number box.
@@ -132,7 +132,7 @@ Saves image/caption datasets with configurable filename parts.
 
 Creates empty latents for common model families and aspect ratios.
 
-![NO8D-Empty latent](docs/images/empty-latent-node.png)
+![NO8D-Empty latent](docs/images/empty-latent-node-readme.jpg)
 
 - Supports SD/SDXL, SD3/Flux/Krea2, and Flux2 sizing presets.
 - Supports common portrait ratios and inverted landscape ratios.
