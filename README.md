@@ -54,6 +54,8 @@ NO8D-Load-images -> NO8D-Prompt -> NO8D-Prompt-view / NO8D save
 
 Applies multiple LoRAs to a model without requiring a CLIP input.
 
+![NO8D-LoRA stack](docs/images/stack-node.png)
+
 - Add, delete, enable, disable, and reorder LoRAs in one node.
 - Adjust LoRA strength with a slider or a number box.
 - Customize each slider's minimum and maximum value.

@@ -51,6 +51,8 @@ NO8D-图像载入 -> NO8D-提示词 -> NO8D-提示词预览 / NO8D-图文保存
 
 用于在一个节点中组合多个 LoRA，并输出应用 LoRA 后的模型。
 
+![NO8D-LoRA 堆栈](docs/images/stack-node.png)
+
 - 在一个节点里添加、删除、启用、关闭和排序多个 LoRA。
 - 用滑条或数字框调整每个 LoRA 的权重。
 - 每个 LoRA 可以设置独立的最小值和最大值。
