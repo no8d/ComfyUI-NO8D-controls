@@ -185,3 +185,4 @@ git diff --check
 - 不提交本地配置目录 `config/`。
 - 不提交 API key、缓存、日志和临时文件。
 - `node.zip` 是本地压缩包，不应作为源码提交，除非明确需要发布压缩包。
+- 示例工作流放在 `examples/NO8D-controls-example.json`。公开前需要移除本地绝对路径、私有 LoRA 文件、临时预览图和本地图像选择。

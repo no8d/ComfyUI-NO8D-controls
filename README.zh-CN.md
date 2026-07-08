@@ -45,6 +45,10 @@ NO8D-生成 -> NO8D-A/B 对比
 NO8D-图像载入 -> NO8D-提示词 -> NO8D-提示词预览 / NO8D-图文保存
 ```
 
+项目内置了一个 ComfyUI 示例工作流：[examples/NO8D-controls-example.json](examples/NO8D-controls-example.json)。
+
+这个示例保留节点布局和连接关系，但已经移除本地图像选择、私有 LoRA 路径、临时预览图片和本地保存路径，方便公开分享。导入后请替换为自己的图像和 LoRA。
+
 ## 节点说明
 
 ### NO8D-LoRA 堆栈

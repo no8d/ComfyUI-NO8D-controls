@@ -48,6 +48,10 @@ NO8D-Generate -> NO8D-A/B preview
 NO8D-Load-images -> NO8D-Prompt -> NO8D-Prompt-view / NO8D save
 ```
 
+An example ComfyUI workflow is included at [examples/NO8D-controls-example.json](examples/NO8D-controls-example.json).
+
+The example keeps the node layout and connections, but local image selections, private LoRA paths, temporary previews, and local save paths are removed so it can be shared safely. Load your own images and LoRAs after importing it.
+
 ## Node behavior
 
 ### NO8D-LoRA stack

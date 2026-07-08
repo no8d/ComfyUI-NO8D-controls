@@ -1,0 +1,1309 @@
+{
+  "id": "2fa2ba21-58fb-4aca-a0c6-6c61f5d588ab",
+  "revision": 0,
+  "last_node_id": 1361,
+  "last_link_id": 3217,
+  "nodes": [
+    {
+      "id": 1246,
+      "type": "UNETLoader",
+      "pos": [
+        -22500,
+        930
+      ],
+      "size": [
+        400,
+        90
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            3074
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader",
+        "cnr_id": "comfy-core",
+        "ver": "0.25.0",
+        "models": [
+          {
+            "name": "krea2_turbo_fp8_scaled.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/diffusion_models/krea2_turbo_fp8_scaled.safetensors",
+            "directory": "diffusion_models"
+          }
+        ]
+      },
+      "widgets_values": [
+        "krea2_turbo_fp8_scaled.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 913,
+      "type": "CLIPLoader",
+      "pos": [
+        -22500,
+        1080
+      ],
+      "size": [
+        400,
+        110
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            2270
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader",
+        "cnr_id": "comfy-core",
+        "ver": "0.8.2",
+        "models": [
+          {
+            "name": "qwen_3_8b_fp8mixed.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/flux2-klein-9B/resolve/main/split_files/text_encoders/qwen_3_8b_fp8mixed.safetensors",
+            "directory": "text_encoders"
+          }
+        ],
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65,
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "qwen3vl_4b_fp8_scaled.safetensors",
+        "krea2",
+        "default"
+      ]
+    },
+    {
+      "id": 1201,
+      "type": "MarkdownNote",
+      "pos": [
+        -24400,
+        830
+      ],
+      "size": [
+        500,
+        170
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "## [comfyui-NO8D-controls nodes](https://github.com/no8d/ComfyUI-NO8D-controls)"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 989,
+      "type": "CLIPTextEncode",
+      "pos": [
+        -22500,
+        1250
+      ],
+      "size": [
+        400,
+        90
+      ],
+      "flags": {
+        "collapsed": false,
+        "pinned": true
+      },
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 2270
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": 3071
+        }
+      ],
+      "outputs": [
+        {
+          "label": "条件",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "slot_index": 0,
+          "links": [
+            3112,
+            3144
+          ]
+        }
+      ],
+      "title": "CLIP Text Encode (Positive Prompt)",
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode",
+        "cnr_id": "comfy-core",
+        "ver": "0.8.2",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65,
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "A realistic photo of a person with a very obese body"
+      ]
+    },
+    {
+      "id": 1300,
+      "type": "NO8DEmptyLatent",
+      "pos": [
+        -22500,
+        1400
+      ],
+      "size": [
+        400,
+        250
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "label": "latent",
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            3114
+          ]
+        },
+        {
+          "label": "width",
+          "name": "width",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "label": "height",
+          "name": "height",
+          "type": "INT",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DEmptyLatent"
+      },
+      "widgets_values": [
+        "SD3 / Flux / Krea2",
+        "768",
+        "2:3",
+        false,
+        0,
+        0,
+        1
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1264,
+      "type": "VAEUtils_CustomVAELoader",
+      "pos": [
+        -22500,
+        1710
+      ],
+      "size": [
+        400,
+        90
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            2977,
+            3127,
+            3186
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEUtils_CustomVAELoader"
+      },
+      "widgets_values": [
+        "Wan2.1_VAE_upscale2x_imageonly_real_v1.safetensors",
+        true
+      ]
+    },
+    {
+      "id": 1203,
+      "type": "MarkdownNote",
+      "pos": [
+        -22500,
+        1830
+      ],
+      "size": [
+        400,
+        170
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "## [Conditioning Krea2 Rebalance node](https://github.com/nova452/ComfyUI-Conditioning-Rebalance)"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 1348,
+      "type": "NO8DLoadImages",
+      "pos": [
+        -23800,
+        930
+      ],
+      "size": [
+        600,
+        870
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "label": "Images",
+          "name": "images",
+          "shape": 6,
+          "type": "IMAGE",
+          "links": [
+            3214
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DLoadImages",
+        "no8d_image_loader_source": "temp",
+        "no8d_image_loader_output_keys": [],
+        "no8d_image_loader_thumb_size": 155,
+        "no8d_image_loader_prev_thumb_size": 155
+      },
+      "widgets_values": [
+        "[]",
+        "[]"
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1301,
+      "type": "NO8DLoraStack",
+      "pos": [
+        -22050,
+        930
+      ],
+      "size": [
+        650,
+        870
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 3074
+        }
+      ],
+      "outputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "links": [
+            3125,
+            3217
+          ]
+        },
+        {
+          "name": "trigger_words",
+          "type": "STRING",
+          "links": [
+            3215
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DLoraStack"
+      },
+      "widgets_values": [
+        "None",
+        "[]",
+        ""
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1281,
+      "type": "NO8DPromptView",
+      "pos": [
+        -23150,
+        1340
+      ],
+      "size": [
+        450,
+        460
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "Text",
+          "name": "text",
+          "shape": 7,
+          "type": "STRING",
+          "link": 3216
+        }
+      ],
+      "outputs": [
+        {
+          "label": "Positive",
+          "name": "positive",
+          "type": "STRING",
+          "links": [
+            3071,
+            3202
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DPromptView"
+      },
+      "widgets_values": [
+        true,
+        "atmospheric photography.\nA medium close-up photo of an Irish female model named NO8D with vibrant red hair styled in double buns featuring platinum-blonde highlights in her bangs, blue eyes, round pink glasses, and freckles across her face, smiling broadly while baring her teeth and gritting them with corners of her mouth turned up, showing a \"NO8D\" tattoo on one cheek. She sits on a bed with floral-patterned sheets surrounded by green walls adorned with photos and notes, bathed in warm golden-hour light streaming through yellow curtains.",
+        "0",
+        null
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1340,
+      "type": "ImageAddNoise",
+      "pos": [
+        -21200,
+        1100
+      ],
+      "size": [
+        280,
+        110
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 3184
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            3185
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageAddNoise"
+      },
+      "widgets_values": [
+        9,
+        "fixed",
+        0.03
+      ]
+    },
+    {
+      "id": 1268,
+      "type": "VAEEncode",
+      "pos": [
+        -20750,
+        930
+      ],
+      "size": [
+        150,
+        110
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "pixels",
+          "type": "IMAGE",
+          "link": 2976
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 2977
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            3209
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEEncode",
+        "cnr_id": "comfy-core",
+        "ver": "0.26.0",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.2"
+        }
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 1266,
+      "type": "ImageScaleToTotalPixels",
+      "pos": [
+        -21200,
+        930
+      ],
+      "size": [
+        440,
+        110
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 3124
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            2976
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageScaleToTotalPixels",
+        "cnr_id": "comfy-core",
+        "ver": "0.26.0",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.2"
+        }
+      },
+      "widgets_values": [
+        "lanczos",
+        2,
+        16
+      ]
+    },
+    {
+      "id": 1344,
+      "type": "RTXVideoSuperResolution",
+      "pos": [
+        -20910,
+        1100
+      ],
+      "size": [
+        310,
+        110
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 3185
+        }
+      ],
+      "outputs": [
+        {
+          "name": "upscaled_images",
+          "type": "IMAGE",
+          "links": [
+            3192,
+            3201,
+            3203
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RTXVideoSuperResolution"
+      },
+      "widgets_values": [
+        "scale by multiplier",
+        2,
+        "ULTRA"
+      ]
+    },
+    {
+      "id": 1351,
+      "type": "NO8DSaveImageTextDataset",
+      "pos": [
+        -21200,
+        1270
+      ],
+      "size": [
+        600,
+        530
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 3201
+        },
+        {
+          "name": "caption",
+          "shape": 7,
+          "type": "STRING",
+          "link": 3202
+        },
+        {
+          "name": "metadata",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "NO8DSaveImageTextDataset"
+      },
+      "widgets_values": [
+        "NO8D_dataset",
+        "[{\"variable\":\"none\",\"text\":\"test\"},{\"variable\":\"original_name\",\"text\":\"\"},{\"variable\":\"datetime\",\"text\":\"\"},{\"variable\":\"size_class\",\"text\":\"\"}]",
+        "png",
+        100,
+        false
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1352,
+      "type": "PreviewImage",
+      "pos": [
+        -21280,
+        -270
+      ],
+      "size": [
+        780,
+        1040
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 20,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 3203
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 1317,
+      "type": "NO8DGenerate",
+      "pos": [
+        -23900,
+        -270
+      ],
+      "size": [
+        880,
+        1040
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 3217
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 3112
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 3186
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "link": 3114
+        },
+        {
+          "name": "negative",
+          "shape": 7,
+          "type": "CONDITIONING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            3124,
+            3195
+          ]
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "links": null
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DGenerate",
+        "no8d_generate_preview": {
+          "filename": "ComfyUI_temp_blsit_00008_.png",
+          "subfolder": "",
+          "type": "temp"
+        }
+      },
+      "widgets_values": [
+        9,
+        1,
+        "euler_ancestral",
+        "ddim_uniform",
+        440830293450990,
+        "randomize",
+        1,
+        100,
+        "",
+        "{\"base_image_file\":\"\",\"mask_image_file\":\"\",\"mask_active\":false,\"brush_size\":80,\"eraser_size\":80,\"mask_opacity\":0.4,\"mask_color\":\"#66ccff\"}"
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1323,
+      "type": "NO8DGenerate",
+      "pos": [
+        -23000,
+        -270
+      ],
+      "size": [
+        870,
+        1040
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 3125
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 3144
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 3127
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "link": 3209
+        },
+        {
+          "name": "negative",
+          "shape": 7,
+          "type": "CONDITIONING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            3184
+          ]
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "links": []
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DGenerate",
+        "no8d_generate_preview": {
+          "filename": "ComfyUI_temp_afdlc_00009_.png",
+          "subfolder": "",
+          "type": "temp"
+        }
+      },
+      "widgets_values": [
+        9,
+        1,
+        "euler_ancestral",
+        "ddim_uniform",
+        861555840992187,
+        "randomize",
+        0.9,
+        100,
+        "",
+        "{\"base_image_file\":\"\",\"mask_image_file\":\"\",\"mask_active\":false,\"brush_size\":80,\"eraser_size\":80,\"mask_opacity\":0.4,\"mask_color\":\"#66ccff\"}"
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1339,
+      "type": "NO8DABPreview",
+      "pos": [
+        -22110,
+        -270
+      ],
+      "size": [
+        810,
+        1040
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image_a",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 3195
+        },
+        {
+          "name": "image_b",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 3192
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "NO8DABPreview"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1357,
+      "type": "NO8DBatchPromptPlus",
+      "pos": [
+        -23150,
+        930
+      ],
+      "size": [
+        450,
+        350
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "Images",
+          "name": "images",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 3214
+        },
+        {
+          "name": "fixed_text",
+          "type": "STRING",
+          "widget": {
+            "name": "fixed_text"
+          },
+          "link": 3215
+        }
+      ],
+      "outputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "shape": 6,
+          "type": "STRING",
+          "links": [
+            3216
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DBatchPromptPlus"
+      },
+      "widgets_values": [
+        "Natural language",
+        "Auto",
+        "Auto",
+        "Standard",
+        "English",
+        "",
+        "",
+        1036730314152205,
+        "randomize"
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1154,
+      "type": "Label (rgthree)",
+      "pos": [
+        -23790,
+        -720
+      ],
+      "size": [
+        3073.2421875,
+        240
+      ],
+      "flags": {
+        "pinned": true,
+        "allow_interaction": false
+      },
+      "order": 7,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "🥸NO8D-Controls Krea 2✨",
+      "properties": {
+        "fontSize": 240,
+        "fontFamily": "Arial",
+        "fontColor": "orange",
+        "textAlign": "left",
+        "backgroundColor": "transparent",
+        "padding": 0,
+        "borderRadius": 0,
+        "angle": 0,
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "color": "#fff0",
+      "bgcolor": "#fff0"
+    }
+  ],
+  "links": [
+    [
+      2270,
+      913,
+      0,
+      989,
+      0,
+      "CLIP"
+    ],
+    [
+      2976,
+      1266,
+      0,
+      1268,
+      0,
+      "IMAGE"
+    ],
+    [
+      2977,
+      1264,
+      0,
+      1268,
+      1,
+      "VAE"
+    ],
+    [
+      3071,
+      1281,
+      0,
+      989,
+      1,
+      "STRING"
+    ],
+    [
+      3074,
+      1246,
+      0,
+      1301,
+      0,
+      "MODEL"
+    ],
+    [
+      3112,
+      989,
+      0,
+      1317,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      3114,
+      1300,
+      0,
+      1317,
+      3,
+      "LATENT"
+    ],
+    [
+      3124,
+      1317,
+      0,
+      1266,
+      0,
+      "IMAGE"
+    ],
+    [
+      3125,
+      1301,
+      0,
+      1323,
+      0,
+      "MODEL"
+    ],
+    [
+      3127,
+      1264,
+      0,
+      1323,
+      2,
+      "VAE"
+    ],
+    [
+      3144,
+      989,
+      0,
+      1323,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      3184,
+      1323,
+      0,
+      1340,
+      0,
+      "IMAGE"
+    ],
+    [
+      3185,
+      1340,
+      0,
+      1344,
+      0,
+      "IMAGE"
+    ],
+    [
+      3186,
+      1264,
+      0,
+      1317,
+      2,
+      "VAE"
+    ],
+    [
+      3192,
+      1344,
+      0,
+      1339,
+      1,
+      "IMAGE"
+    ],
+    [
+      3195,
+      1317,
+      0,
+      1339,
+      0,
+      "IMAGE"
+    ],
+    [
+      3201,
+      1344,
+      0,
+      1351,
+      0,
+      "IMAGE"
+    ],
+    [
+      3202,
+      1281,
+      0,
+      1351,
+      1,
+      "STRING"
+    ],
+    [
+      3203,
+      1344,
+      0,
+      1352,
+      0,
+      "IMAGE"
+    ],
+    [
+      3209,
+      1268,
+      0,
+      1323,
+      3,
+      "LATENT"
+    ],
+    [
+      3214,
+      1348,
+      0,
+      1357,
+      0,
+      "IMAGE"
+    ],
+    [
+      3215,
+      1301,
+      1,
+      1357,
+      1,
+      "STRING"
+    ],
+    [
+      3216,
+      1357,
+      0,
+      1281,
+      0,
+      "STRING"
+    ],
+    [
+      3217,
+      1301,
+      0,
+      1317,
+      0,
+      "MODEL"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "2k",
+      "bounding": [
+        1310,
+        -1950,
+        1200,
+        900
+      ],
+      "color": "#3f789e",
+      "flags": {
+        "pinned": true
+      }
+    },
+    {
+      "id": 3,
+      "title": "base",
+      "bounding": [
+        -22600,
+        800,
+        1300,
+        1100
+      ],
+      "color": "#3f789e",
+      "flags": {}
+    },
+    {
+      "id": 5,
+      "title": "upscale",
+      "bounding": [
+        -21300,
+        800,
+        800,
+        1100
+      ],
+      "color": "#3f789e",
+      "flags": {
+        "pinned": true
+      }
+    },
+    {
+      "id": 6,
+      "title": "prompt",
+      "bounding": [
+        -23900,
+        800,
+        1300,
+        1100
+      ],
+      "color": "#3f789e",
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.3719008264462851,
+      "offset": [
+        24971.367897322718,
+        1006.0788638066192
+      ]
+    },
+    "frontendVersion": "1.45.20",
+    "workflowRendererVersion": "LG",
+    "groupNodes": {},
+    "ue_links": [],
+    "node_versions": {
+      "comfy-core": "0.3.14",
+      "ComfyUI-DepthAnythingV2": "003d7b44bafd3a8a4c3693a9ca3ddcd72f4883ab",
+      "ComfyUI-AutomaticCFG": "2e395317b65c05a97a0ef566c4a8c7969305dafa",
+      "teacache": "1.2.2",
+      "ComfyUI-Custom-Scripts": "bc8922deff73f59311c05cef27b9d4caaf43e87b",
+      "ComfyUI_Comfyroll_CustomNodes": "d78b780ae43fcf8c6b7c6505e6ffb4584281ceca",
+      "ComfyUI-post-processing-nodes": "c49a05254795403648f2c1774b6f5ea39f96e7d5",
+      "was-node-suite-comfyui": "056badacda52e88d29d6a65f9509cd3115ace0f2",
+      "ComfyUI_UltimateSDUpscale": "ff3fdfeee03de46d4462211cffd165d27155e858",
+      "comfyui-dynamicprompts": "3f2fff32358cf39e21b8b440ca87eac9a8e2bade"
+    },
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true,
+    "links_added_by_ue": []
+  },
+  "version": 0.4
+}
