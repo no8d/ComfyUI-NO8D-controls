@@ -1,0 +1,15 @@
+# Files useful for repository documentation but unnecessary in the Registry install archive.
+.github/
+docs/
+PROJECT_LOG.md
+prompt_*_preview.png
+node.zip
+
+# Local/editor/cache files. Untracked files are already excluded by git, but keep
+# this explicit so local and CI packaging stay aligned.
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.log
+*.tmp
+*.bak
