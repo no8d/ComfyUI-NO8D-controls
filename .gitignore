@@ -18,6 +18,7 @@ desktop.ini
 *.log
 *.tmp
 *.bak
+node.zip
 
 config/
 prompt_*_preview.png

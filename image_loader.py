@@ -26,8 +26,6 @@ except Exception:
 _API_PREFIX = "/no8d-control/api"
 _THUMB_CACHE = {}
 _THUMB_CACHE_LIMIT = 512
-
-
 def _input_directory():
     if folder_paths is not None:
         try:
@@ -192,13 +190,13 @@ class NO8DLoadImages:
     @classmethod
     def IS_CHANGED(cls, image_files="[]", output_files="[]"):
         output_refs = _parse_image_refs(output_files)
-        refs = output_refs or _parse_image_refs(image_files)
+        refs = output_refs if output_refs else _parse_image_refs(image_files)
         paths = [_ref_to_path(ref) for ref in refs]
         return _fingerprint(paths, f"{image_files}\n{output_files}")
 
     def load(self, image_files="[]", output_files="[]"):
         output_refs = _parse_image_refs(output_files)
-        refs = output_refs or _parse_image_refs(image_files)
+        refs = output_refs if output_refs else _parse_image_refs(image_files)
         paths = [_ref_to_path(ref) for ref in refs]
         if not paths:
             raise ValueError("NO8D-Load-images: no images selected.")

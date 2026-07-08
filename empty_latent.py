@@ -11,15 +11,13 @@ MODEL_TYPES = [
 ]
 
 ASPECT_RATIOS = {
+    "1:1": (1, 1),
     "1:2": (1, 2),
-    "9:16": (9, 16),
     "2:3": (2, 3),
     "3:4": (3, 4),
-    "1:1": (1, 1),
-    "4:3": (4, 3),
-    "3:2": (3, 2),
-    "16:9": (16, 9),
-    "2:1": (2, 1),
+    "4:5": (4, 5),
+    "9:16": (9, 16),
+    "9:21": (9, 21),
 }
 
 SHORT_SIDES = ["512", "640", "768", "896", "1024", "1280", "1536"]
@@ -30,8 +28,15 @@ def _round_to_multiple(value, multiple):
     return max(multiple, min(value, nodes.MAX_RESOLUTION))
 
 
-def _size_from_short_side(aspect_ratio, short_side, multiple):
+def _ratio(aspect_ratio, invert_ratio):
     ratio_w, ratio_h = ASPECT_RATIOS[aspect_ratio]
+    if invert_ratio:
+        ratio_w, ratio_h = ratio_h, ratio_w
+    return ratio_w, ratio_h
+
+
+def _size_from_short_side(aspect_ratio, short_side, invert_ratio, multiple):
+    ratio_w, ratio_h = _ratio(aspect_ratio, invert_ratio)
     short_side = int(short_side)
 
     if ratio_w >= ratio_h:
@@ -44,8 +49,8 @@ def _size_from_short_side(aspect_ratio, short_side, multiple):
     return _round_to_multiple(width, multiple), _round_to_multiple(height, multiple)
 
 
-def _size_from_manual_or_short_side(aspect_ratio, short_side, manual_width, manual_height, multiple):
-    ratio_w, ratio_h = ASPECT_RATIOS[aspect_ratio]
+def _size_from_manual_or_short_side(aspect_ratio, short_side, invert_ratio, manual_width, manual_height, multiple):
+    ratio_w, ratio_h = _ratio(aspect_ratio, invert_ratio)
     manual_width = int(manual_width or 0)
     manual_height = int(manual_height or 0)
 
@@ -57,7 +62,7 @@ def _size_from_manual_or_short_side(aspect_ratio, short_side, manual_width, manu
     if manual_height > 0:
         width = manual_height * ratio_w / ratio_h
         return _round_to_multiple(width, multiple), _round_to_multiple(manual_height, multiple)
-    return _size_from_short_side(aspect_ratio, short_side, multiple)
+    return _size_from_short_side(aspect_ratio, short_side, invert_ratio, multiple)
 
 
 class NO8DEmptyLatent:
@@ -66,8 +71,9 @@ class NO8DEmptyLatent:
         return {
             "required": {
                 "model_type": (MODEL_TYPES, {"default": "SD / SDXL"}),
-                "aspect_ratio": (list(ASPECT_RATIOS.keys()), {"default": "1:1"}),
                 "short_side": (SHORT_SIDES, {"default": "512"}),
+                "aspect_ratio": (list(ASPECT_RATIOS.keys()), {"default": "1:1"}),
+                "invert_ratio": ("BOOLEAN", {"default": False}),
                 "manual_width": ("INT", {"default": 0, "min": 0, "max": nodes.MAX_RESOLUTION, "step": 16}),
                 "manual_height": ("INT", {"default": 0, "min": 0, "max": nodes.MAX_RESOLUTION, "step": 16}),
                 "batch_size": ("INT", {"default": 1, "min": 1, "max": 4096}),
@@ -80,7 +86,7 @@ class NO8DEmptyLatent:
     CATEGORY = "NO8D-control"
     DESCRIPTION = "Create an empty latent by choosing a model family, aspect ratio, short side size, or manual width and height."
 
-    def generate(self, model_type, aspect_ratio, short_side, manual_width=0, manual_height=0, batch_size=1):
+    def generate(self, model_type, short_side, aspect_ratio, invert_ratio=False, manual_width=0, manual_height=0, batch_size=1):
         if model_type == "Flux2":
             multiple = 16
             channels = 128
@@ -97,6 +103,7 @@ class NO8DEmptyLatent:
         width, height = _size_from_manual_or_short_side(
             aspect_ratio,
             short_side,
+            invert_ratio,
             manual_width,
             manual_height,
             multiple,

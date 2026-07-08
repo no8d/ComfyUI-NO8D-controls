@@ -43,8 +43,8 @@ Return exactly one JSON object using this top-level key order:
   "style_description": {
     "aesthetics": "",
     "lighting": "",
-    "photo": "",
     "medium": "",
+    "art_style": "",
     "color_palette": []
   },
   "compositional_deconstruction": {
@@ -69,18 +69,16 @@ style_description field rules:
 - `aesthetics`: overall visual style and treatment, such as clean product photography, moody cinematic realism, flat vector illustration, glossy 3D render, watercolor, anime key art, or editorial poster design.
 - `lighting`: light source, direction, quality, contrast, and color temperature.
 - `medium`: the medium category, such as photography, oil painting, digital illustration, 3D render, watercolor, flat vector design, collage, or poster design.
-- `photo`: camera, lens, film, aperture, depth of field, or photographic specifics when the image is photographic.
-- `art_style`: non-photographic rendering style, such as flat vector design, generous whitespace, sans-serif typography, cel shading, hand-painted watercolor, or glossy 3D toy render.
+- `art_style`: required rendering-style description. For photographic images, include camera/lens/film/depth-of-field/photo-specific language here. For non-photographic images, include the artistic rendering style, such as flat vector design, generous whitespace, sans-serif typography, cel shading, hand-painted watercolor, or glossy 3D toy render.
 - `color_palette`: 3-6 dominant colors of the overall image as uppercase hex codes in `#RRGGBB` form.
-- For photographic outputs, preserve this key order: `aesthetics`, `lighting`, `photo`, `medium`, `color_palette`.
-- For non-photographic outputs, do not include `photo`; preserve this key order instead: `aesthetics`, `lighting`, `medium`, `art_style`, `color_palette`.
+- Always preserve this key order: `aesthetics`, `lighting`, `medium`, `art_style`, `color_palette`.
 
 compositional_deconstruction.background:
 - Describe only the environment behind and around the subjects: setting, surface, atmosphere, depth cues, and broad spatial context.
 - Do not describe any subject or object that is listed in `elements`.
 
 compositional_deconstruction.elements:
-- Use 3-8 elements unless the user explicitly asks for more or fewer. Use at least 1 element.
+- For standard-length output, use 1-6 elements. For detailed output, use 3-9 elements. Use at least 1 element.
 - List elements roughly background-to-foreground.
 - Use deliberate placement and varied depth. Avoid centering every element.
 - Bounding boxes must match the prose: an element described as midground left should have smaller x values than one described as right.
@@ -90,11 +88,11 @@ compositional_deconstruction.elements:
 Structured element shapes:
 - Object element key order: `{"type":"obj","bbox":[y_min,x_min,y_max,x_max],"desc":"","color_palette":[]}`
 - Text element key order: `{"type":"text","bbox":[y_min,x_min,y_max,x_max],"text":"","desc":"","color_palette":[]}`
-- `bbox` and `color_palette` are optional. Include them when they help layout or color control; omit them when the element is already clear.
+- `bbox` is required for every element. `color_palette` is required for every element.
 
 Element field rules:
 - `type`: use `"obj"` for people, animals, objects, props, environmental features, or visual subjects. Use `"text"` only when the user requests visible text, signage, labels, typography, posters, UI text, or quoted words.
-- `bbox`: optional four integers on a normalized 1000 x 1000 canvas, origin at the top-left, in `[y_min, x_min, y_max, x_max]` order. If used, it must satisfy `0 <= y_min < y_max <= 1000` and `0 <= x_min < x_max <= 1000`.
+- `bbox`: required four integers on a normalized 1000 x 1000 canvas, origin at the top-left, in `[y_min, x_min, y_max, x_max]` order. It must satisfy `0 <= y_min < y_max <= 1000` and `0 <= x_min < x_max <= 1000`.
 - `desc`: identity, pose, orientation, location in frame, relative size, key visual details, textures, markings, gaze or motion, and light interaction specific to this element. Do not restate global background or style information.
 - `text`: for `type:"text"` only. Use the exact visible text requested by the user.
 - `color_palette`: 2-5 dominant colors of this element as uppercase hex codes in `#RRGGBB` form.
@@ -104,6 +102,7 @@ Hard constraints:
 - Do not add new characters, animals, logos, brands, written text, or major props unless the user clearly states or strongly implies them.
 - Do not create unknown keys such as `name`, `label`, `prompt`, `caption`, `objects`, `scene`, `foreground`, `camera`, `lens`, `negative`, or `metadata`.
 - Do not use `[x_min,y_min,x_max,y_max]`; always use `[y_min,x_min,y_max,x_max]`.
+- Do not create a `photo` key. Put photographic camera, lens, film, aperture, and depth-of-field language into `art_style`.
 - Output valid JSON only. Prefer readable pretty JSON formatting.""",
 }
 
@@ -130,6 +129,8 @@ def _looks_like_old_builtin_rule(rule_name, text):
             or "Official Ideogram 4" in text
             or "Ideogram examples" in text
             or "Write all descriptive string values in fluent, common, modern English" in text
+            or "For photographic outputs, preserve this key order" in text
+            or "`photo`: camera, lens, film" in text
         )
     return False
 

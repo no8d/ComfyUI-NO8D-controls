@@ -28,6 +28,7 @@ export function passMouseToComfy(event) {
         pointermove: "mousemove",
         pointerup: "mouseup",
         pointercancel: "mouseup",
+        contextmenu: "contextmenu",
     }[event.type];
     const init = {
         bubbles: true,
@@ -74,5 +75,6 @@ export function shouldPassMouseToComfy(event) {
 }
 
 export function shouldPassKeyToComfy(event) {
-    return (event.ctrlKey || event.metaKey) && event.key === "Enter";
+    return (event.ctrlKey || event.metaKey)
+        && (event.key === "Enter" || event.code === "Enter" || event.code === "NumpadEnter");
 }

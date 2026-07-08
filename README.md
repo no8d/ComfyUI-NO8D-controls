@@ -1,274 +1,164 @@
-# ComfyUI-NO8D-control
+# ComfyUI-NO8D-controls
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![GitHub](https://img.shields.io/badge/GitHub-NO8D%2FComfyUI--NO8D--controls-181717?logo=github)](https://github.com/no8d/ComfyUI-NO8D-controls)
 
 English | [简体中文](./README.zh-CN.md)
 
-![ComfyUI-NO8D-control](docs/images/no8d-control-banner.png)
+ComfyUI-NO8D-controls is a ComfyUI custom node pack for practical image iteration. It combines LoRA stacking, prompt expansion, image loading, generation with mask painting, A/B preview, empty latent creation, and image-text dataset saving.
 
-ComfyUI-NO8D-control is a ComfyUI custom node pack for LoRA control, inpainting, A/B image comparison, and prompt expansion or image caption reverse engineering through an OpenAI-compatible API.
+The project follows a native-first rule: use ComfyUI's built-in node execution, image preview, queue behavior, and graph expansion wherever possible. Custom frontend code is only used where the node needs a compact workflow-specific UI.
 
-It is designed for practical image iteration: adjust LoRA weights, draw local masks, compare image versions, and prepare positive prompts without leaving the ComfyUI workflow.
-
-![ComfyUI-NO8D-control workflow overview](docs/images/workflow-overview.svg)
-
-All nodes are available under the `NO8D-control` category.
-
-## User Guides
-
-- [6/25 user guide](https://www.patreon.com/no8d/posts/my-first-nodes-161975407?utm_medium=clipboard_copy&utm_source=copyLink&utm_campaign=postshare_creator&utm_content=join_link)
-- [6/29 user guide](https://www.patreon.com/no8d/posts/no8d-control-has-162321185?utm_medium=clipboard_copy&utm_source=copyLink&utm_campaign=postshare_creator&utm_content=join_link)
+![ComfyUI-NO8D-controls](docs/images/no8d-control-banner.png)
 
 ## Nodes
 
+All nodes are registered under the `NO8D-control` or `NO8D-controls` category.
+
 - `NO8D-LoRA stack`
-- `NO8D-Inpainting`
-- `NO8D-A/B preview`
-- `NO8D-Load-images`
 - `NO8D-Prompt`
 - `NO8D-Prompt-view`
+- `NO8D-Load-images`
+- `NO8D-Generate`
+- `NO8D-A/B preview`
 - `NO8D save`
 - `NO8D-Empty latent`
 
 ## Installation
 
-Clone this repository into your ComfyUI `custom_nodes` directory:
+Clone the repository into `ComfyUI/custom_nodes`:
 
 ```bash
 cd ComfyUI/custom_nodes
 git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 ```
 
-Restart ComfyUI after installation, then hard refresh the browser page.
+Restart ComfyUI after installation and hard-refresh the browser page. No frontend build step is required.
 
-No frontend build step is required. The nodes use ComfyUI's existing Python and browser extension environment.
-
-## Basic Workflow
+## Typical workflow
 
 ```text
 Checkpoint Loader
-    MODEL -> NO8D-LoRA stack -> MODEL -> NO8D-Inpainting -> IMAGE
-    IMAGE A + IMAGE B -> NO8D-A/B preview
+  MODEL -> NO8D-LoRA stack -> NO8D-Generate -> IMAGE
+  CLIP  -> prompt encoder chain      -> NO8D-Generate
+  VAE   ----------------------------> NO8D-Generate
+  latent ---------------------------> NO8D-Generate
+
+NO8D-Generate -> NO8D-A/B preview
+NO8D-Load-images -> NO8D-Prompt -> NO8D-Prompt-view / NO8D save
 ```
 
-Connect `positive`, `negative`, `vae`, and `latent` to `NO8D-Inpainting`. If LoRA control is not needed, connect the original model directly to `NO8D-Inpainting`.
+## Node behavior
 
-Prompt workflow:
+### NO8D-LoRA stack
 
-```text
-Text, image, or image batch -> NO8D-Prompt -> NO8D-Prompt-view or dataset save
+Applies multiple LoRAs to a model without requiring a CLIP input.
+
+- Add, delete, enable, disable, and reorder LoRAs in one node.
+- Adjust LoRA strength with a slider or a number box.
+- Customize each slider's minimum and maximum value.
+- Add trigger words per LoRA. Enabled non-zero LoRAs output their trigger words as a merged text string.
+- Keyboard stepping follows ComfyUI-like behavior: arrow keys use small steps; Shift + arrow keys use larger steps.
+
+### NO8D-Prompt
+
+Expands short ideas, image references, or both into a complete positive prompt through the configured prompt API.
+
+Input modes:
+
+- Text only: use `输入文本 / Input text` as the user's idea and expand it into a structured image prompt.
+- Image only: infer a usable prompt from the connected image.
+- Text + image: treat the text as the user's intent and use the image as visual reference. The text has priority when there is a conflict.
+
+`固定提示词 / Fixed prompt` is used for fixed prefixes such as LoRA trigger words. It is prepended to the generated prompt.
+
+### NO8D-Prompt-view
+
+Displays prompt text, allows manual editing, and can send the edited text downstream without rebuilding the whole workflow manually.
+
+### NO8D-Load-images
+
+Loads one or many local images into the workflow.
+
+- Drag files into the node or use the folder button.
+- Select one or multiple images.
+- Drag thumbnails to reorder them.
+- Double-click a thumbnail to run only that image.
+- If images are selected, queueing the workflow outputs the selected images. If nothing is selected, queueing outputs all loaded images.
+- Outputs images as a ComfyUI list so downstream nodes can process one image at a time.
+
+### NO8D-Generate
+
+Wraps ComfyUI sampling into a compact generation node with an editable image/mask preview.
+
+- Controls sampler, scheduler, steps, CFG, denoise, and seed.
+- Supports lock/randomize seed behavior.
+- Supports brush, lasso, eraser, mask feather, opacity, color, invert, and clear.
+- Uses ComfyUI graph expansion internally, so list inputs can execute one image after another.
+- Keeps native-style image state for right-click image actions where possible.
+
+### NO8D-A/B preview
+
+Compares two image streams.
+
+- `image_a` is shown on the left.
+- `image_b` is shown on the right.
+- If only one side is connected, the missing side uses the previous image from the same stream. On the first run, the missing side is blank.
+- When a list of images is received, the page badge can be clicked to cycle through comparisons.
+
+### NO8D save
+
+Saves image/caption datasets with configurable filename parts.
+
+- Supports fixed text, original filename, datetime, and size-class naming parts.
+- Reorder naming parts by dragging.
+- Saves captions together with generated or loaded images.
+
+### NO8D-Empty latent
+
+Creates empty latents for common model families and aspect ratios.
+
+- Supports SD/SDXL, SD3/Flux/Krea2, and Flux2 sizing presets.
+- Supports common portrait ratios and inverted landscape ratios.
+- Can output calculated width and height together with the latent.
+
+## Prompt API configuration
+
+The prompt nodes use an OpenAI-compatible or local LLM-compatible prompt API managed by the NO8D prompt settings UI.
+
+Use the Prompt settings panel to:
+
+- configure API services;
+- validate available models;
+- select the default prompt API;
+- edit prompt writing rules.
+
+API keys and local configuration are stored in the local ComfyUI environment. Do not commit private API keys.
+
+## Language adaptation
+
+The frontend detects ComfyUI language from available settings, local storage, document language, and visible ComfyUI UI text. The supported languages are English and Simplified Chinese.
+
+The node UI initializes labels on startup and refreshes labels on browser `storage` and `languagechange` events. It no longer uses periodic language polling.
+
+## Development notes
+
+- Python nodes expose ComfyUI-compatible node classes through `NODE_CLASS_MAPPINGS`.
+- Frontend extensions live in `web/` and are loaded by ComfyUI through `WEB_DIRECTORY = "./web"`.
+- `NO8D-Generate` expands to native ComfyUI sampling/decoding nodes through `GraphBuilder`.
+- `NO8D-Load-images` and `NO8D-Generate` are designed around ComfyUI list execution rather than manual batch loops.
+- Keep custom UI small and prefer native ComfyUI behavior for queueing, previews, right-click menus, and graph execution.
+
+## Validation
+
+Recommended checks before publishing:
+
+```bash
+python -m py_compile __init__.py compare_slider_preview.py empty_latent.py generate.py image_loader.py prompt_config.py prompt_plus.py prompt_server.py save_image_text_dataset.py slider_lora_stack.py
+node --check web/*.js
+git diff --check
 ```
-
-Batch caption workflow:
-
-```text
-NO8D-Load-images -> NO8D-Prompt -> NO8D save
-```
-
-## NO8D-Empty Latent
-
-`NO8D-Empty latent` creates an empty latent with common aspect ratios and short-side sizes.
-
-![NO8D-Empty latent illustration](docs/images/empty-latent-node.png)
-
-Features:
-
-- Choose a model family: SD/SDXL, SD3/Flux/Krea2, or Flux2.
-- Choose common aspect ratios: 1:2, 9:16, 2:3, 3:4, 1:1, 4:3, 3:2, 16:9, and 2:1.
-- Choose a common short-side size.
-- Optionally enter manual width and height. If both are set, they override the aspect ratio. If only one is set, the other side is calculated from the selected aspect ratio.
-- Output the latent together with the calculated width and height.
-
-## NO8D-LoRA Stack
-
-`NO8D-LoRA stack` loads LoRAs and controls LoRA weights. It does not need a CLIP input.
-
-![NO8D-LoRA stack illustration](docs/images/stack-node.png)
-
-Features:
-
-- Add multiple LoRAs in one node.
-- Apply LoRAs in list order.
-- Adjust each LoRA weight with a slider or numeric input.
-- Set custom min/max ranges for each LoRA slider.
-- Enable or disable individual LoRAs.
-- Invert all enabled states.
-- Reorder LoRAs by dragging the handle.
-- Keep only one settings panel open at a time.
-
-Disabled entries, `None`, and zero-weight entries are skipped. Loaded LoRA files are cached per node instance and released when removed from the stack.
-
-This node works with ordinary LoRAs and Slider LoRAs. NO8D publishes Slider LoRAs here:
-
-[huggingface.co/NO8D](https://huggingface.co/NO8D)
-
-## NO8D-Inpainting
-
-`NO8D-Inpainting` combines KSampler-style sampling, image preview, and mask drawing.
-
-It does not load LoRAs by itself. LoRA changes should come from `NO8D-LoRA stack` or another upstream model node.
-
-![NO8D-Inpainting illustration](docs/images/inpainting-node.png)
-
-Controls:
-
-- Sampler and scheduler
-- Steps and CFG
-- Seed randomization or lock
-- Brush and lasso mask tools
-- Brush size, feather, mask color, and denoise strength
-- Invert mask and clear mask
-
-When a mask tool is enabled, the node temporarily locks the seed so the base image stays stable while drawing. Turning the mask tool off restores the previous seed mode.
-
-## NO8D-A/B Preview
-
-`NO8D-A/B preview` compares two connected image inputs.
-
-![NO8D-A/B preview illustration](docs/images/ab-preview-node.png)
-
-Features:
-
-- Drag the split line to compare two images.
-- Swap A/B sides.
-- Use temporary ComfyUI preview images instead of writing permanent files.
-
-## NO8D-Prompt
-
-`NO8D-Prompt` uses a configured OpenAI-compatible API to expand text prompts or reverse-engineer one or more input images into captions.
-
-![NO8D-Prompt illustration](docs/images/prompt-node.png)
-
-Inputs:
-
-- `text`: optional text input for prompt expansion or image-caption guidance.
-- `images`: optional single-image or image-batch input for caption reverse engineering.
-- `prompt_rules`: choose a writing rule.
-- `style_preset`: choose the requested prompt style. Available presets are amateur photography, professional photography, cinematic photography, Japanese anime, American animation, illustration art, oil painting, photorealistic 3D, and stylized 3D cartoon.
-- `length_preset`: choose standard or detailed length.
-- `output_language`: choose English or Chinese output.
-- `seed`: controls variation in each generated prompt or caption.
-- `extra_rules`: optional per-node instructions.
-
-Outputs:
-
-- `prompt`: a string list. Text-only input returns one item; image batches return one prompt per image.
-
-Built-in rule types:
-
-- `自然语言`: outputs one fluent modern-English positive prompt paragraph.
-- `json结构`: outputs readable structured English JSON.
-
-If both text and images are connected, images are treated as visual evidence and the text is treated as user intent, correction, or emphasis. Images are compressed before being sent to the API to reduce request size and latency.
-
-## NO8D-Load-images
-
-`NO8D-Load-images` loads multiple local images and outputs them as an image batch for captioning or dataset workflows.
-
-![NO8D-Load-images illustration](docs/images/load-images-node.png)
-
-Features:
-
-- Load images from the system file picker.
-- Add images by dragging files onto the node.
-- Preview selected images with adjustable thumbnails.
-- Select, multi-select, box-select, delete, and reorder loaded images.
-- Double-click an image to run a single-image output.
-
-The node preserves source filename metadata so `NO8D save` can reuse original filenames.
-
-## NO8D save
-
-`NO8D save` saves image and text pairs as an image-text dataset with configurable naming rules.
-
-![NO8D save illustration](docs/images/save-node.png)
-
-Inputs:
-
-- `images`: image batch input.
-- `caption`: optional caption input. If it is not connected, the node saves images only.
-
-Options:
-
-- Choose output folder, image format, and quality.
-- Build filenames from ordered naming rules.
-- Use original filename, date + time, size class, or fixed text.
-- Drag the six-dot handle to reorder naming rules.
-- Duplicate filenames are resolved with a six-digit suffix.
-
-## NO8D-Prompt-View
-
-`NO8D-Prompt-view` displays and optionally edits prompt text.
-
-![NO8D-Prompt-view illustration](docs/images/prompt-view-node.png)
-
-- `Auto output` on: pass received text through automatically.
-- `Auto output` off: block downstream execution until the `Send` button is clicked.
-- `Send`: queues downstream nodes with the edited text without rerunning the upstream prompt generation node.
-
-This node can also be used as a simple manual text input node.
-
-## Community
-
-- QQ group: `482570609`
-- WeChat: `fattyleoliu`
-
-<img src="docs/images/qq-group.png" alt="QQ group 482570609" width="320">
-<img src="docs/images/wechat.png" alt="WeChat fattyleoliu" width="240">
-
-## Prompt API Settings
-
-Prompt API settings live in ComfyUI settings, not inside every node.
-
-Open ComfyUI settings and find `NO8D-control / Prompt`.
-
-Available settings:
-
-- Rule Manager: edit built-in prompt writing rules or add custom rules.
-- Default Prompt API: choose the default service.
-- API Manager: add, edit, delete, validate, and select OpenAI-compatible API services.
-- Model list: after API validation, choose one model from a searchable model list.
-
-The config is stored in the ComfyUI user directory:
-
-```text
-default/no8d-control/config/prompt_api.json
-```
-
-This file is local user configuration and should not be committed to the repository.
-
-## ComfyUI Interaction Policy
-
-The extension keeps custom frontend behavior narrow and relies on standard ComfyUI behavior where possible.
-
-- It does not override ComfyUI's global queue or canvas methods.
-- Canvas panning, wheel events, context menus, and global shortcuts are passed back to ComfyUI whenever possible.
-- `NO8D-Inpainting` captures pointer input only while drawing a mask.
-- `NO8D-LoRA stack` captures interaction only on real controls such as buttons, sliders, inputs, and drag handles.
-- `Ctrl/Cmd + Enter` can still queue a ComfyUI run when an input field is focused.
-
-## Notes
-
-- LoRA weight changes are linear at the model delta level, but visual results are not guaranteed to change linearly.
-- Backend node IDs are kept stable to avoid breaking existing workflows.
-
-## Feedback
-
-NO8D is not a professional software developer. This node pack was built with the help of Codex through practical testing, debugging, and iteration inside real ComfyUI workflows.
-
-Please use [GitHub Issues](https://github.com/no8d/ComfyUI-NO8D-controls/issues) for reproducible bugs and feature requests. Before contributing code, please read [CONTRIBUTING.md](./CONTRIBUTING.md).
-
-You can support NO8D and discuss LoRA control, Slider LoRA, and inpainting workflows through the [NO8D Patreon community](https://patreon.com/no8d?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink).
-
-## Acknowledgements
-
-Thanks to [ComfyUI](https://github.com/comfyanonymous/ComfyUI) and its community for the node system, sampling tools, preview pipeline, and extension mechanism.
-
-The early idea and direction of `NO8D-Inpainting` were inspired by [shootthesound/ComfyUI-Angelo](https://github.com/shootthesound/ComfyUI-Angelo). Thank you to the original author for the inspiration.
-
-Thanks to Patreon community member **Wylmquest** for suggestions during development.
 
 ## License
 
-This project is released under the [MIT License](./LICENSE).
+MIT. See [LICENSE](./LICENSE).

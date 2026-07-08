@@ -1,11 +1,22 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { passMouseToComfy, shouldPassKeyToComfy, shouldPassMouseToComfy } from "./no8d_comfy_events.js";
-import { t } from "./no8d_i18n.js";
+import { no8dLocale, t } from "./no8d_i18n.js";
 
 const NODE_NAME = "NO8DLoraStack";
 const STACK_MIN_WIDTH = 620;
 const STACK_BOTTOM_GAP = 16;
+const DEFAULT_WEIGHT_MIN = -1;
+const DEFAULT_WEIGHT_MAX = 1;
+const WEIGHT_STEP = 0.01;
+const WEIGHT_DIGITS = 2;
+const STACK_WRITE_DELAY = 120;
+const LORA_OPTIONS_TTL = 5000;
+
+let cachedLoraOptions = null;
+let cachedLoraOptionsAt = 0;
+let pendingLoraOptionsRequest = null;
+let activeLocale = "";
 
 const stackPassThroughStyle = document.createElement("style");
 stackPassThroughStyle.textContent = `
@@ -32,6 +43,12 @@ function setWidget(widget, value) {
     } catch (_) {}
 }
 
+function clearPendingStackWrite(node) {
+    if (!node?._stackWriteTimer) return;
+    clearTimeout(node._stackWriteTimer);
+    node._stackWriteTimer = null;
+}
+
 function hideNativeWidgets(node) {
     for (const w of node.widgets || []) {
         if (!["lora_picker", "stack_json"].includes(w.name)) continue;
@@ -52,9 +69,10 @@ function defaultEntry(options) {
         id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
         name: options.includes("None") ? "None" : (options[0] || "None"),
         weight: 0,
-        min: -6,
-        max: 6,
+        min: DEFAULT_WEIGHT_MIN,
+        max: DEFAULT_WEIGHT_MAX,
         enabled: true,
+        trigger: "",
     };
 }
 
@@ -69,10 +87,24 @@ function sameOptions(a, b) {
 
 async function refreshLoraOptions(node) {
     try {
-        const response = await api.fetchApi(`/object_info/${NODE_NAME}`);
-        if (!response.ok) return false;
-        const info = await response.json();
-        const options = info?.[NODE_NAME]?.input?.required?.lora_picker?.[0];
+        const now = Date.now();
+        if (!cachedLoraOptions || now - cachedLoraOptionsAt > LORA_OPTIONS_TTL) {
+            pendingLoraOptionsRequest = pendingLoraOptionsRequest || api.fetchApi(`/object_info/${NODE_NAME}`)
+                .then(async (response) => {
+                    if (!response.ok) return null;
+                    const info = await response.json();
+                    return info?.[NODE_NAME]?.input?.required?.lora_picker?.[0] || null;
+                })
+                .finally(() => {
+                    pendingLoraOptionsRequest = null;
+                });
+            const fresh = await pendingLoraOptionsRequest;
+            if (Array.isArray(fresh) && fresh.length) {
+                cachedLoraOptions = fresh;
+                cachedLoraOptionsAt = Date.now();
+            }
+        }
+        const options = cachedLoraOptions;
         if (!Array.isArray(options) || !options.length) return false;
         const widget = findWidget(node, "lora_picker");
         if (!widget) return false;
@@ -97,6 +129,7 @@ function readStack(node) {
 }
 
 function writeStack(node) {
+    clearPendingStackWrite(node);
     const serializable = (node._stackEntries || []).map((entry) => {
         const { _editingRange, ...rest } = entry;
         return rest;
@@ -104,12 +137,40 @@ function writeStack(node) {
     setWidget(findWidget(node, "stack_json"), JSON.stringify(serializable));
 }
 
+function scheduleWriteStack(node, delay = STACK_WRITE_DELAY) {
+    clearPendingStackWrite(node);
+    node._stackWriteTimer = setTimeout(() => {
+        node._stackWriteTimer = null;
+        writeStack(node);
+    }, delay);
+}
+
 function clamp(v, lo, hi) {
     return Math.max(lo, Math.min(hi, v));
 }
 
 function roundedWeight(value) {
-    return Math.round(Number(value || 0) * 10) / 10;
+    const factor = 10 ** WEIGHT_DIGITS;
+    return Math.round(Number(value || 0) * factor) / factor;
+}
+
+function formatWeight(value) {
+    return Number(value || 0).toFixed(WEIGHT_DIGITS);
+}
+
+function bindWeightNumberKeys(input, getValue, setValue) {
+    input.addEventListener("keydown", (e) => {
+        if (shouldPassKeyToComfy(e)) return;
+        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+        e.preventDefault();
+        e.stopPropagation();
+        const direction = e.key === "ArrowUp" ? 1 : -1;
+        const step = e.shiftKey ? 0.1 : WEIGHT_STEP;
+        const next = roundedWeight(Number(getValue()) + direction * step);
+        setValue(next);
+        input.value = formatWeight(next);
+        input.select();
+    });
 }
 
 function shortLoraName(name) {
@@ -132,6 +193,27 @@ function makeButton(label, title, onClick) {
         onClick();
     });
     return b;
+}
+
+function setToggleIcon(button, enabled) {
+    button.textContent = "";
+    button.style.display = "inline-flex";
+    button.style.alignItems = "center";
+    button.style.justifyContent = "center";
+    button.style.lineHeight = "1";
+    if (!enabled) {
+        const mark = document.createElement("span");
+        mark.textContent = "—";
+        mark.style.cssText = "display:inline-flex;align-items:center;justify-content:center;height:100%;font-size:17px;line-height:1;transform:translateY(-1px);";
+        button.append(mark);
+        return;
+    }
+    button.innerHTML = `
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"
+            style="display:block;flex:0 0 auto;">
+            <path fill="currentColor" d="M12 5.5c5.1 0 8.7 4.4 9.8 6.1a.8.8 0 0 1 0 .8c-1.1 1.7-4.7 6.1-9.8 6.1s-8.7-4.4-9.8-6.1a.8.8 0 0 1 0-.8c1.1-1.7 4.7-6.1 9.8-6.1Zm0 2C8.2 7.5 5.3 10.4 4 12c1.3 1.6 4.2 4.5 8 4.5s6.7-2.9 8-4.5c-1.3-1.6-4.2-4.5-8-4.5Zm0 1.8a2.7 2.7 0 1 1 0 5.4 2.7 2.7 0 0 1 0-5.4Z"/>
+        </svg>
+    `;
 }
 
 function stopGraphEvents(el) {
@@ -258,10 +340,11 @@ function render(node) {
     for (let i = 0; i < entries.length; i++) {
         const entry = entries[i];
         if (!entry.id) entry.id = `${Date.now()}_${i}_${Math.random().toString(16).slice(2)}`;
-        if (entry.min == null) entry.min = -6;
-        if (entry.max == null) entry.max = 6;
+        if (entry.min == null) entry.min = DEFAULT_WEIGHT_MIN;
+        if (entry.max == null) entry.max = DEFAULT_WEIGHT_MAX;
         if (entry.weight == null) entry.weight = 0;
         if (entry.enabled == null) entry.enabled = true;
+        if (entry.trigger == null) entry.trigger = "";
 
         const row = document.createElement("div");
         row.classList.add("no8d-stack-row");
@@ -330,8 +413,7 @@ function render(node) {
         });
         toggle.style.borderColor = entry.enabled ? "#3b82f6" : "#4b5563";
         toggle.style.color = entry.enabled ? "#bfdbfe" : "#8aa0bd";
-        toggle.textContent = entry.enabled ? "👁" : "—";
-        toggle.style.fontSize = "15px";
+        setToggleIcon(toggle, entry.enabled);
         row.appendChild(toggle);
 
         const nameWrap = document.createElement("div");
@@ -405,7 +487,7 @@ function render(node) {
         slider.type = "range";
         slider.min = String(entry.min);
         slider.max = String(entry.max);
-        slider.step = "0.1";
+        slider.step = String(WEIGHT_STEP);
         slider.value = String(clamp(Number(entry.weight || 0), Number(entry.min), Number(entry.max)));
         slider.disabled = !entry.enabled;
         slider.style.cssText = "width:100%; accent-color:#5aa7ff;";
@@ -414,17 +496,20 @@ function render(node) {
         slider.addEventListener("pointerdown", () => num.blur());
         slider.addEventListener("input", () => {
             entry.weight = roundedWeight(slider.value);
-            num.value = Number(entry.weight).toFixed(1);
+            num.value = formatWeight(entry.weight);
+            scheduleWriteStack(node);
+        });
+        slider.addEventListener("change", () => {
             writeStack(node);
         });
         row.appendChild(slider);
 
         const num = document.createElement("input");
         num.type = "number";
-        num.step = "0.1";
+        num.step = String(WEIGHT_STEP);
         num.min = String(entry.min);
         num.max = String(entry.max);
-        num.value = Number(entry.weight || 0).toFixed(1);
+        num.value = formatWeight(entry.weight);
         num.disabled = !entry.enabled;
         num.style.cssText = "height:28px; width:76px; background:#111827; color:#dbeafe; border:1px solid #2563eb; border-radius:4px; padding:3px 6px;";
         stopGraphEvents(num);
@@ -436,14 +521,14 @@ function render(node) {
                 e.preventDefault();
                 e.stopPropagation();
                 const direction = e.key === "ArrowUp" ? 1 : -1;
-                const step = e.shiftKey ? 0.5 : 0.1;
+                const step = e.shiftKey ? 0.1 : WEIGHT_STEP;
                 const next = clamp(
                     roundedWeight(Number(num.value || 0) + direction * step),
                     Number(entry.min),
                     Number(entry.max),
                 );
                 entry.weight = next;
-                num.value = next.toFixed(1);
+                num.value = formatWeight(next);
                 slider.value = String(next);
                 writeStack(node);
                 return;
@@ -451,64 +536,101 @@ function render(node) {
         });
         num.addEventListener("change", () => {
             const next = clamp(Number(num.value || 0), Number(entry.min), Number(entry.max));
-            entry.weight = next;
-            num.value = next.toFixed(1);
-            slider.value = String(next);
+            entry.weight = roundedWeight(next);
+            num.value = formatWeight(entry.weight);
+            slider.value = String(entry.weight);
             writeStack(node);
         });
         row.appendChild(num);
 
-        row.appendChild(makeButton(entry._editingRange ? "⌄" : "⚙", t("editRange"), () => {
+        const rangeButton = makeButton(entry._editingRange ? "▾" : "⚙", t("editRange"), () => {
             const open = !entry._editingRange;
             for (const item of entries) item._editingRange = false;
             entry._editingRange = open;
             writeStack(node);
             render(node);
-        }));
+        });
+        rangeButton.style.display = "inline-flex";
+        rangeButton.style.alignItems = "center";
+        rangeButton.style.justifyContent = "center";
+        rangeButton.style.lineHeight = "1";
+        rangeButton.style.fontSize = entry._editingRange ? "16px" : "14px";
+        row.appendChild(rangeButton);
 
         if (!entry.enabled) row.style.opacity = "0.5";
         list.appendChild(row);
 
         if (entry._editingRange) {
             const rangeRow = document.createElement("div");
-            rangeRow.style.cssText = "display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:12px; padding:8px; border-bottom:1px solid #1e3a8a; background:#111d32; min-width:0;";
+            rangeRow.style.cssText = "display:flex; align-items:center; gap:10px; padding:8px; border-bottom:1px solid #1e3a8a; background:#111d32; min-width:0; box-sizing:border-box; overflow:hidden;";
             const rangeLeft = document.createElement("span");
-            rangeLeft.style.cssText = "display:inline-flex; align-items:center; gap:20px; justify-content:flex-start; min-width:0;";
+            rangeLeft.style.cssText = "display:inline-flex; align-items:center; gap:12px; justify-content:flex-start; flex:1 1 auto; min-width:0; overflow:hidden;";
             const rangeRight = document.createElement("span");
-            rangeRight.style.cssText = "display:inline-flex; align-items:center; gap:10px; justify-content:flex-end; min-width:96px;";
+            rangeRight.style.cssText = "display:inline-flex; align-items:center; gap:8px; justify-content:flex-end; flex:0 0 auto; min-width:90px;";
+            const rangeGroup = document.createElement("span");
+            rangeGroup.style.cssText = "display:inline-flex; align-items:center; gap:10px; flex:0 0 auto; min-width:0;";
             const minGroup = document.createElement("span");
-            minGroup.style.cssText = "display:inline-flex; align-items:center; gap:10px; min-width:0;";
+            minGroup.style.cssText = "display:inline-flex; align-items:center; gap:6px; min-width:0;";
             const maxGroup = document.createElement("span");
-            maxGroup.style.cssText = "display:inline-flex; align-items:center; gap:10px; min-width:0;";
+            maxGroup.style.cssText = "display:inline-flex; align-items:center; gap:6px; min-width:0;";
             const minLabel = document.createElement("span");
             minLabel.textContent = t("minValue");
             minLabel.style.cssText = "color:#bbb; font-size:12px; text-align:left;";
             const minInput = document.createElement("input");
             minInput.type = "number";
-            minInput.step = "0.1";
-            minInput.value = String(entry.min);
-            minInput.style.cssText = "height:26px; width:120px; min-width:0; background:#111827; color:#dbeafe; border:1px solid #2563eb; border-radius:4px; padding:3px 6px;";
+            minInput.step = String(WEIGHT_STEP);
+            minInput.value = formatWeight(entry.min);
+            minInput.style.cssText = "height:26px; width:78px; min-width:0; background:#111827; color:#dbeafe; border:1px solid #2563eb; border-radius:4px; padding:3px 6px;";
             stopGraphEvents(minInput);
             minInput.addEventListener("focus", () => minInput.select());
+            bindWeightNumberKeys(minInput, () => minInput.value, (value) => {
+                minInput.value = formatWeight(value);
+            });
             const maxLabel = document.createElement("span");
             maxLabel.textContent = t("maxValue");
             maxLabel.style.cssText = "color:#bbb; font-size:12px; text-align:left;";
             const maxInput = document.createElement("input");
             maxInput.type = "number";
-            maxInput.step = "0.1";
-            maxInput.value = String(entry.max);
-            maxInput.style.cssText = "height:26px; width:120px; min-width:0; background:#111827; color:#dbeafe; border:1px solid #2563eb; border-radius:4px; padding:3px 6px;";
+            maxInput.step = String(WEIGHT_STEP);
+            maxInput.value = formatWeight(entry.max);
+            maxInput.style.cssText = "height:26px; width:78px; min-width:0; background:#111827; color:#dbeafe; border:1px solid #2563eb; border-radius:4px; padding:3px 6px;";
             stopGraphEvents(maxInput);
             maxInput.addEventListener("focus", () => maxInput.select());
+            bindWeightNumberKeys(maxInput, () => maxInput.value, (value) => {
+                maxInput.value = formatWeight(value);
+            });
+            const triggerGroup = document.createElement("span");
+            triggerGroup.style.cssText = "display:inline-flex; align-items:center; gap:6px; flex:1 1 auto; min-width:160px; overflow:hidden;";
+            const triggerLabel = document.createElement("span");
+            triggerLabel.textContent = t("triggerWords");
+            triggerLabel.style.cssText = "color:#bbb; font-size:12px; text-align:left; white-space:nowrap;";
+            const triggerInput = document.createElement("input");
+            triggerInput.type = "text";
+            triggerInput.value = entry.trigger || "";
+            triggerInput.placeholder = t("triggerWordsPlaceholder");
+            triggerInput.style.cssText = "height:26px; width:100%; min-width:0; background:#111827; color:#dbeafe; border:1px solid #2563eb; border-radius:4px; padding:3px 6px;";
+            stopGraphEvents(triggerInput);
+            triggerInput.addEventListener("focus", () => triggerInput.select());
+            triggerInput.addEventListener("input", () => {
+                entry.trigger = triggerInput.value;
+                scheduleWriteStack(node, 250);
+            });
+            triggerInput.addEventListener("change", () => {
+                entry.trigger = triggerInput.value.trim();
+                triggerInput.value = entry.trigger;
+                writeStack(node);
+            });
             minGroup.append(minLabel, minInput);
             maxGroup.append(maxLabel, maxInput);
+            rangeGroup.append(minGroup, maxGroup);
+            triggerGroup.append(triggerLabel, triggerInput);
             const apply = makeButton(t("apply"), t("applyRange"), () => {
                 const nextMin = Number(minInput.value);
                 const nextMax = Number(maxInput.value);
                 if (!Number.isFinite(nextMin) || !Number.isFinite(nextMax) || nextMax <= nextMin) return;
-                entry.min = nextMin;
-                entry.max = nextMax;
-                entry.weight = clamp(Number(entry.weight || 0), entry.min, entry.max);
+                entry.min = roundedWeight(nextMin);
+                entry.max = roundedWeight(nextMax);
+                entry.weight = roundedWeight(clamp(Number(entry.weight || 0), entry.min, entry.max));
                 entry._editingRange = false;
                 writeStack(node);
                 render(node);
@@ -521,7 +643,7 @@ function render(node) {
                 render(node);
             });
             del.style.width = "34px";
-            rangeLeft.append(minGroup, maxGroup);
+            rangeLeft.append(rangeGroup, triggerGroup);
             rangeRight.append(apply, del);
             rangeRow.append(rangeLeft, rangeRight);
             list.appendChild(rangeRow);
@@ -602,9 +724,22 @@ function attach(node) {
     });
 }
 
+function refreshAllLoraLabels(force = false) {
+    const locale = no8dLocale();
+    if (!force && locale === activeLocale) return;
+    activeLocale = locale;
+    for (const node of app?.graph?._nodes || []) {
+        if (node?.type !== NODE_NAME && node?.comfyClass !== NODE_NAME) continue;
+        if (!node._stackWidget) attach(node);
+        node.title = t("sliderStackTitle");
+        render(node);
+    }
+}
+
 app.registerExtension({
     name: "NO8D.Control.LoraStack",
     async setup() {
+        activeLocale = no8dLocale();
         setTimeout(() => {
             for (const node of app?.graph?._nodes || []) {
                 if (node?.type === NODE_NAME || node?.comfyClass === NODE_NAME) {
@@ -612,7 +747,10 @@ app.registerExtension({
                     attach(node);
                 }
             }
+            refreshAllLoraLabels(true);
         }, 500);
+        window.addEventListener("storage", () => refreshAllLoraLabels(true));
+        window.addEventListener("languagechange", () => refreshAllLoraLabels(true));
     },
     async nodeCreated(node) {
         if (node?.type !== NODE_NAME && node?.comfyClass !== NODE_NAME) return;

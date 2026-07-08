@@ -5,8 +5,9 @@ const NODE_NAME = "NO8DEmptyLatent";
 
 const WIDGET_LABELS = {
     model_type: "emptyLatentModelType",
-    aspect_ratio: "emptyLatentAspectRatio",
     short_side: "emptyLatentShortSide",
+    aspect_ratio: "emptyLatentAspectRatio",
+    invert_ratio: "emptyLatentInvertRatio",
     manual_width: "emptyLatentManualWidth",
     manual_height: "emptyLatentManualHeight",
     batch_size: "emptyLatentBatchSize",
@@ -66,10 +67,8 @@ app.registerExtension({
     async setup() {
         activeLocale = no8dLocale();
         setTimeout(() => applyAllLabelsIfNeeded(true), 500);
-        setTimeout(() => applyAllLabelsIfNeeded(true), 1500);
         window.addEventListener("storage", () => applyAllLabelsIfNeeded(true));
         window.addEventListener("languagechange", () => applyAllLabelsIfNeeded(true));
-        setInterval(applyAllLabelsIfNeeded, 1000);
     },
     async nodeCreated(node) {
         applyLabels(node);

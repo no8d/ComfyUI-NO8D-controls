@@ -4,6 +4,7 @@ import { no8dLocale, t } from "./no8d_i18n.js";
 
 const NODE_CLASS = "NO8DLoadImages";
 const HIDDEN_WIDGETS = new Set(["image_files", "output_files"]);
+const DEPRECATED_WIDGETS = new Set(["output_all"]);
 const WIDGET_LABELS = {
     image_files: "imageLoaderFiles",
 };
@@ -18,7 +19,6 @@ const THUMB_DEFAULT_SIZE = 200;
 const DRAG_MIME = "application/x-no8d-image-loader-index";
 
 let activeLocale = "";
-let renderSeq = 0;
 
 function ensureStyleSheet() {
     if (document.getElementById("no8d-image-loader-style")) return;
@@ -107,7 +107,7 @@ function setRefs(node, refs) {
     app?.canvas?.setDirty?.(true, true);
 }
 
-function setImageAndOutputRefs(node, imageRefs, outputRefs = []) {
+function setImageAndOutputRefs(node, imageRefs, outputRefs = [], { markGraph = true } = {}) {
     ensureInternalWidgets(node);
     const image = imageWidget(node);
     const output = outputWidget(node);
@@ -119,7 +119,7 @@ function setImageAndOutputRefs(node, imageRefs, outputRefs = []) {
     node.properties = node.properties || {};
     node.properties.no8d_image_loader_output_keys = outputRefs.map(imageKey);
     renderLoader(node);
-    node.graph?.change?.();
+    if (markGraph) node.graph?.change?.();
     node.graph?.setDirtyCanvas?.(true, true);
     app?.canvas?.setDirty?.(true, true);
 }
@@ -133,6 +133,18 @@ function clearStoredOutputRefs(node) {
     output.callback?.(output.value);
     node.properties = node.properties || {};
     node.properties.no8d_image_loader_output_keys = [];
+}
+
+function stageSelectedOutputRefs(node) {
+    ensureInternalWidgets(node);
+    const output = outputWidget(node);
+    if (!output) return [];
+    const selected = selectedRefs(node);
+    output.value = JSON.stringify(selected);
+    output.callback?.(output.value);
+    node.properties = node.properties || {};
+    node.properties.no8d_image_loader_output_keys = selected.map(imageKey);
+    return selected;
 }
 
 function selectedRefs(node) {
@@ -176,10 +188,13 @@ function collectDownstreamNodeIds(node) {
     const graph = node?.graph || app?.graph;
     const result = new Set();
     const pending = [];
+    const linkParts = [];
     for (const output of node.outputs || []) {
         for (const linkId of output.links || []) {
             const link = graph?.links?.[linkId];
-            if (link?.target_id != null) pending.push(link.target_id);
+            if (!link || link.target_id == null) continue;
+            pending.push(link.target_id);
+            linkParts.push(`${link.id}:${link.origin_id}:${link.origin_slot}:${link.target_id}:${link.target_slot}`);
         }
     }
     while (pending.length) {
@@ -190,12 +205,20 @@ function collectDownstreamNodeIds(node) {
         for (const output of next?.outputs || []) {
             for (const linkId of output.links || []) {
                 const link = graph?.links?.[linkId];
-                if (link?.target_id != null) pending.push(link.target_id);
+                if (!link || link.target_id == null) continue;
+                pending.push(link.target_id);
+                linkParts.push(`${link.id}:${link.origin_id}:${link.origin_slot}:${link.target_id}:${link.target_slot}`);
             }
         }
     }
     if (!result.size && node?.id != null) result.add(String(node.id));
-    return [...result];
+    const signature = linkParts.sort().join("|");
+    if (node?._no8dImageLoaderDownstreamCache?.signature === signature) {
+        return [...node._no8dImageLoaderDownstreamCache.ids];
+    }
+    const ids = [...result];
+    if (node) node._no8dImageLoaderDownstreamCache = { signature, ids };
+    return ids;
 }
 
 async function queueSingleImageRun(node, outputRefs) {
@@ -227,6 +250,7 @@ function runSingleImage(node, index, ref) {
     node._no8dImageLoaderSelected = new Set([index]);
     clearStoredOutputRefs(node);
     updateSelectionUi(node);
+    ensureIndexVisible(node, index);
     node.graph?.change?.();
     node.graph?.setDirtyCanvas?.(true, true);
     app?.canvas?.setDirty?.(true, true);
@@ -238,9 +262,46 @@ function selectedSet(node) {
     return node._no8dImageLoaderSelected;
 }
 
+function requestScrollToIndex(node, index) {
+    const value = Number(index);
+    if (!Number.isFinite(value) || value < 0) return;
+    node._no8dImageLoaderPendingScrollIndex = Math.floor(value);
+}
+
+function ensureIndexVisible(node, index) {
+    const preview = node?._no8dImageLoaderEls?.preview;
+    if (!preview) return false;
+    const item = preview.querySelector(`[data-no8d-loader-item][data-index="${Number(index)}"]`);
+    if (!item) return false;
+
+    const margin = 8;
+    const top = item.offsetTop;
+    const bottom = top + item.offsetHeight;
+    const left = item.offsetLeft;
+    const right = left + item.offsetWidth;
+    const viewTop = preview.scrollTop;
+    const viewBottom = viewTop + preview.clientHeight;
+    const viewLeft = preview.scrollLeft;
+    const viewRight = viewLeft + preview.clientWidth;
+    let nextTop = viewTop;
+    let nextLeft = viewLeft;
+
+    if (top < viewTop + margin) nextTop = Math.max(0, top - margin);
+    else if (bottom > viewBottom - margin) nextTop = Math.max(0, bottom - preview.clientHeight + margin);
+
+    if (left < viewLeft + margin) nextLeft = Math.max(0, left - margin);
+    else if (right > viewRight - margin) nextLeft = Math.max(0, right - preview.clientWidth + margin);
+
+    if (nextTop !== viewTop || nextLeft !== viewLeft) {
+        preview.scrollTo({ top: nextTop, left: nextLeft, behavior: "auto" });
+    }
+    return true;
+}
+
 function syncSelection(node, selected) {
     node._no8dImageLoaderSelected = selected;
     updateSelectionUi(node);
+    if (selected.size === 1) ensureIndexVisible(node, [...selected][0]);
     node.graph?.setDirtyCanvas?.(true, true);
     app?.canvas?.setDirty?.(true, true);
 }
@@ -277,6 +338,7 @@ function thumbUrl(ref, size) {
     params.set("name", ref.name);
     params.set("type", ref.type || "input");
     params.set("size", String(Math.round(size)));
+    if (ref.modified) params.set("v", String(ref.modified));
     if (ref.subfolder) params.set("subfolder", ref.subfolder);
     return api.apiURL(`/no8d-control/api/load-images/thumbnail?${params.toString()}`);
 }
@@ -333,7 +395,28 @@ function reorderRefs(node, fromIndex, toIndex) {
     selected.add(toIndex);
     node._no8dImageLoaderSelected = selected;
     node._no8dImageLoaderAnchor = toIndex;
+    requestScrollToIndex(node, toIndex);
     setImageAndOutputRefs(node, refs, []);
+}
+
+function dropIndexFromPoint(preview, event) {
+    const direct = event.target?.closest?.("[data-no8d-loader-item]");
+    if (direct?.dataset?.index != null) return Number(direct.dataset.index);
+    let best = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const item of preview.querySelectorAll("[data-no8d-loader-item]")) {
+        const rect = item.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dx = event.clientX - cx;
+        const dy = event.clientY - cy;
+        const distance = dx * dx + dy * dy;
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = item;
+        }
+    }
+    return best?.dataset?.index == null ? -1 : Number(best.dataset.index);
 }
 
 function imageFilesFromList(files) {
@@ -371,6 +454,7 @@ function uploadImages(node, files, { append = false } = {}) {
         if (load) load.disabled = true;
         try {
             const refs = append ? parseRefs(node) : [];
+            const firstAddedIndex = refs.length;
             for (const file of imageFiles) {
                 const meta = await imageFileMeta(file);
                 const body = new FormData();
@@ -390,6 +474,7 @@ function uploadImages(node, files, { append = false } = {}) {
                 });
             }
             node._no8dImageLoaderSelected = new Set();
+            requestScrollToIndex(node, append ? firstAddedIndex : 0);
             setImageAndOutputRefs(node, refs, []);
         } catch (error) {
             console.error("[NO8D-Load-images]", error);
@@ -447,6 +532,7 @@ function makeThumbItem(node, ref, index, size, selected) {
         "user-select:none",
     ].join(";");
     item.dataset.index = String(index);
+    item.dataset.no8dLoaderItem = "1";
     item.draggable = true;
     item.addEventListener("pointerdown", (event) => {
         event.stopPropagation();
@@ -455,6 +541,10 @@ function makeThumbItem(node, ref, index, size, selected) {
     item.addEventListener("dragstart", (event) => {
         event.dataTransfer?.setData(DRAG_MIME, String(index));
         event.dataTransfer.effectAllowed = "move";
+        item.style.opacity = "0.45";
+    });
+    item.addEventListener("dragend", () => {
+        item.style.opacity = "";
     });
     item.addEventListener("dragover", (event) => {
         if (!Array.from(event.dataTransfer?.types || []).includes(DRAG_MIME)) return;
@@ -504,6 +594,7 @@ function makeThumbItem(node, ref, index, size, selected) {
     const img = document.createElement("img");
     img.loading = "lazy";
     img.decoding = "async";
+    img.draggable = false;
     img.src = thumbUrl(ref, size);
     img.onerror = () => {
         const failed = document.createElement("div");
@@ -783,6 +874,19 @@ function makeUi(node) {
             height: `${height}px`,
         });
     });
+    preview.addEventListener("dragover", (event) => {
+        if (!Array.from(event.dataTransfer?.types || []).includes(DRAG_MIME)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+    });
+    preview.addEventListener("drop", (event) => {
+        const raw = event.dataTransfer?.getData(DRAG_MIME);
+        if (raw == null || raw === "") return;
+        event.preventDefault();
+        event.stopPropagation();
+        const toIndex = dropIndexFromPoint(preview, event);
+        reorderRefs(node, Number(raw), toIndex);
+    });
     const finishBoxSelect = (event) => {
         if (!boxStart) return;
         event.preventDefault();
@@ -896,10 +1000,18 @@ function renderLoader(node) {
     if (!els) return;
     syncLoaderFrame(node);
     clearStaleSlots(node);
-    const seq = ++renderSeq;
+    const seq = (node._no8dImageLoaderRenderSeq || 0) + 1;
+    node._no8dImageLoaderRenderSeq = seq;
     const scrollTop = els.preview.scrollTop || 0;
     const scrollLeft = els.preview.scrollLeft || 0;
+    const pendingScrollIndex = Number.isInteger(node._no8dImageLoaderPendingScrollIndex)
+        ? node._no8dImageLoaderPendingScrollIndex
+        : null;
+    node._no8dImageLoaderPendingScrollIndex = null;
     const refs = parseRefs(node);
+    const targetScrollIndex = pendingScrollIndex == null || !refs.length
+        ? null
+        : Math.max(0, Math.min(refs.length - 1, pendingScrollIndex));
     const selected = selectedSet(node);
     clearStoredOutputRefs(node);
     const size = thumbSize(node);
@@ -936,7 +1048,7 @@ function renderLoader(node) {
     }
     let index = 0;
     const appendBatch = () => {
-        if (seq !== renderSeq) return;
+        if (seq !== node._no8dImageLoaderRenderSeq) return;
         const fragment = document.createDocumentFragment();
         const end = Math.min(index + 12, refs.length);
         for (; index < end; index += 1) {
@@ -947,15 +1059,25 @@ function renderLoader(node) {
             els.preview.scrollTop = scrollTop;
             els.preview.scrollLeft = scrollLeft;
         }
-        if (index < refs.length) requestAnimationFrame(appendBatch);
+        if (index < refs.length) {
+            requestAnimationFrame(appendBatch);
+        } else if (targetScrollIndex != null) {
+            requestAnimationFrame(() => ensureIndexVisible(node, targetScrollIndex));
+        }
     };
     appendBatch();
 }
 
 function hideInternalWidgets(node) {
+    let changed = false;
     for (const widget of node.widgets || []) {
-        if (!HIDDEN_WIDGETS.has(widget.name)) continue;
+        if (!HIDDEN_WIDGETS.has(widget.name) && !DEPRECATED_WIDGETS.has(widget.name)) continue;
         widget.options = widget.options || {};
+        if (!widget.options.hidden) changed = true;
+        if (!widget.options.collapsed) changed = true;
+        if (widget.type !== "converted-widget") changed = true;
+        if (!widget.hidden) changed = true;
+        if (!widget.serialize) changed = true;
         widget.options.hidden = true;
         widget.options.collapsed = true;
         widget.type = "converted-widget";
@@ -964,34 +1086,46 @@ function hideInternalWidgets(node) {
         widget.computeSize = () => [0, -4];
         widget.draw = () => {};
     }
+    return changed;
 }
 
 function applySlotLabels(slots) {
+    let changed = false;
     for (const slot of slots || []) {
         const key = SLOT_LABELS[slot.name];
         if (!key) continue;
         const label = t(key);
+        if (slot.label !== label || slot.localized_name !== label) changed = true;
         slot.label = label;
         slot.localized_name = label;
     }
+    return changed;
 }
 
 function applyLabels(node) {
     if (nodeClass(node) !== NODE_CLASS) return;
-    node.title = t("imageLoaderTitle");
+    let changed = false;
+    const title = t("imageLoaderTitle");
+    if (node.title !== title) {
+        node.title = title;
+        changed = true;
+    }
     for (const widget of node.widgets || []) {
         const key = WIDGET_LABELS[widget.name];
         if (!key) continue;
         const label = t(key);
+        if (widget.label !== label || widget.options?.label !== label) changed = true;
         widget.label = label;
         widget.options = widget.options || {};
         widget.options.label = label;
     }
-    applySlotLabels(node.inputs);
-    applySlotLabels(node.outputs);
+    changed = applySlotLabels(node.inputs) || changed;
+    changed = applySlotLabels(node.outputs) || changed;
     renderLoader(node);
-    node.graph?.setDirtyCanvas?.(true, true);
-    app?.canvas?.setDirty?.(true, true);
+    if (changed) {
+        node.graph?.setDirtyCanvas?.(true, true);
+        app?.canvas?.setDirty?.(true, true);
+    }
 }
 
 function applyAllLabels() {
@@ -1020,6 +1154,9 @@ function installLoaderUi(node) {
         maxWidth: 1_000_000,
         maxHeight: 1_000_000,
     });
+    widget.beforeQueued = () => {
+        stageSelectedOutputRefs(node);
+    };
     Object.defineProperty(widget, "width", {
         configurable: true,
         get() {
@@ -1038,10 +1175,8 @@ app.registerExtension({
     async setup() {
         activeLocale = no8dLocale();
         setTimeout(() => applyAllLabelsIfNeeded(true), 500);
-        setTimeout(() => applyAllLabelsIfNeeded(true), 1500);
         window.addEventListener("storage", () => applyAllLabelsIfNeeded(true));
         window.addEventListener("languagechange", () => applyAllLabelsIfNeeded(true));
-        setInterval(applyAllLabelsIfNeeded, 1000);
     },
     async nodeCreated(node) {
         if (nodeClass(node) !== NODE_CLASS) return;

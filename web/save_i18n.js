@@ -1,5 +1,5 @@
 import { app } from "../../scripts/app.js";
-import { t } from "./no8d_i18n.js";
+import { no8dLocale, t } from "./no8d_i18n.js";
 import { passMouseToComfy, shouldPassMouseToComfy } from "./no8d_comfy_events.js";
 
 const NODE_CLASS = "NO8DSaveImageTextDataset";
@@ -7,6 +7,7 @@ const VARIABLES = ["none", "original_name", "datetime", "size_class"];
 const SAVE_DEFAULT_WIDTH = 520;
 const SAVE_BASE_HEIGHT = 240;
 const SAVE_ROW_HEIGHT = 34;
+let activeLocale = "";
 
 function nodeClass(node) {
     return node?.comfyClass || node?.type || "";
@@ -177,6 +178,11 @@ function clearDropStyles(list) {
 function renderSaveUi(node) {
     const els = node._no8dSaveEls;
     if (!els) return;
+    if (els.title) els.title.textContent = t("saveNamingRules");
+    if (els.add) {
+        els.add.textContent = `+ ${t("saveAddPart")}`;
+        els.add.title = t("saveAddPart");
+    }
     const parts = readParts(node);
     ensureHeightForParts(node, parts.length);
     els.list.replaceChildren();
@@ -269,7 +275,7 @@ function makeSaveUi(node) {
     add.style.height = "32px";
     footer.appendChild(add);
     root.append(title, list, footer);
-    node._no8dSaveEls = { root, list, add };
+    node._no8dSaveEls = { root, title, list, add };
     stopGraphEvents(root);
     return root;
 }
@@ -295,11 +301,12 @@ function installSaveUi(node) {
 
 function applyLabels(node) {
     if (nodeClass(node) !== NODE_CLASS) return;
-    node.title = "NO8D save";
+    node.title = t("saveTitle");
     const labels = {
         folder_path: "saveFolderPath",
         image_format: "saveImageFormat",
         quality: "saveQuality",
+        embed_metadata: "saveEmbedMetadata",
     };
     for (const widget of node.widgets || []) {
         const key = labels[widget.name];
@@ -312,8 +319,25 @@ function applyLabels(node) {
     renderSaveUi(node);
 }
 
+function applyAllLabels() {
+    for (const node of app?.graph?._nodes || []) applyLabels(node);
+}
+
+function applyAllLabelsIfNeeded(force = false) {
+    const locale = no8dLocale();
+    if (!force && locale === activeLocale) return;
+    activeLocale = locale;
+    applyAllLabels();
+}
+
 app.registerExtension({
     name: "NO8D.Control.Save",
+    async setup() {
+        activeLocale = no8dLocale();
+        setTimeout(() => applyAllLabelsIfNeeded(true), 500);
+        window.addEventListener("storage", () => applyAllLabelsIfNeeded(true));
+        window.addEventListener("languagechange", () => applyAllLabelsIfNeeded(true));
+    },
     async nodeCreated(node) {
         if (nodeClass(node) !== NODE_CLASS) return;
         installSaveUi(node);

@@ -2,6 +2,7 @@ import { app } from "../../scripts/app.js";
 import { t } from "./no8d_i18n.js";
 
 const NODE_NAME = "NO8DPromptView";
+const SEND_BUTTON_HEIGHT = 34;
 
 function findWidget(node, name) {
     return (node.widgets || []).find((w) => w.name === name);
@@ -18,10 +19,23 @@ function setWidget(widget, value) {
 }
 
 function hideInternalWidgets(node) {
+    let changed = false;
+    if (Array.isArray(node.widgets)) {
+        const before = node.widgets.length;
+        node.widgets = node.widgets.filter((widget) => widget.name !== "fixed_text");
+        if (node.widgets.length !== before) changed = true;
+    }
     for (const widget of node.widgets || []) {
         if (widget.name !== "send_seq") continue;
-        widget.value = "0";
+        if (widget.value !== "0") {
+            widget.value = "0";
+            changed = true;
+        }
         widget.options = widget.options || {};
+        if (!widget.options.hidden) changed = true;
+        if (!widget.options.collapsed) changed = true;
+        if (widget.type !== "converted-widget") changed = true;
+        if (!widget.hidden) changed = true;
         widget.options.hidden = true;
         widget.options.collapsed = true;
         widget.type = "converted-widget";
@@ -29,41 +43,59 @@ function hideInternalWidgets(node) {
         widget.computeSize = () => [0, -4];
         widget.draw = () => {};
     }
-    node.graph?.setDirtyCanvas?.(true, true);
-    app?.canvas?.setDirty?.(true, true);
+    return changed;
 }
 
 function readIncomingFromMessage(message) {
-    const value = message?.NO8DPromptView_text || message?.ui?.NO8DPromptView_text;
+    const value = message?.edited_text
+        || message?.ui?.edited_text
+        || message?.NO8DPromptView_text
+        || message?.ui?.NO8DPromptView_text;
     if (Array.isArray(value)) return value[0] || "";
     if (typeof value === "string") return value;
     return "";
 }
 
 function syncNativeLabels(node) {
-    node.title = t("promptViewTitle");
+    let changed = false;
+    const title = t("promptViewTitle");
+    if (node.title !== title) {
+        node.title = title;
+        changed = true;
+    }
     const edited = findWidget(node, "edited_text");
     if (edited) {
-        edited.label = t("promptEditedText");
+        const label = t("promptEditedText");
+        if (edited.label !== label || edited.options?.label !== label) changed = true;
+        edited.label = label;
         edited.options = edited.options || {};
-        edited.options.label = t("promptEditedText");
+        edited.options.label = label;
+        edited.serializeValue = function () {
+            return findWidget(node, "auto_output")?.value ? "" : String(this.value || "");
+        };
     }
     const auto = findWidget(node, "auto_output");
     if (auto) {
-        auto.label = t("promptViewAuto");
+        const label = t("promptViewAuto");
+        if (auto.label !== label || auto.options?.label !== label) changed = true;
+        auto.label = label;
         auto.options = auto.options || {};
-        auto.options.label = t("promptViewAuto");
+        auto.options.label = label;
     }
+    return changed;
 }
 
 function collectDownstreamNodeIds(node) {
     const graph = node?.graph || app?.graph;
     const result = new Set();
     const pending = [];
+    const linkParts = [];
     for (const output of node.outputs || []) {
         for (const linkId of output.links || []) {
             const link = graph?.links?.[linkId];
-            if (link?.target_id != null) pending.push(link.target_id);
+            if (!link || link.target_id == null) continue;
+            pending.push(link.target_id);
+            linkParts.push(`${link.id}:${link.origin_id}:${link.origin_slot}:${link.target_id}:${link.target_slot}`);
         }
     }
     while (pending.length) {
@@ -74,12 +106,33 @@ function collectDownstreamNodeIds(node) {
         for (const output of next?.outputs || []) {
             for (const linkId of output.links || []) {
                 const link = graph?.links?.[linkId];
-                if (link?.target_id != null) pending.push(link.target_id);
+                if (!link || link.target_id == null) continue;
+                pending.push(link.target_id);
+                linkParts.push(`${link.id}:${link.origin_id}:${link.origin_slot}:${link.target_id}:${link.target_slot}`);
             }
         }
     }
     if (!result.size && node?.id != null) result.add(String(node.id));
-    return [...result];
+    const signature = linkParts.sort().join("|");
+    if (node?._promptViewDownstreamCache?.signature === signature) {
+        return [...node._promptViewDownstreamCache.ids];
+    }
+    const ids = [...result];
+    if (node) node._promptViewDownstreamCache = { signature, ids };
+    return ids;
+}
+
+async function runDownstreamQueueHooks(nodeIds, hookName) {
+    const graph = app?.graph;
+    const targetIds = new Set((nodeIds || []).map(String));
+    for (const node of graph?._nodes || []) {
+        if (!targetIds.has(String(node?.id))) continue;
+        for (const widget of node.widgets || []) {
+            const hook = widget?.[hookName];
+            if (typeof hook !== "function") continue;
+            await hook.call(widget, { isPartialExecution: false });
+        }
+    }
 }
 
 async function queueEditedPrompt(node, editedText, sendSeq) {
@@ -87,6 +140,8 @@ async function queueEditedPrompt(node, editedText, sendSeq) {
         if (typeof app.graphToPrompt !== "function" || typeof app.api?.queuePrompt !== "function") {
             throw new Error("ComfyUI queue API is unavailable");
         }
+        const downstreamNodeIds = collectDownstreamNodeIds(node);
+        await runDownstreamQueueHooks(downstreamNodeIds, "beforeQueued");
         const prompt = await app.graphToPrompt();
         const output = prompt?.output || {};
         const viewPromptNode = output[String(node.id)];
@@ -95,7 +150,8 @@ async function queueEditedPrompt(node, editedText, sendSeq) {
         viewPromptNode.inputs.auto_output = false;
         viewPromptNode.inputs.edited_text = editedText || "";
         viewPromptNode.inputs.send_seq = String(sendSeq || "0");
-        await app.api.queuePrompt(0, prompt, { partialExecutionTargets: collectDownstreamNodeIds(node) });
+        await app.api.queuePrompt(0, prompt, { partialExecutionTargets: downstreamNodeIds });
+        await runDownstreamQueueHooks(downstreamNodeIds, "afterQueued");
     } catch (error) {
         app.extensionManager?.toast?.add?.({
             severity: "warn",
@@ -110,31 +166,39 @@ function sendEditedText(node) {
     const edited = findWidget(node, "edited_text");
     if (!edited) return;
     const nextSeq = String(Date.now());
-    node.graph?.setDirtyCanvas?.(true, true);
-    app?.canvas?.setDirty?.(true, true);
     queueEditedPrompt(node, String(edited.value || ""), nextSeq);
 }
 
 function ensureSendWidget(node) {
-    if (node._promptViewSendWidget) return;
+    if (node._promptViewSendWidget) {
+        node._promptViewSendWidget.computeSize = (width) => [width, SEND_BUTTON_HEIGHT];
+        return false;
+    }
     const existing = (node.widgets || []).find((widget) => widget._no8dPromptSend);
     if (existing) {
         node._promptViewSendWidget = existing;
-        return;
+        existing.computeSize = (width) => [width, SEND_BUTTON_HEIGHT];
+        return false;
     }
     const widget = node.addWidget("button", t("promptViewSend"), null, () => sendEditedText(node));
     widget._no8dPromptSend = true;
     widget.label = t("promptViewSend");
     widget.options = widget.options || {};
     widget.options.label = t("promptViewSend");
+    widget.computeSize = (width) => [width, SEND_BUTTON_HEIGHT];
     node._promptViewSendWidget = widget;
+    return true;
 }
 
 function activate(node) {
     if (node?.type !== NODE_NAME && node?.comfyClass !== NODE_NAME) return;
-    hideInternalWidgets(node);
-    ensureSendWidget(node);
-    syncNativeLabels(node);
+    let changed = hideInternalWidgets(node);
+    changed = ensureSendWidget(node) || changed;
+    changed = syncNativeLabels(node) || changed;
+    if (changed) {
+        node.graph?.setDirtyCanvas?.(true, true);
+        app?.canvas?.setDirty?.(true, true);
+    }
 }
 
 function setIncomingText(node, incoming) {
@@ -173,7 +237,8 @@ app.registerExtension({
         nodeType.prototype.onExecuted = function (message) {
             if (onExecuted) onExecuted.apply(this, arguments);
             activate(this);
-            setIncomingText(this, readIncomingFromMessage(message));
+            const incoming = readIncomingFromMessage(message);
+            setIncomingText(this, incoming);
         };
     },
 });

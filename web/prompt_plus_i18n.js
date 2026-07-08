@@ -12,10 +12,12 @@ const WIDGET_LABELS = {
     seed: "promptSeed",
     extra_rules: "promptExtraRules",
     style_preset: "promptStylePreset",
+    composition_preset: "promptCompositionPreset",
     length_preset: "promptLengthPreset",
     output_language: "promptOutputLanguage",
     text: "promptTextInput",
     auto_output: "promptViewAuto",
+    fixed_text: "promptFixedText",
     edited_text: "promptEditedText",
     send_seq: "promptSendSeq",
 };
@@ -31,6 +33,7 @@ const PROMPT_RULE_DISPLAY = {
     "json结构": "JSON structure",
 };
 const STYLE_DISPLAY = {
+    "自行判断": "Auto",
     "业余摄影": "Amateur photography",
     "专业摄影": "Professional photography",
     "影视摄影": "Cinematic photography",
@@ -40,6 +43,15 @@ const STYLE_DISPLAY = {
     "油画艺术": "Oil painting",
     "3d写实": "3D realism",
     "3d卡通": "3D cartoon",
+};
+const COMPOSITION_DISPLAY = {
+    "自行判断": "Auto",
+    "大特写": "Extreme close-up",
+    "特写": "Close-up",
+    "近景": "Medium close-up",
+    "中景": "Medium shot",
+    "全景": "Full shot",
+    "大远景": "Extreme wide shot",
 };
 const LENGTH_DISPLAY = {
     "标准": "Standard",
@@ -51,7 +63,15 @@ const LANGUAGE_DISPLAY = {
 };
 const LENGTH_VALUES = new Set([...Object.keys(LENGTH_DISPLAY), ...Object.values(LENGTH_DISPLAY)]);
 const LANGUAGE_VALUES = new Set([...Object.keys(LANGUAGE_DISPLAY), ...Object.values(LANGUAGE_DISPLAY)]);
-const PROMPT_WIDGET_ORDER = ["prompt_rules", "style_preset", "length_preset", "output_language", "extra_rules", "seed"];
+const PROMPT_WIDGET_ORDER = ["prompt_rules", "style_preset", "composition_preset", "length_preset", "output_language", "fixed_text", "extra_rules", "seed"];
+const COMPOSITION_VALUE_ALIASES = {
+    "Close shot": "Medium close-up",
+    "Medium wide shot": "Full shot",
+    "Wide shot": "Full shot",
+    "中近景": "中景",
+    "中远景": "全景",
+    "远景": "全景",
+};
 let activeLocale = "";
 
 function nodeClass(node) {
@@ -68,6 +88,11 @@ function removeStalePromptPlusWidgets(node) {
     if (length && !LENGTH_VALUES.has(String(length.value || "").trim())) length.value = "标准";
     const language = node.widgets.find((widget) => widget.name === "output_language");
     if (language && !LANGUAGE_VALUES.has(String(language.value || "").trim())) language.value = "英文";
+    const composition = node.widgets.find((widget) => widget.name === "composition_preset");
+    if (composition) {
+        const value = String(composition.value || "").trim();
+        if (COMPOSITION_VALUE_ALIASES[value]) composition.value = COMPOSITION_VALUE_ALIASES[value];
+    }
     for (const widget of node.widgets) {
         if (typeof widget.name === "string" && /control_after_generate/i.test(widget.name)) {
             const value = String(widget.value || "").trim();
@@ -96,17 +121,23 @@ function orderPromptPlusWidgets(node) {
 }
 
 function applySlotLabels(slots) {
+    let changed = false;
     for (const slot of slots || []) {
         const key = SLOT_LABELS[slot.name];
         if (!key) continue;
         const label = t(key);
+        if (slot.label !== label || slot.localized_name !== label) changed = true;
         slot.label = label;
         slot.localized_name = label;
     }
+    return changed;
 }
 
 function canonicalOptionValue(value, displayMap) {
     const text = String(value ?? "");
+    if ((displayMap === STYLE_DISPLAY || displayMap === COMPOSITION_DISPLAY) && ["none", "None", "Auto", "自动判断", "无"].includes(text)) {
+        return "自行判断";
+    }
     if (Object.hasOwn(displayMap, text)) return text;
     for (const [canonical, translated] of Object.entries(displayMap)) {
         if (translated === text) return canonical;
@@ -130,20 +161,27 @@ function localizeComboOptions(widget, displayMap) {
 function applyWidgetLabels(node) {
     const cls = nodeClass(node);
     if (!PROMPT_NODE_CLASSES.has(cls) && cls !== PROMPT_VIEW) return;
+    let changed = false;
     removeStalePromptPlusWidgets(node);
     orderPromptPlusWidgets(node);
-    if (cls === PROMPT_NODE) node.title = t("promptNodeTitle");
-    if (cls === PROMPT_VIEW) node.title = t("promptViewTitle");
+    const title = cls === PROMPT_NODE ? t("promptNodeTitle") : cls === PROMPT_VIEW ? t("promptViewTitle") : "";
+    if (title && node.title !== title) {
+        node.title = title;
+        changed = true;
+    }
     for (const widget of node.widgets || []) {
         if (widget._no8dPromptSend) {
-            widget.name = t("promptViewSend");
-            widget.label = t("promptViewSend");
+            const label = t("promptViewSend");
+            if (widget.name !== label || widget.label !== label || widget.options?.label !== label) changed = true;
+            widget.name = label;
+            widget.label = label;
             widget.options = widget.options || {};
-            widget.options.label = t("promptViewSend");
+            widget.options.label = label;
             continue;
         }
         if (typeof widget.name === "string" && /control_after_generate/i.test(widget.name)) {
             const label = t("promptSeedControl");
+            if (widget.label !== label || widget.options?.label !== label) changed = true;
             widget.label = label;
             widget.options = widget.options || {};
             widget.options.label = label;
@@ -152,18 +190,26 @@ function applyWidgetLabels(node) {
         const key = WIDGET_LABELS[widget.name];
         if (!key) continue;
         const label = t(key);
+        if (widget.label !== label || widget.options?.label !== label) changed = true;
         widget.label = label;
         widget.options = widget.options || {};
         widget.options.label = label;
+        if (widget.name === "extra_rules") {
+            widget.options.placeholder = label;
+            if (widget.inputEl) widget.inputEl.placeholder = label;
+        }
         if (widget.name === "prompt_rules") localizeComboOptions(widget, PROMPT_RULE_DISPLAY);
         if (widget.name === "style_preset") localizeComboOptions(widget, STYLE_DISPLAY);
+        if (widget.name === "composition_preset") localizeComboOptions(widget, COMPOSITION_DISPLAY);
         if (widget.name === "length_preset") localizeComboOptions(widget, LENGTH_DISPLAY);
         if (widget.name === "output_language") localizeComboOptions(widget, LANGUAGE_DISPLAY);
     }
-    applySlotLabels(node.inputs);
-    applySlotLabels(node.outputs);
-    node.graph?.setDirtyCanvas?.(true, true);
-    app?.canvas?.setDirty?.(true, true);
+    changed = applySlotLabels(node.inputs) || changed;
+    changed = applySlotLabels(node.outputs) || changed;
+    if (changed) {
+        node.graph?.setDirtyCanvas?.(true, true);
+        app?.canvas?.setDirty?.(true, true);
+    }
 }
 
 function applyAllPromptLabels() {
@@ -182,10 +228,8 @@ app.registerExtension({
     async setup() {
         activeLocale = no8dLocale();
         setTimeout(() => applyAllPromptLabelsIfNeeded(true), 500);
-        setTimeout(() => applyAllPromptLabelsIfNeeded(true), 1500);
         window.addEventListener("storage", () => applyAllPromptLabelsIfNeeded(true));
         window.addEventListener("languagechange", () => applyAllPromptLabelsIfNeeded(true));
-        setInterval(applyAllPromptLabelsIfNeeded, 1000);
     },
     async nodeCreated(node) {
         applyWidgetLabels(node);

@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 
 try:
     import folder_paths
@@ -197,11 +198,115 @@ def _unique_path(path: Path) -> Path:
         counter += 1
 
 
-def _save_image(path: Path, image: Image.Image, image_format: str, quality: int) -> None:
+def _metadata_text(value: Any, limit: int = 60000) -> str:
+    text = str(value or "").strip()
+    if len(text) > limit:
+        return text[:limit] + "\n...[truncated]"
+    return text
+
+
+def _metadata_node_size(text: str, width: int = 1200) -> list[int]:
+    chars_per_line = max(40, width // 10)
+    visual_lines = 0
+    for line in str(text or "").splitlines() or [""]:
+        visual_lines += max(1, (len(line) + chars_per_line - 1) // chars_per_line)
+    height = 110 + visual_lines * 22
+    return [width, max(260, min(3200, height))]
+
+
+def _split_metadata_sections(text: str) -> list[str]:
+    sections: list[list[str]] = []
+    current: list[str] = []
+    for line in str(text or "").splitlines():
+        if line.startswith("## ") and current:
+            sections.append(current)
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        sections.append(current)
+    return ["\n".join(section).strip() for section in sections if "\n".join(section).strip()] or [text]
+
+
+def _metadata_text_node(node_id: int, text: str, x: int, y: int, width: int = 1200, color: str = "#332222", bgcolor: str = "#553333") -> dict[str, Any]:
+    return {
+        "id": node_id,
+        "type": "PrimitiveStringMultiline",
+        "pos": [x, y],
+        "size": _metadata_node_size(text, width),
+        "color": color,
+        "bgcolor": bgcolor,
+        "flags": {},
+        "order": node_id - 1,
+        "mode": 0,
+        "inputs": [],
+        "outputs": [
+            {"name": "STRING", "type": "STRING", "links": []},
+        ],
+        "properties": {
+            "Node name for S&R": "PrimitiveStringMultiline",
+        },
+        "widgets_values": [text],
+    }
+
+
+def _metadata_workflow(text: str) -> dict[str, Any]:
+    sections = _split_metadata_sections(text)
+    nodes = []
+    if sections:
+        first = _metadata_text_node(1, sections[0], 120, 120, 2400, "#332222", "#553333")
+        nodes.append(first)
+        second_row_y = 120 + int(first["size"][1]) + 80
+        second_row_x = 120
+        for index, section in enumerate(sections[1:], start=2):
+            node = _metadata_text_node(index, section, second_row_x, second_row_y, 760, "#332a18", "#5a4618")
+            nodes.append(node)
+            second_row_x += int(node["size"][0]) + 60
+    return {
+        "last_node_id": len(nodes),
+        "last_link_id": 0,
+        "nodes": nodes,
+        "links": [],
+        "groups": [],
+        "config": {},
+        "extra": {},
+        "version": 0.4,
+    }
+
+
+def _markdown_metadata(markdown: Any) -> dict[str, str]:
+    text = _metadata_text(markdown)
+    if not text:
+        return {}
+    return {
+        "workflow": json.dumps(_metadata_workflow(text), ensure_ascii=False),
+    }
+
+
+def _pnginfo_from_metadata(metadata: dict[str, str]) -> PngInfo:
+    pnginfo = PngInfo()
+    for key, value in metadata.items():
+        pnginfo.add_text(str(key), str(value))
+    return pnginfo
+
+
+def _exif_from_metadata(metadata: dict[str, str]) -> bytes:
+    exif = Image.Exif()
+    caption = metadata.get("NO8D Markdown") or metadata.get("Description") or metadata.get("Comment") or ""
+    if caption:
+        exif[270] = caption
+    user_comment = json.dumps(metadata, ensure_ascii=False) if metadata else caption
+    if user_comment:
+        exif[37510] = b"UNICODE\0" + str(user_comment).encode("utf-16be", errors="ignore")
+    return exif.tobytes()
+
+
+def _save_image(path: Path, image: Image.Image, image_format: str, quality: int, metadata: dict[str, str] | None = None) -> None:
     image_format = str(image_format or "png").lower()
     if image_format not in _IMAGE_FORMATS:
         image_format = "png"
     quality = max(1, min(100, _safe_int(quality, 100)))
+    metadata = metadata or {}
 
     if image_format == "png":
         compress_level = round((100 - quality) / 100 * 9)
@@ -209,15 +314,15 @@ def _save_image(path: Path, image: Image.Image, image_format: str, quality: int)
             colors = max(16, min(256, round(16 + (quality / 100) * 240)))
             quantize_method = getattr(Image, "Quantize", Image).FASTOCTREE if image.mode == "RGBA" else getattr(Image, "Quantize", Image).MEDIANCUT
             image = image.convert("RGBA" if image.mode == "RGBA" else "RGB").quantize(colors=colors, method=quantize_method)
-        image.save(path, format="PNG", compress_level=compress_level)
+        image.save(path, format="PNG", compress_level=compress_level, pnginfo=_pnginfo_from_metadata(metadata) if metadata else None)
         return
 
     if image.mode not in ("RGB", "L"):
         image = image.convert("RGB")
     if image_format == "jpg":
-        image.save(path, format="JPEG", quality=quality, subsampling=0 if quality >= 95 else -1, optimize=True)
+        image.save(path, format="JPEG", quality=quality, subsampling=0 if quality >= 95 else -1, optimize=True, exif=_exif_from_metadata(metadata) if metadata else None)
         return
-    image.save(path, format="WEBP", quality=quality, method=6)
+    image.save(path, format="WEBP", quality=quality, method=6, exif=_exif_from_metadata(metadata) if metadata else None)
 
 
 class NO8DSaveImageTextDataset:
@@ -230,9 +335,11 @@ class NO8DSaveImageTextDataset:
                 "name_parts_json": ("STRING", {"default": '[{"variable":"none","text":""}]', "multiline": False}),
                 "image_format": (_IMAGE_FORMATS, {"default": "png"}),
                 "quality": ("INT", {"default": 100, "min": 1, "max": 100}),
+                "embed_metadata": ("BOOLEAN", {"default": True}),
             },
             "optional": {
                 "caption": ("STRING", {"forceInput": True}),
+                "metadata": ("STRING", {"forceInput": True}),
             },
         }
 
@@ -248,7 +355,9 @@ class NO8DSaveImageTextDataset:
         name_parts_json='[{"variable":"none","text":""}]',
         image_format="png",
         quality=100,
+        embed_metadata=True,
         caption=None,
+        metadata=None,
     ):
         folder = _resolve_folder(folder_path)
         folder.mkdir(parents=True, exist_ok=True)
@@ -286,9 +395,11 @@ class NO8DSaveImageTextDataset:
                 image_path = _unique_path(image_path)
                 text_path = image_path.with_suffix(".txt")
 
-            _save_image(image_path, pil_image, image_format, quality)
+            image_metadata = _markdown_metadata(_caption_at(metadata, batch_index)) if _safe_int(embed_metadata, 1) else {}
+            _save_image(image_path, pil_image, image_format, quality, image_metadata)
             if has_caption:
-                text_path.write_text(_caption_at(caption, batch_index).strip() + "\n", encoding="utf-8")
+                caption_text = _caption_at(caption, batch_index).strip()
+                text_path.write_text(caption_text + "\n", encoding="utf-8")
             saved.append(str(image_path))
 
         return {"ui": {"saved": saved}, "result": ()}

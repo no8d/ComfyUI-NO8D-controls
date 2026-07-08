@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="980" height="360" viewBox="0 0 980 360" role="img" aria-labelledby="title desc">
-  <title id="title">ComfyUI-NO8D-control workflow overview</title>
-  <desc id="desc">A ComfyUI workflow diagram showing Checkpoint Loader to NO8D-LoRA stack, then NO8D-Inpainting, then NO8D-A/B preview.</desc>
+  <title id="title">ComfyUI-NO8D-controls workflow overview</title>
+  <desc id="desc">A ComfyUI workflow diagram showing Checkpoint Loader to NO8D-LoRA stack, then NO8D-Generate, then NO8D-A/B preview.</desc>
   <defs>
     <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
       <stop stop-color="#101820"/>
@@ -18,8 +18,8 @@
     </marker>
   </defs>
   <rect width="980" height="360" rx="24" fill="url(#bg)"/>
-  <text x="40" y="54" fill="#e7f0ff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="28" font-weight="700">ComfyUI-NO8D-control</text>
-  <text x="40" y="86" fill="#9db0c8" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="15">LoRA control, inpainting, and A/B comparison in one focused ComfyUI node pack.</text>
+  <text x="40" y="54" fill="#e7f0ff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="28" font-weight="700">ComfyUI-NO8D-controls</text>
+  <text x="40" y="86" fill="#9db0c8" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="15">LoRA control, generation, mask editing, and A/B comparison in one focused ComfyUI node pack.</text>
 
   <g filter="url(#shadow)">
     <rect x="50" y="135" width="190" height="94" rx="14" fill="url(#node)" stroke="#435269"/>
@@ -37,7 +37,7 @@
 
   <g filter="url(#shadow)">
     <rect x="595" y="115" width="205" height="134" rx="14" fill="url(#node)" stroke="#66ccff"/>
-    <text x="620" y="151" fill="#ffffff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="20" font-weight="700">NO8D-Inpainting</text>
+    <text x="620" y="151" fill="#ffffff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="20" font-weight="700">NO8D-Generate</text>
     <text x="620" y="181" fill="#9db0c8" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="14">Sample, preview, mask</text>
     <text x="620" y="205" fill="#9db0c8" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="14">Brush + lasso local edits</text>
     <text x="620" y="229" fill="#66ccff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="13">Continuous accepted base</text>
