@@ -18,32 +18,32 @@
 ## 当前节点结构
 
 - `slider_lora_stack.py` + `web/slider_lora_stack.js`
-  - 节点：`NO8D-LoRA stack`
+  - 节点：英文 `NO8D-LoRA stack`，中文 `NO8D-LoRA 堆栈`
   - 功能：多 LoRA 堆叠、排序、启用/关闭、权重范围、触发词输出。
 
 - `prompt_plus.py` + `web/prompt_plus_i18n.js` + `web/prompt_view.js`
-  - 节点：`NO8D-Prompt`、`NO8D-提示词预览`
+  - 节点：英文 `NO8D-Prompt` / `NO8D-Prompt-view`，中文 `NO8D-提示词` / `NO8D-提示词预览`
   - 功能：文本扩写、图像反推、文本 + 图像融合、固定提示词前缀、提示词预览与发送。
 
 - `image_loader.py` + `web/image_loader_i18n.js`
-  - 节点：`NO8D-图像载入`
+  - 节点：英文 `NO8D-Load-images`，中文 `NO8D-图像载入`
   - 功能：多图载入、缩略图选择、拖动排序、选中图输出、未选中时输出全部、list 输出。
 
 - `generate.py` + `web/generate.js`
-  - 节点：`NO8D-Generate`
+  - 节点：英文 `NO8D-Generate`，中文 `NO8D-生成`
   - 功能：采样参数面板、图像预览、遮罩绘制、局部重绘、list 输入执行。
   - 后端通过 `GraphBuilder` 展开为 ComfyUI 原生采样/解码链路。
 
 - `compare_slider_preview.py` + `web/compare_slider_preview.js`
-  - 节点：`NO8D-A/B preview`
+  - 节点：英文 `NO8D-A/B preview`，中文 `NO8D-A/B 对比`
   - 功能：左侧 `image_a`，右侧 `image_b`；单输入时当前图与历史图对比；list 结果分页对比。
 
 - `save_image_text_dataset.py` + `web/save_i18n.js`
-  - 节点：`NO8D-图文保存`
+  - 节点：英文 `NO8D save`，中文 `NO8D-图文保存`
   - 功能：保存图像与文本，支持可排序命名规则。
 
 - `empty_latent.py` + `web/empty_latent_i18n.js`
-  - 节点：`NO8D-空 latent`
+  - 节点：英文 `NO8D-Empty latent`，中文 `NO8D-空 latent`
   - 功能：按模型类型、比例和短边尺寸创建 latent。
 
 - `prompt_config.py`、`prompt_server.py`、`web/prompt_settings.js`
@@ -106,6 +106,7 @@
 当前实现：
 
 - `web/no8d_i18n.js` 集中存放英文/中文文案。
+- `web/node_titles_i18n.js` 统一处理节点菜单显示名和画布标题，内部 class 名不变，显示名按语言环境切换。
 - 语言判断来源包括 ComfyUI 设置、localStorage、页面语言和可见 ComfyUI UI 文案。
 - 已移除周期性语言轮询。
 - 节点启动时初始化语言；浏览器 `storage` 或 `languagechange` 事件发生时刷新标签。
