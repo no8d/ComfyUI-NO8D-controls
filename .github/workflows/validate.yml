@@ -25,7 +25,9 @@ jobs:
           node-version: "20"
 
       - name: Check Python syntax
-        run: python -m py_compile __init__.py compare_slider_preview.py slider_lora_lite.py slider_lora_stack.py
+        shell: bash
+        run: |
+          python -m compileall -q .
 
       - name: Check JavaScript syntax
         shell: bash
@@ -33,4 +35,3 @@ jobs:
           for file in web/*.js; do
             node --check "$file"
           done
-
