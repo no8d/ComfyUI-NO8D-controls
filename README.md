@@ -66,6 +66,8 @@ Applies multiple LoRAs to a model without requiring a CLIP input.
 
 Expands short ideas, image references, or both into a complete positive prompt through the configured prompt API.
 
+![NO8D-Prompt](docs/images/prompt-plus-node.png)
+
 Input modes:
 
 - Text only: use `输入文本 / Input text` as the user's idea and expand it into a structured image prompt.
@@ -78,9 +80,13 @@ Input modes:
 
 Displays prompt text, allows manual editing, and can send the edited text downstream without rebuilding the whole workflow manually.
 
+![NO8D-Prompt-view](docs/images/prompt-view-node.png)
+
 ### NO8D-Load-images
 
 Loads one or many local images into the workflow.
+
+![NO8D-Load-images](docs/images/load-images-node.png)
 
 - Drag files into the node or use the folder button.
 - Select one or multiple images.
