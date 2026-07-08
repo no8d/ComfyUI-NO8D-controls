@@ -9,7 +9,7 @@ ComfyUI-NO8D-controls is a ComfyUI custom node pack for practical image iteratio
 
 The project follows a native-first rule: use ComfyUI's built-in node execution, image preview, queue behavior, and graph expansion wherever possible. Custom frontend code is only used where the node needs a compact workflow-specific UI.
 
-![ComfyUI-NO8D-controls](docs/images/no8d-control-banner.png)
+![ComfyUI-NO8D-controls](docs/images/no8d-control-banner-readme.jpg)
 
 ## Nodes
 
