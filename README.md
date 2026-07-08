@@ -99,6 +99,8 @@ Loads one or many local images into the workflow.
 
 Wraps ComfyUI sampling into a compact generation node with an editable image/mask preview.
 
+![NO8D-Generate](docs/images/generate-node.png)
+
 - Controls sampler, scheduler, steps, CFG, denoise, and seed.
 - Supports lock/randomize seed behavior.
 - Supports brush, lasso, eraser, mask feather, opacity, color, invert, and clear.
@@ -109,6 +111,8 @@ Wraps ComfyUI sampling into a compact generation node with an editable image/mas
 
 Compares two image streams.
 
+![NO8D-A/B preview](docs/images/ab-preview-node.png)
+
 - `image_a` is shown on the left.
 - `image_b` is shown on the right.
 - If only one side is connected, the missing side uses the previous image from the same stream. On the first run, the missing side is blank.
@@ -118,6 +122,8 @@ Compares two image streams.
 
 Saves image/caption datasets with configurable filename parts.
 
+![NO8D save](docs/images/save-node.png)
+
 - Supports fixed text, original filename, datetime, and size-class naming parts.
 - Reorder naming parts by dragging.
 - Saves captions together with generated or loaded images.
@@ -125,6 +131,8 @@ Saves image/caption datasets with configurable filename parts.
 ### NO8D-Empty latent
 
 Creates empty latents for common model families and aspect ratios.
+
+![NO8D-Empty latent](docs/images/empty-latent-node.png)
 
 - Supports SD/SDXL, SD3/Flux/Krea2, and Flux2 sizing presets.
 - Supports common portrait ratios and inverted landscape ratios.
