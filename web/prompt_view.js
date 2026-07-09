@@ -71,7 +71,7 @@ function syncNativeLabels(node) {
         edited.options = edited.options || {};
         edited.options.label = label;
         edited.serializeValue = function () {
-            return findWidget(node, "auto_output")?.value ? "" : String(this.value || "");
+            return String(this.value || "");
         };
     }
     const auto = findWidget(node, "auto_output");
