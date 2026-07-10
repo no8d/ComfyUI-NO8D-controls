@@ -318,7 +318,9 @@ function imageRefs(value) {
 
 function refsFromMessage(message) {
     if (!message || typeof message !== "object") return [];
-    const direct = imageRefs(message.images);
+    const direct = imageRefs(message.images)
+        .concat(imageRefs(message.a_images))
+        .concat(imageRefs(message.b_images));
     if (direct.length) return direct;
     for (const value of Object.values(message)) {
         if (!value || typeof value !== "object") continue;
@@ -326,6 +328,55 @@ function refsFromMessage(message) {
         if (nested.length) return nested;
     }
     return [];
+}
+
+function collectDownstreamNodeIds(node) {
+    const graph = node?.graph || app?.graph;
+    const output = node?.outputs?.[0];
+    const links = Array.isArray(output?.links) ? output.links : [];
+    const linkParts = [];
+    const pending = [];
+    for (const linkId of links) {
+        const link = graph?.links?.[linkId];
+        if (!link || link.target_id == null) continue;
+        pending.push(link.target_id);
+        linkParts.push(`${link.id}:${link.origin_id}:${link.origin_slot}:${link.target_id}:${link.target_slot}`);
+    }
+    const signature = linkParts.sort().join("|");
+    if (node?._no8dGenerateDownstreamCache?.signature === signature) {
+        return node._no8dGenerateDownstreamCache.ids;
+    }
+
+    const result = new Set();
+    while (pending.length) {
+        const id = pending.shift();
+        if (id == null || result.has(String(id))) continue;
+        result.add(String(id));
+        const next = graph?.getNodeById?.(id);
+        for (const nextOutput of next?.outputs || []) {
+            for (const linkId of Array.isArray(nextOutput.links) ? nextOutput.links : []) {
+                const link = graph?.links?.[linkId];
+                if (!link || link.target_id == null) continue;
+                pending.push(link.target_id);
+            }
+        }
+    }
+    const ids = [...result];
+    if (node) node._no8dGenerateDownstreamCache = { signature, ids };
+    return ids;
+}
+
+function findGenerateNodeForPreviewEvent(id) {
+    const direct = findGenerateNodeFromExecutionId(id);
+    if (direct) return direct;
+    const eventId = String(id || "").split(".")[0];
+    for (const node of app?.graph?._nodes || []) {
+        if (!isGenerateNode(node) || !node._no8dGenerateCanvas) continue;
+        if (collectDownstreamNodeIds(node).some((downstreamId) => String(downstreamId) === eventId)) {
+            return node;
+        }
+    }
+    return null;
 }
 
 function makeViewUrl(ref) {
@@ -1562,7 +1613,7 @@ app.registerExtension({
         window.addEventListener("storage", () => refreshAllGenerateLabels(true));
         window.addEventListener("languagechange", () => refreshAllGenerateLabels(true));
         api.addEventListener("executed", async ({ detail }) => {
-            const node = findGenerateNodeFromExecutionId(detail?.node);
+            const node = findGenerateNodeForPreviewEvent(detail?.node);
             const widget = node?._no8dGenerateCanvas;
             if (!widget) return;
             const refs = refsFromMessage(detail?.output || detail);

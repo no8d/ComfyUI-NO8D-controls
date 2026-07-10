@@ -6,6 +6,14 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-07-10
+
+### Fixed
+
+- Changed `NO8D-Generate` to behave like native sampler/decode nodes instead of an output node, so it only runs when its outputs feed a real output node such as `PreviewImage`, `NO8D-A/B preview`, or save nodes.
+- Removed the internal `PreviewImage` expansion from `NO8D-Generate` to avoid duplicate preview work when native ComfyUI preview/save nodes are already present.
+- Kept the `NO8D-Generate` canvas preview synchronized by accepting preview images emitted from downstream preview/output nodes.
+
 ## [1.0.3] - 2026-07-10
 
 ### Fixed

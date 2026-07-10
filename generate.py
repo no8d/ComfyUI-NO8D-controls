@@ -134,6 +134,7 @@ class NO8DGenerate:
                 "negative": ("CONDITIONING",),
             },
             "hidden": {
+                "prompt": "PROMPT",
                 "unique_id": "UNIQUE_ID",
             },
         }
@@ -141,7 +142,6 @@ class NO8DGenerate:
     RETURN_TYPES = ("IMAGE", "LATENT", "MASK")
     RETURN_NAMES = ("image", "latent", "mask")
     FUNCTION = "expand"
-    OUTPUT_NODE = True
     CATEGORY = "NO8D-controls"
 
     def expand(
@@ -159,6 +159,7 @@ class NO8DGenerate:
         mask_feather,
         canvas,
         negative=None,
+        prompt=None,
         unique_id=None,
     ):
         graph = GraphBuilder()
@@ -229,7 +230,6 @@ class NO8DGenerate:
             )
             final_image = composite.out(0)
             output_mask = adapter.out(2)
-        graph.node("PreviewImage", images=final_image)
 
         return {
             "result": (final_image, sampler.out(0), output_mask),
