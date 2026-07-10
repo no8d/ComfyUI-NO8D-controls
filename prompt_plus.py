@@ -1132,16 +1132,19 @@ class NO8DPromptView:
         send_seq = _safe_int(send_seq, 0)
         if _safe_bool(auto_output, True):
             output = incoming or edited
+            display_text = output
         elif edited.strip() and send_seq > int(self._last_send_seq.get(node_key, 0)):
             output = edited
             self._last_send_seq[node_key] = send_seq
+            display_text = edited
         else:
             output = ExecutionBlocker(None) if ExecutionBlocker else ""
+            display_text = edited or incoming
         ui_output = "" if ExecutionBlocker and isinstance(output, ExecutionBlocker) else output
         return {
             "ui": {
-                "edited_text": [incoming],
-                "NO8DPromptView_text": [incoming],
+                "edited_text": [display_text],
+                "NO8DPromptView_text": [display_text],
                 "NO8DPromptView_output": [ui_output],
             },
             "result": (output,),

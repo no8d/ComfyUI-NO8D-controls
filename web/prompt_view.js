@@ -50,7 +50,9 @@ function readIncomingFromMessage(message) {
     const value = message?.edited_text
         || message?.ui?.edited_text
         || message?.NO8DPromptView_text
-        || message?.ui?.NO8DPromptView_text;
+        || message?.ui?.NO8DPromptView_text
+        || message?.NO8DPromptView_output
+        || message?.ui?.NO8DPromptView_output;
     if (Array.isArray(value)) return value[0] || "";
     if (typeof value === "string") return value;
     return "";
@@ -204,7 +206,7 @@ function activate(node) {
 function setIncomingText(node, incoming) {
     const edited = findWidget(node, "edited_text");
     if (!edited) return;
-    if (!incoming && !(node.inputs || []).some((input) => input?.name === "text" && input.link != null)) return;
+    if (!incoming) return;
     if (incoming !== node._promptViewIncoming) {
         setWidget(edited, incoming || "");
         node._promptViewIncoming = incoming || "";

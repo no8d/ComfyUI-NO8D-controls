@@ -6,6 +6,13 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-07-10
+
+### Fixed
+
+- Fixed `NO8D-Prompt-view` clearing manually edited prompt text when an auto-output run received an empty upstream text value.
+- Made prompt view UI refresh use the actual displayed/output text instead of always mirroring the upstream input.
+
 ## [1.0.2] - 2026-07-10
 
 ### Fixed
