@@ -6,6 +6,15 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-07-10
+
+### Fixed
+
+- Matched custom DOM widget bypass/never/ghost visuals to ComfyUI's native node-mode opacity and bypass color rules.
+- Synchronized bypass styling for `NO8D-Generate`, `NO8D-Load-images`, `NO8D-LoRA stack`, `NO8D-Prompt`, `NO8D-Prompt-view`, and `NO8D save` custom controls.
+- Marked `NO8D-Generate` internal decode adapter nodes as deprecated/internal and hid them from frontend node registration/search.
+- Reduced persistent LoRA stack backend memory retention by avoiding long-lived loaded-LoRA state caches on the node instance.
+
 ## [1.0.5] - 2026-07-10
 
 ### Fixed

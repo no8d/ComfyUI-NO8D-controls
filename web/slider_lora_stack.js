@@ -2,6 +2,7 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { passMouseToComfy, shouldPassKeyToComfy, shouldPassMouseToComfy } from "./no8d_comfy_events.js";
 import { no8dLocale, t } from "./no8d_i18n.js";
+import { refreshBypassElements, registerBypassElement, wrapBypassRefresh } from "./no8d_bypass.js";
 
 const NODE_NAME = "NO8DLoraStack";
 const STACK_MIN_WIDTH = 620;
@@ -660,6 +661,7 @@ function attach(node) {
 
     const container = document.createElement("div");
     container.style.cssText = "width:100%; max-width:100%; box-sizing:border-box; overflow:hidden; pointer-events:none;";
+    registerBypassElement(node, container);
 
     const panel = document.createElement("div");
     panel.style.cssText = "width:100%; max-width:100%; box-sizing:border-box; background:#1f1f1f; border:1px solid #333; border-radius:6px; overflow:hidden; overscroll-behavior:contain; pointer-events:none;";
@@ -719,6 +721,7 @@ function attach(node) {
     markWrapper();
     requestAnimationFrame(markWrapper);
     render(node);
+    refreshBypassElements(node);
     refreshLoraOptions(node).then((changed) => {
         if (changed) render(node);
     });
@@ -759,11 +762,13 @@ app.registerExtension({
     },
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name !== NODE_NAME) return;
+        wrapBypassRefresh(nodeType);
         const onCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             if (onCreated) onCreated.apply(this, arguments);
             hideNativeWidgets(this);
             attach(this);
+            refreshBypassElements(this);
             setTimeout(() => hideNativeWidgets(this), 0);
         };
         const onConfigure = nodeType.prototype.onConfigure;
@@ -778,6 +783,7 @@ app.registerExtension({
                 });
                 render(this);
                 hideNativeWidgets(this);
+                refreshBypassElements(this);
             }, 0);
         };
         const onRemoved = nodeType.prototype.onRemoved;

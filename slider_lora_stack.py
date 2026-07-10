@@ -74,9 +74,6 @@ def _trigger_words_from_entries(validated_entries):
 
 
 class NO8DLoraStack:
-    def __init__(self):
-        self._loaded_loras = {}
-
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -109,7 +106,6 @@ class NO8DLoraStack:
     def run(self, model, lora_picker, stack_json):
         entries = _parse_entries(stack_json)
 
-        retained_paths = set()
         validated_entries = []
         for index, entry in enumerate(entries):
             if not isinstance(entry, dict):
@@ -128,11 +124,10 @@ class NO8DLoraStack:
             path = None
             if name != _NO_LORA:
                 path = folder_paths.get_full_path("loras", name)
-                if path is not None:
-                    retained_paths.add(path)
             trigger = str(entry.get("trigger", "")).strip()
             validated_entries.append((bool(entry.get("enabled", True)), name, weight, path, index, trigger))
 
+        loras_for_run = {}
         for enabled, name, weight, path, index, _trigger in validated_entries:
             if not enabled:
                 continue
@@ -142,16 +137,11 @@ class NO8DLoraStack:
                 raise FileNotFoundError(
                     f"NO8D-LoRA stack: LoRA file not found for entry {index + 1}: {name}"
                 )
-            lora = self._loaded_loras.get(path)
+            lora = loras_for_run.get(path)
             if lora is None:
                 lora = comfy.utils.load_torch_file(path, safe_load=True)
-                self._loaded_loras[path] = lora
+                loras_for_run[path] = lora
             model, _ = comfy.sd.load_lora_for_models(model, None, lora, weight, 0.0)
-
-        self._loaded_loras = {
-            path: lora for path, lora in self._loaded_loras.items()
-            if path in retained_paths
-        }
         return (model, _trigger_words_from_entries(validated_entries))
 
 

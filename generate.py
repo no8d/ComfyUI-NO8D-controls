@@ -26,6 +26,7 @@ class NO8DDecodedImageAdapter:
     RETURN_NAMES = ("image", "destination", "mask")
     FUNCTION = "adapt"
     CATEGORY = "NO8D-controls/internal"
+    DEPRECATED = True
 
     @staticmethod
     def _unpack_rgb(image):
@@ -121,6 +122,7 @@ class NO8DDecodedImageOnly:
     RETURN_NAMES = ("image",)
     FUNCTION = "adapt"
     CATEGORY = "NO8D-controls/internal"
+    DEPRECATED = True
 
     def adapt(self, decoded):
         return (NO8DDecodedImageAdapter._unpack_rgb(decoded),)

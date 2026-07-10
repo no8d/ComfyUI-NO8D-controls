@@ -2,6 +2,7 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { shouldPassKeyToComfy } from "./no8d_comfy_events.js";
 import { no8dLocale, t } from "./no8d_i18n.js";
+import { refreshBypassElements, registerBypassElement, wrapBypassRefresh } from "./no8d_bypass.js";
 
 const NODE_NAME = "NO8DGenerate";
 const CANVAS_TYPE = "NO8D_GENERATE_CANVAS";
@@ -82,6 +83,7 @@ function createSamplerPanel(node) {
         "--comfy-widget-min-height:96px", "--comfy-widget-max-height:96px",
         "background:#171717", "color:#ddd", "font:12px sans-serif",
     ].join(";");
+    registerBypassElement(node, root);
 
     const makeRow = (columns) => {
         const row = document.createElement("div");
@@ -1563,6 +1565,7 @@ app.registerExtension({
         // widget for image outputs. This node renders that output in its
         // editable canvas instead, so the native preview must not be created.
         nodeType.prototype.onDrawBackground = function () {};
+        wrapBypassRefresh(nodeType);
         nodeType.prototype.onExecuted = function () {
             suppressNativePreview(this);
         };
@@ -1579,6 +1582,7 @@ app.registerExtension({
             requestAnimationFrame(() => {
                 createSamplerPanel(this);
                 this._no8dGenerateSyncSampler?.();
+                refreshBypassElements(this);
                 restorePreview(this);
             });
         };
@@ -1601,6 +1605,7 @@ app.registerExtension({
         suppressNativePreview(node);
         hideToolbarWidgets(node);
         createSamplerPanel(node);
+        refreshBypassElements(node);
         restorePreview(node);
         if ((Number(node.size?.[0]) || 0) < MIN_WIDTH) {
             node.setSize?.([MIN_WIDTH, Number(node.size?.[1]) || node.computeSize?.()[1] || 0]);

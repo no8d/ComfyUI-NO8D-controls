@@ -1,6 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { no8dLocale, t } from "./no8d_i18n.js";
+import { refreshBypassElements, registerBypassElement, wrapBypassRefresh } from "./no8d_bypass.js";
 
 const NODE_CLASS = "NO8DLoadImages";
 const HIDDEN_WIDGETS = new Set(["image_files", "output_files"]);
@@ -715,6 +716,7 @@ function makeUi(node) {
         "font-family:Arial, sans-serif",
         "color:#d1d5db",
     ].join(";");
+    registerBypassElement(node, root);
     installDropUpload(node, root);
 
     const panel = document.createElement("div");
@@ -1166,6 +1168,7 @@ function installLoaderUi(node) {
     });
     node._no8dImageLoaderWidget = widget;
     syncLoaderFrame(node);
+    refreshBypassElements(node);
     requestAnimationFrame(() => syncLoaderFrame(node));
     renderLoader(node);
 }
@@ -1185,11 +1188,13 @@ app.registerExtension({
     },
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name !== NODE_CLASS) return;
+        wrapBypassRefresh(nodeType);
         const onCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             onCreated?.apply(this, arguments);
             installLoaderUi(this);
             applyLabels(this);
+            refreshBypassElements(this);
         };
         const onResize = nodeType.prototype.onResize;
         nodeType.prototype.onResize = function () {
@@ -1205,6 +1210,7 @@ app.registerExtension({
             setTimeout(() => {
                 installLoaderUi(this);
                 applyLabels(this);
+                refreshBypassElements(this);
             }, 0);
         };
     },

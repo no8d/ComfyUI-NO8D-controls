@@ -1,5 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { no8dLocale, t } from "./no8d_i18n.js";
+import { refreshBypassElements, registerWidgetBypassElements, wrapBypassRefresh } from "./no8d_bypass.js";
 
 const PROMPT_NODE = "NO8DBatchPromptPlus";
 const PROMPT_VIEW = "NO8DPromptView";
@@ -206,6 +207,17 @@ function applyWidgetLabels(node) {
     }
     changed = applySlotLabels(node.inputs) || changed;
     changed = applySlotLabels(node.outputs) || changed;
+    registerWidgetBypassElements(node, [
+        "prompt_rules",
+        "style_preset",
+        "composition_preset",
+        "length_preset",
+        "output_language",
+        "fixed_text",
+        "extra_rules",
+        "seed",
+    ]);
+    refreshBypassElements(node);
     if (changed) {
         node.graph?.setDirtyCanvas?.(true, true);
         app?.canvas?.setDirty?.(true, true);
@@ -236,6 +248,7 @@ app.registerExtension({
     },
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (![PROMPT_NODE, PROMPT_VIEW].includes(nodeData.name)) return;
+        wrapBypassRefresh(nodeType);
         const onCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             if (onCreated) onCreated.apply(this, arguments);

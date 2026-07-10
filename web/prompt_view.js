@@ -1,5 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { t } from "./no8d_i18n.js";
+import { refreshBypassElements, registerWidgetBypassElements, wrapBypassRefresh } from "./no8d_bypass.js";
 
 const NODE_NAME = "NO8DPromptView";
 const SEND_BUTTON_HEIGHT = 34;
@@ -197,6 +198,8 @@ function activate(node) {
     let changed = hideInternalWidgets(node);
     changed = ensureSendWidget(node) || changed;
     changed = syncNativeLabels(node) || changed;
+    registerWidgetBypassElements(node, ["edited_text", "auto_output"]);
+    refreshBypassElements(node);
     if (changed) {
         node.graph?.setDirtyCanvas?.(true, true);
         app?.canvas?.setDirty?.(true, true);
@@ -225,6 +228,7 @@ app.registerExtension({
     },
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name !== NODE_NAME) return;
+        wrapBypassRefresh(nodeType);
         const onCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             if (onCreated) onCreated.apply(this, arguments);

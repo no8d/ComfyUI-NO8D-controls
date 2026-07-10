@@ -1,6 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { no8dLocale, t } from "./no8d_i18n.js";
 import { passMouseToComfy, shouldPassMouseToComfy } from "./no8d_comfy_events.js";
+import { refreshBypassElements, registerBypassElement, wrapBypassRefresh } from "./no8d_bypass.js";
 
 const NODE_CLASS = "NO8DSaveImageTextDataset";
 const VARIABLES = ["none", "original_name", "datetime", "size_class"];
@@ -258,6 +259,7 @@ function renderSaveUi(node) {
 function makeSaveUi(node) {
     const root = document.createElement("div");
     root.style.cssText = "display:flex; flex-direction:column; gap:8px; width:100%; height:100%; box-sizing:border-box; padding:0 8px 8px 8px; overflow:hidden;";
+    registerBypassElement(node, root);
     const title = document.createElement("div");
     title.textContent = t("saveNamingRules");
     title.style.cssText = "color:#cbd5e1; font-weight:700; font-size:13px;";
@@ -297,6 +299,7 @@ function installSaveUi(node) {
     widget.computeLayoutSize = () => ({ minWidth: 360, minHeight: 120, maxWidth: 1_000_000, maxHeight: 1_000_000 });
     node._no8dSaveWidget = widget;
     renderSaveUi(node);
+    refreshBypassElements(node);
 }
 
 function applyLabels(node) {
@@ -345,11 +348,13 @@ app.registerExtension({
     },
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name !== NODE_CLASS) return;
+        wrapBypassRefresh(nodeType);
         const onCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             onCreated?.apply(this, arguments);
             installSaveUi(this);
             applyLabels(this);
+            refreshBypassElements(this);
         };
         const onConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function () {
@@ -357,6 +362,7 @@ app.registerExtension({
             setTimeout(() => {
                 installSaveUi(this);
                 applyLabels(this);
+                refreshBypassElements(this);
             }, 0);
         };
     },
