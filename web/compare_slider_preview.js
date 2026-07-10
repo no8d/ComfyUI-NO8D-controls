@@ -128,6 +128,12 @@ function releasePreviewEntry(node, slot, entry) {
     if (entry.img && !imageUsedOutsideSlot(node, slot, entry.img)) releaseDecodedImage(entry.img);
 }
 
+function releaseUniqueEntry(entry) {
+    if (!entry) return;
+    if (entry.preview) releasePreviewCanvas(entry.preview);
+    if (entry.img) releaseDecodedImage(entry.img);
+}
+
 function loadPreviewImage(node, slot, ref) {
     const key = ref?.filename ? imageKey(ref) : "";
     node._no8dABImages = node._no8dABImages || {};
@@ -190,6 +196,14 @@ function syncNativeImageState(node) {
     } else if (node.imageIndex == null || node.imageIndex >= node.imgs.length) {
         node.imageIndex = 0;
     }
+}
+
+function clearNativeImageState(node) {
+    if (!node) return;
+    suppressNativePreviewWidget(node);
+    node.imgs = undefined;
+    node.images = undefined;
+    node.imageIndex = 0;
 }
 
 function persistPreviewRefs(node) {
@@ -585,6 +599,25 @@ function activateNode(node) {
     syncNativeImageState(node);
 }
 
+function disposeNode(node) {
+    if (!node) return;
+    const images = node._no8dABImages || {};
+    for (const entry of new Set([images.a, images.b].filter(Boolean))) {
+        releaseUniqueEntry(entry);
+    }
+    if (node._no8dCompareWidget?.renderCache?.canvas) {
+        releasePreviewCanvas(node._no8dCompareWidget.renderCache.canvas);
+        node._no8dCompareWidget.renderCache = null;
+    }
+    removeLegacyDomWidgets(node);
+    clearNativeImageState(node);
+    node._no8dABImages = {};
+    node._no8dABRefLists = {};
+    node._no8dABPreviousSingleRef = null;
+    node._no8dABDragging = false;
+    node._no8dCompareWidget = null;
+}
+
 app.registerExtension({
     name: "NO8D.Control.ABPreview",
     async beforeRegisterNodeDef(nodeType, nodeData) {
@@ -598,6 +631,11 @@ app.registerExtension({
         nodeType.prototype.onConfigure = function () {
             onConfigure?.apply(this, arguments);
             setTimeout(() => activateNode(this), 0);
+        };
+        const onRemoved = nodeType.prototype.onRemoved;
+        nodeType.prototype.onRemoved = function () {
+            disposeNode(this);
+            onRemoved?.apply(this, arguments);
         };
         const onResize = nodeType.prototype.onResize;
         nodeType.prototype.onResize = function () {

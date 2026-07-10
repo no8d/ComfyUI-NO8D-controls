@@ -289,6 +289,16 @@ function syncNativeImageState(node, ref, image, refs = null) {
     }
 }
 
+function clearNativeImageState(node) {
+    if (!node) return;
+    suppressNativePreview(node);
+    node.imgs = undefined;
+    node.images = undefined;
+    node.imageIndex = 0;
+    node._no8dGeneratePreviewIndex = 0;
+    node._no8dGeneratePreviewCount = 0;
+}
+
 function restorePreview(node) {
     const ref = node?.properties?.no8d_generate_preview;
     const widget = node?._no8dGenerateCanvas;
@@ -510,6 +520,8 @@ class NO8DGenerateCanvasWidget {
         this.activeEditor = null;
         this.activeEditorAction = null;
         this.flashAction = null;
+        this.previewLoadToken = 0;
+        this.disposed = false;
     }
 
     computeLayoutSize() {
@@ -543,7 +555,7 @@ class NO8DGenerateCanvasWidget {
         this.invert = false;
         this.baseImageFile = "";
         this.maskImageFile = "";
-        this.maskOverlay = null;
+        this.clearMaskOverlay();
         this.maskDirty = false;
         this.pending = null;
         if (this.maskCommitTimer) {
@@ -557,9 +569,44 @@ class NO8DGenerateCanvasWidget {
         this.clearRenderCache();
     }
 
+    clearMaskOverlay() {
+        if (this.maskOverlay) releasePreviewCanvas(this.maskOverlay);
+        this.maskOverlay = null;
+    }
+
     clearRenderCache() {
         if (this.renderCache?.canvas) releasePreviewCanvas(this.renderCache.canvas);
         this.renderCache = null;
+    }
+
+    dispose() {
+        if (this.disposed) return;
+        this.disposed = true;
+        this.previewLoadToken += 1;
+        this.closeActiveEditor();
+        if (this.maskCommitTimer) {
+            clearTimeout(this.maskCommitTimer);
+            this.maskCommitTimer = null;
+        }
+        this.pending = null;
+        this.clearRenderCache();
+        this.clearMaskOverlay();
+        if (this.interactiveMaskCanvas) {
+            releasePreviewCanvas(this.interactiveMaskCanvas);
+            this.interactiveMaskCanvas = null;
+        }
+        if (this.previewImage) {
+            releasePreviewCanvas(this.previewImage);
+            this.previewImage = null;
+        }
+        if (this.image) {
+            releaseDecodedImage(this.image);
+            this.image = null;
+        }
+        this.strokes = [];
+        this.activeStroke = null;
+        this.hoverImagePoint = null;
+        clearNativeImageState(this.node);
     }
 
     setValue(value) {
@@ -573,8 +620,15 @@ class NO8DGenerateCanvasWidget {
             this.maskOpacity = Math.min(1, Math.max(0.05, Number(state.mask_opacity) || DEFAULT_MASK_OPACITY));
             this.maskColor = /^#[0-9a-f]{6}$/i.test(state.mask_color) ? state.mask_color : DEFAULT_MASK_COLOR;
             if (this.baseImageFile && !this.image) {
+                const token = ++this.previewLoadToken;
                 loadImage({ filename: this.baseImageFile, type: "input" })
                     .then((image) => {
+                        if (this.disposed || token !== this.previewLoadToken) {
+                            releaseDecodedImage(image);
+                            return;
+                        }
+                        if (this.image && this.image !== image) releaseDecodedImage(this.image);
+                        if (this.previewImage) releasePreviewCanvas(this.previewImage);
                         this.image = image;
                         this.previewImage = makePreviewCanvas(image);
                         this.clearRenderCache();
@@ -612,7 +666,7 @@ class NO8DGenerateCanvasWidget {
     drawMask(ctx) {
         if (!this.imageRect || !this.image?.naturalWidth || !this.image?.naturalHeight) return;
         if (!this.hasMaskContent()) {
-            this.maskOverlay = null;
+            this.clearMaskOverlay();
             return;
         }
         if (this.activeStroke) {
@@ -643,8 +697,14 @@ class NO8DGenerateCanvasWidget {
             pixels.data[index + 3] = Math.round(255 * previewOpacity);
         }
         overlayCtx.putImageData(pixels, 0, 0);
-        this.maskOverlay = overlay;
-        ctx.drawImage(overlay, this.imageRect[0], this.imageRect[1], this.imageRect[2], this.imageRect[3]);
+        const displayOverlay = document.createElement("canvas");
+        displayOverlay.width = Math.max(1, Math.round(this.imageRect[2]));
+        displayOverlay.height = Math.max(1, Math.round(this.imageRect[3]));
+        displayOverlay.getContext("2d").drawImage(overlay, 0, 0, displayOverlay.width, displayOverlay.height);
+        if (overlay !== core) releasePreviewCanvas(core);
+        releasePreviewCanvas(overlay);
+        this.maskOverlay = displayOverlay;
+        ctx.drawImage(displayOverlay, this.imageRect[0], this.imageRect[1], this.imageRect[2], this.imageRect[3]);
     }
 
     drawInteractiveMask(ctx) {
@@ -1028,7 +1088,7 @@ class NO8DGenerateCanvasWidget {
             this.tool = this.tool === action ? null : action;
         } else if (action === "invert") {
             this.invert = !this.invert;
-            this.maskOverlay = null;
+            this.clearMaskOverlay();
             this.clearRenderCache();
             this.maskDirty = true;
             this.scheduleMaskCommit();
@@ -1065,7 +1125,7 @@ class NO8DGenerateCanvasWidget {
         } else {
             this.maskOpacity = Math.min(1, Math.max(0.05, value / 100));
         }
-        this.maskOverlay = null;
+        this.clearMaskOverlay();
         this.clearRenderCache();
         setDirty();
     }
@@ -1177,7 +1237,7 @@ class NO8DGenerateCanvasWidget {
                 preset.style.outline = selected ? "2px solid #3b82f6" : "none";
                 preset.style.outlineOffset = selected ? "1px" : "0";
             }
-            this.maskOverlay = null;
+            this.clearMaskOverlay();
             this.clearRenderCache();
             setDirty();
         };
@@ -1381,7 +1441,7 @@ class NO8DGenerateCanvasWidget {
                 points: [point],
             };
             this.strokes.push(this.activeStroke);
-            this.maskOverlay = null;
+            this.clearMaskOverlay();
             this.clearRenderCache();
             this.maskDirty = true;
             setDirty();
@@ -1391,7 +1451,7 @@ class NO8DGenerateCanvasWidget {
         if (type.includes("move") && this.activeStroke) {
             const point = this.imagePoint(nodePos);
             if (point) this.activeStroke.points.push(point);
-            this.maskOverlay = null;
+            this.clearMaskOverlay();
             this.clearRenderCache();
             this.maskDirty = true;
             setCursorDirty();
@@ -1407,18 +1467,26 @@ class NO8DGenerateCanvasWidget {
     }
 
     async setPreview(ref, options = {}) {
+        if (this.disposed) return;
+        const token = ++this.previewLoadToken;
         const previousImage = this.image;
         const previousPreview = this.previewImage;
-        this.image = await loadImage(ref);
-        this.previewImage = makePreviewCanvas(this.image);
-        syncNativeImageState(this.node, ref, this.image, options.refs);
-        if (previousImage && previousImage !== this.image) releaseDecodedImage(previousImage);
-        if (previousPreview && previousPreview !== this.previewImage) releasePreviewCanvas(previousPreview);
+        const image = await loadImage(ref);
+        if (this.disposed || token !== this.previewLoadToken) {
+            releaseDecodedImage(image);
+            return;
+        }
+        const preview = makePreviewCanvas(image);
+        this.image = image;
+        this.previewImage = preview;
+        syncNativeImageState(this.node, ref, image, options.refs);
+        if (previousImage && previousImage !== image) releaseDecodedImage(previousImage);
+        if (previousPreview && previousPreview !== preview) releasePreviewCanvas(previousPreview);
         this.clearRenderCache();
         if (options.clearMask) this.clearMaskState();
         else {
             this.activeStroke = null;
-            this.maskOverlay = null;
+            this.clearMaskOverlay();
             this.maskDirty = false;
             this.pending = null;
         }
@@ -1446,6 +1514,12 @@ app.registerExtension({
         nodeType.prototype.onDrawBackground = function () {};
         nodeType.prototype.onExecuted = function () {
             suppressNativePreview(this);
+        };
+        const originalOnRemoved = nodeType.prototype.onRemoved;
+        nodeType.prototype.onRemoved = function () {
+            this._no8dGenerateCanvas?.dispose?.();
+            this._no8dGenerateCanvas = null;
+            originalOnRemoved?.apply(this, arguments);
         };
         const originalOnConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function (info) {
