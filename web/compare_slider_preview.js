@@ -8,7 +8,7 @@ const MIN_HEIGHT = 320;
 const EDGE_PAD = 10;
 const NATIVE_PREVIEW_WIDGET = "$$canvas-image-preview";
 const EMPTY_IMAGE_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-const MAX_PREVIEW_EDGE = 1280;
+const MAX_PREVIEW_EDGE = 1024;
 
 const legacyDomStyle = document.createElement("style");
 legacyDomStyle.textContent = `

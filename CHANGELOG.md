@@ -6,12 +6,15 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [1.0.4] - 2026-07-10
+## [1.0.5] - 2026-07-10
 
 ### Fixed
 
-- Changed `NO8D-Generate` to behave like native sampler/decode nodes instead of an output node, so it only runs when its outputs feed a real output node such as `PreviewImage`, `NO8D-A/B preview`, or save nodes.
-- Removed the internal `PreviewImage` expansion from `NO8D-Generate` to avoid duplicate preview work when native ComfyUI preview/save nodes are already present.
+- Kept `NO8D-Generate` as an output-capable node so it can still run standalone with its own preview for mask painting.
+- Skipped the internal `PreviewImage` expansion only when the image output already reaches a downstream preview/save node, avoiding duplicate preview work while preserving standalone preview behavior.
+- Avoided retaining unconnected `NO8D-Generate` image/latent/mask outputs, reducing GPU tensor retention when only the built-in canvas preview is needed.
+- Split the normal decode adapter path so non-inpaint generations no longer allocate an unused full-size mask tensor.
+- Reduced Generate and A/B preview display-cache size to lower browser GPU/shared-memory pressure.
 - Kept the `NO8D-Generate` canvas preview synchronized by accepting preview images emitted from downstream preview/output nodes.
 
 ## [1.0.3] - 2026-07-10

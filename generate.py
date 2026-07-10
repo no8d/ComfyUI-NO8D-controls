@@ -110,6 +110,22 @@ class NO8DDecodedImageAdapter:
         return (image, aligned_destination, aligned_mask)
 
 
+class NO8DDecodedImageOnly:
+    """Convert packed VAE output to RGB without allocating inpaint helpers."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"decoded": ("IMAGE",)}}
+
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
+    FUNCTION = "adapt"
+    CATEGORY = "NO8D-controls/internal"
+
+    def adapt(self, decoded):
+        return (NO8DDecodedImageAdapter._unpack_rgb(decoded),)
+
+
 class NO8DGenerate:
     """A UI shell that expands exclusively to ComfyUI core nodes."""
 
@@ -142,6 +158,7 @@ class NO8DGenerate:
     RETURN_TYPES = ("IMAGE", "LATENT", "MASK")
     RETURN_NAMES = ("image", "latent", "mask")
     FUNCTION = "expand"
+    OUTPUT_NODE = True
     CATEGORY = "NO8D-controls"
 
     def expand(
@@ -163,6 +180,8 @@ class NO8DGenerate:
         unique_id=None,
     ):
         graph = GraphBuilder()
+        linked_outputs = self._linked_outputs(prompt, unique_id)
+        image_feeds_output = self._output_reaches_output_node(prompt, unique_id, 0)
 
         try:
             canvas_state = json.loads(canvas) if canvas else {}
@@ -213,12 +232,14 @@ class NO8DGenerate:
             denoise=denoise,
         )
         decode = graph.node("VAEDecode", samples=sampler.out(0), vae=vae)
-        adapter_inputs = {"decoded": decode.out(0)}
         if output_mask is not None:
-            adapter_inputs.update(destination=base.out(0), mask=output_mask)
-        adapter = graph.node("NO8DDecodedImageAdapter", **adapter_inputs)
-        final_image = adapter.out(0)
-        if output_mask is not None:
+            adapter = graph.node(
+                "NO8DDecodedImageAdapter",
+                decoded=decode.out(0),
+                destination=base.out(0),
+                mask=output_mask,
+            )
+            final_image = adapter.out(0)
             composite = graph.node(
                 "ImageCompositeMasked",
                 destination=adapter.out(1),
@@ -230,15 +251,93 @@ class NO8DGenerate:
             )
             final_image = composite.out(0)
             output_mask = adapter.out(2)
+        else:
+            image_adapter = graph.node("NO8DDecodedImageOnly", decoded=decode.out(0))
+            final_image = image_adapter.out(0)
+        if not image_feeds_output:
+            graph.node("PreviewImage", images=final_image)
 
         return {
-            "result": (final_image, sampler.out(0), output_mask),
+            "result": (
+                final_image if 0 in linked_outputs else None,
+                sampler.out(0) if 1 in linked_outputs else None,
+                output_mask if 2 in linked_outputs else None,
+            ),
             "expand": graph.finalize(),
         }
+
+    @staticmethod
+    def _linked_outputs(prompt, unique_id):
+        if not isinstance(prompt, dict) or unique_id is None:
+            return set()
+        node_key = str(unique_id)
+        linked = set()
+        for node in prompt.values():
+            if not isinstance(node, dict):
+                continue
+            for value in (node.get("inputs") or {}).values():
+                if (
+                    isinstance(value, (list, tuple))
+                    and len(value) == 2
+                    and str(value[0]) == node_key
+                    and isinstance(value[1], int)
+                ):
+                    linked.add(value[1])
+        return linked
+
+    @staticmethod
+    def _output_reaches_output_node(prompt, unique_id, output_index):
+        if not isinstance(prompt, dict) or unique_id is None:
+            return False
+        node_key = str(unique_id)
+        output_nodes = {
+            str(node_id)
+            for node_id, node in prompt.items()
+            if isinstance(node, dict) and node.get("class_type") in {
+                "PreviewImage",
+                "SaveImage",
+                "NO8DABPreview",
+                "NO8DSaveImageTextDataset",
+            }
+        }
+        if not output_nodes:
+            return False
+        pending = []
+        for target_id, node in prompt.items():
+            if not isinstance(node, dict):
+                continue
+            for value in (node.get("inputs") or {}).values():
+                if (
+                    isinstance(value, (list, tuple))
+                    and len(value) == 2
+                    and str(value[0]) == node_key
+                    and value[1] == output_index
+                ):
+                    pending.append(str(target_id))
+        seen = set()
+        while pending:
+            current = pending.pop(0)
+            if current in seen:
+                continue
+            seen.add(current)
+            if current in output_nodes:
+                return True
+            for target_id, node in prompt.items():
+                if not isinstance(node, dict):
+                    continue
+                for value in (node.get("inputs") or {}).values():
+                    if (
+                        isinstance(value, (list, tuple))
+                        and len(value) == 2
+                        and str(value[0]) == current
+                    ):
+                        pending.append(str(target_id))
+        return False
 
 
 NODE_CLASS_MAPPINGS = {
     "NO8DGenerate": NO8DGenerate,
     "NO8DDecodedImageAdapter": NO8DDecodedImageAdapter,
+    "NO8DDecodedImageOnly": NO8DDecodedImageOnly,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {"NO8DGenerate": "NO8D-Generate"}

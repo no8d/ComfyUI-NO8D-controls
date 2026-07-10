@@ -13,7 +13,7 @@ const EDITOR_HEIGHT = 58;
 const DEFAULT_MASK_COLOR = "#66ccff";
 const DEFAULT_MASK_OPACITY = 0.4;
 const EMPTY_IMAGE_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-const MAX_PREVIEW_EDGE = 1280;
+const MAX_PREVIEW_EDGE = 1024;
 let activeLocale = "";
 
 function isGenerateNode(node) {
