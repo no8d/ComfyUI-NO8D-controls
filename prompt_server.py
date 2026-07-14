@@ -11,7 +11,8 @@ except Exception:
     web = None
     PromptServer = None
 
-from .prompt_config import DEFAULT_PROMPT_RULES, PROMPT_RULE_MODES, prompt_config_manager
+from .prompt_config import prompt_config_manager
+from .prompt_provider import configure_chat_payload
 
 
 def _clean_key(value):
@@ -29,6 +30,93 @@ def _models_endpoint_from_base_url(base_url):
     if "api.openai.com" in url and "/v1" not in url:
         url = url + "/v1"
     return url + "/models"
+
+
+def _chat_endpoint_from_base_url(base_url):
+    url = str(base_url or "").strip().strip('"').strip("'").rstrip("/")
+    if not url:
+        return ""
+    for suffix in ("/chat/completions", "/completions", "/models"):
+        if url.endswith(suffix):
+            url = url[: -len(suffix)].rstrip("/")
+            break
+    if "api.openai.com" in url and "/v1" not in url:
+        url += "/v1"
+    return url + "/chat/completions"
+
+
+def _selected_probe_models(service):
+    names = []
+    for item in (service or {}).get("models") or []:
+        if not isinstance(item, dict) or not item.get("is_default"):
+            continue
+        name = str(item.get("name") or "").strip()
+        if name and not name.startswith("[object ") and name not in names:
+            names.append(name)
+    vision = str((service or {}).get("vision_model") or "").strip()
+    if vision and not vision.startswith("[object ") and vision not in names:
+        names.append(vision)
+    return names
+
+
+def _format_probe_error(model, status, body):
+    code = ""
+    message = str(body or "").strip()
+    try:
+        parsed = json.loads(message)
+        error = parsed.get("error") if isinstance(parsed, dict) else None
+        if isinstance(error, dict):
+            code = str(error.get("code") or "").strip()
+            message = str(error.get("message") or message).strip()
+    except Exception:
+        pass
+    combined = f"{code} {message}".lower()
+    if any(token in combined for token in ("insufficient.balance", "insufficient balance", "balance not enough", "overdue", "arrears", "欠费", "余额不足")):
+        reason = "账户欠费或余额不足"
+    elif code.lower() == "modelnotopen" or "not activated the model" in combined:
+        reason = "模型尚未开通"
+    elif status in (401, 403) or any(token in combined for token in ("unauthorized", "forbidden", "permission", "access denied")):
+        reason = "API Key 无效或没有调用权限"
+    elif status == 429:
+        reason = "请求频率或额度受限"
+    else:
+        reason = "模型调用失败"
+    detail = f"（{code}）" if code else f"（HTTP {status}）"
+    return f"{model}: {reason}{detail}：{message[:300]}"
+
+
+def _probe_chat_model(service, model):
+    service = _service_with_saved_key(service)
+    if str(service.get("type") or "").strip().lower() == "ollama":
+        return
+    endpoint = _chat_endpoint_from_base_url(service.get("base_url"))
+    if not endpoint:
+        raise RuntimeError(f"{model}: Base URL is empty")
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    api_key = _clean_key(service.get("api_key"))
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    payload = configure_chat_payload({
+        "model": model,
+        "messages": [{"role": "user", "content": "Reply OK."}],
+        "temperature": 0,
+        "max_tokens": 1,
+        "stream": False,
+    }, service.get("base_url"), model)
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            response.read(1)
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(_format_probe_error(model, exc.code, body)) from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"{model}: 请求失败：{exc.reason}") from exc
 
 
 def _ollama_base_url(base_url):
@@ -178,10 +266,21 @@ if PromptServer is not None and web is not None:
             data = await request.json()
             service = data.get("service") if isinstance(data, dict) else None
             models = _fetch_model_names(service)
+            warnings = []
+            for model in _selected_probe_models(service):
+                try:
+                    _probe_chat_model(service, model)
+                except Exception as exc:
+                    warnings.append(str(exc))
             return web.json_response({
                 "success": True,
-                "message": f"API validated. Found {len(models)} model(s).",
+                "message": (
+                    f"已获取 {len(models)} 个模型，但所选模型验证失败。"
+                    if warnings
+                    else f"API validated. Found {len(models)} model(s)."
+                ),
                 "models": models,
+                "warnings": warnings,
             })
         except Exception as exc:
             return web.json_response({"success": False, "error": str(exc)}, status=400)

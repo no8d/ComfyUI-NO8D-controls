@@ -1,6 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { t } from "./no8d_i18n.js";
-import { refreshBypassElements, registerWidgetBypassElements, wrapBypassRefresh } from "./no8d_bypass.js";
+import { isBypassed, refreshBypassElements, registerWidgetBypassElements, wrapBypassRefresh } from "./no8d_bypass.js";
 
 const NODE_NAME = "NO8DPromptView";
 const SEND_BUTTON_HEIGHT = 34;
@@ -12,6 +12,9 @@ function findWidget(node, name) {
 function setWidget(widget, value) {
     if (!widget) return;
     widget.value = value;
+    if (typeof widget.inputEl?.value === "string" && widget.inputEl.value !== String(value ?? "")) {
+        widget.inputEl.value = String(value ?? "");
+    }
     try {
         if (typeof widget.callback === "function") {
             widget.callback(value, app.canvas, widget.node || null);
@@ -48,15 +51,59 @@ function hideInternalWidgets(node) {
 }
 
 function readIncomingFromMessage(message) {
-    const value = message?.edited_text
-        || message?.ui?.edited_text
-        || message?.NO8DPromptView_text
-        || message?.ui?.NO8DPromptView_text
-        || message?.NO8DPromptView_output
-        || message?.ui?.NO8DPromptView_output;
-    if (Array.isArray(value)) return value[0] || "";
-    if (typeof value === "string") return value;
+    const candidates = [
+        message?.edited_text,
+        message?.ui?.edited_text,
+        message?.NO8DPromptView_text,
+        message?.ui?.NO8DPromptView_text,
+        message?.NO8DPromptView_output,
+        message?.ui?.NO8DPromptView_output,
+    ];
+    for (const value of candidates) {
+        const text = Array.isArray(value) ? value[0] : value;
+        if (typeof text === "string" && text) return text;
+    }
     return "";
+}
+
+function readEditorText(node) {
+    const edited = findWidget(node, "edited_text");
+    if (!edited) return "";
+    if (typeof edited.inputEl?.value === "string") return edited.inputEl.value;
+    return String(edited.value || "");
+}
+
+function captureEditorDraft(node) {
+    return readEditorText(node);
+}
+
+function hasActiveTextLink(node) {
+    const input = (node?.inputs || []).find((item) => item?.name === "text");
+    if (input?.link == null) return false;
+    const link = node?.graph?.links?.[input.link];
+    if (!link || link.origin_id == null) return false;
+    const origin = node.graph?.getNodeById?.(link.origin_id);
+    return Boolean(origin) && !isBypassed(origin);
+}
+
+function serializedEditorText(node) {
+    const auto = findWidget(node, "auto_output");
+    if (auto?.value && !hasActiveTextLink(node)) return captureEditorDraft(node);
+    // In linked auto mode the upstream text is authoritative. In edit mode a
+    // normal workflow run emits no text; the Send action injects its draft into
+    // the queued prompt explicitly. Keeping inactive drafts out of the API
+    // prompt prevents ComfyUI's input-signature cache from invalidating all
+    // downstream nodes when only the visible editor state changed.
+    return "";
+}
+
+function restoreEditorDraft(node, draft) {
+    const edited = findWidget(node, "edited_text");
+    if (!edited) return;
+    const text = String(draft ?? "");
+    if (String(edited.value || "") !== text || (typeof edited.inputEl?.value === "string" && edited.inputEl.value !== text)) {
+        setWidget(edited, text);
+    }
 }
 
 function syncNativeLabels(node) {
@@ -74,7 +121,7 @@ function syncNativeLabels(node) {
         edited.options = edited.options || {};
         edited.options.label = label;
         edited.serializeValue = function () {
-            return String(this.value || "");
+            return serializedEditorText(node);
         };
     }
     const auto = findWidget(node, "auto_output");
@@ -169,7 +216,7 @@ function sendEditedText(node) {
     const edited = findWidget(node, "edited_text");
     if (!edited) return;
     const nextSeq = String(Date.now());
-    queueEditedPrompt(node, String(edited.value || ""), nextSeq);
+    queueEditedPrompt(node, captureEditorDraft(node), nextSeq);
 }
 
 function ensureSendWidget(node) {
@@ -210,10 +257,10 @@ function setIncomingText(node, incoming) {
     const edited = findWidget(node, "edited_text");
     if (!edited) return;
     if (!incoming) return;
-    if (incoming !== node._promptViewIncoming) {
-        setWidget(edited, incoming || "");
-        node._promptViewIncoming = incoming || "";
-    }
+    if (incoming === readEditorText(node)) return;
+    setWidget(edited, incoming);
+    // The visible editor is the canonical value. Once upstream text is shown,
+    // that text becomes the editor content instead of living in a hidden state.
 }
 
 app.registerExtension({
@@ -241,10 +288,14 @@ app.registerExtension({
         };
         const onExecuted = nodeType.prototype.onExecuted;
         nodeType.prototype.onExecuted = function (message) {
+            // Native execution may rewrite widget values. Capture the live DOM
+            // value first so an empty/bypassed upstream cannot erase manual text.
+            const draftBeforeExecution = readEditorText(this);
             if (onExecuted) onExecuted.apply(this, arguments);
             activate(this);
             const incoming = readIncomingFromMessage(message);
-            setIncomingText(this, incoming);
+            if (incoming) setIncomingText(this, incoming);
+            else restoreEditorDraft(this, draftBeforeExecution);
         };
     },
 });

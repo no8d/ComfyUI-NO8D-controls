@@ -25,6 +25,19 @@ PROMPT_RULE_MODES = {
     RULE_JSON: "json",
 }
 
+
+def preferred_vision_model(text_model, model_options):
+    text_model = str(text_model or "").strip()
+    options = [str(item or "").strip() for item in (model_options or []) if str(item or "").strip()]
+    if text_model.endswith("-Thinking"):
+        instruct = text_model[:-len("-Thinking")] + "-Instruct"
+        if instruct in options:
+            return instruct
+    return text_model
+
+LEGACY_CAMERA_TERMINOLOGY_RULE = '- Use photographic and cinematic terminology only when appropriate: 35mm lens, 85mm portrait lens, shallow depth of field, soft bokeh, rim light, golden hour, overcast daylight, tungsten glow, studio lighting, film grain, close-up, medium shot, wide shot, low angle, high angle.'
+NEUTRAL_CAMERA_TERMINOLOGY_RULE = "- Use photographic and cinematic terminology only when appropriate and supported by the input: lens class, depth of field, bokeh, lighting, film grain, shot scale, and camera viewpoint. Do not default to any lens or viewing angle."
+
 RECENT_DEFAULT_PROMPT_RULES = {
     RULE_JSON: """You are a scene composition assistant for structured JSON image captioning.
 Given a user request or an input image, output a single valid JSON object that describes the scene in a structured, render-ready form.
@@ -134,6 +147,13 @@ def _looks_like_old_builtin_rule(rule_name, text):
         )
     return False
 
+
+def _migrate_builtin_rule_text(rule_name, text):
+    text = str(text or "")
+    if rule_name == RULE_NATURAL:
+        return text.replace(LEGACY_CAMERA_TERMINOLOGY_RULE, NEUTRAL_CAMERA_TERMINOLOGY_RULE)
+    return text
+
 DEFAULT_PROMPT_RULES = {
     RULE_NATURAL: """You are an expert prompt engineer specializing in expanding user descriptions and reverse-engineering images into highly effective natural-language image prompts.
 
@@ -166,7 +186,7 @@ Natural-language prompt optimization:
 - Use fluent, common, modern phrasing in the requested output language. Avoid archaic phrasing, poetic old-fashioned wording, textbook-style language, machine-translation phrasing, and overly academic wording.
 - Group subjects with their own attributes and actions so poses, interactions, and spatial layout are clear.
 - Add relevant sensory and visual details: materials, surfaces, fabric, texture, atmosphere, color temperature, lighting quality, foreground/background, composition, viewpoint, depth, mood, and style.
-- Use photographic and cinematic terminology only when appropriate: 35mm lens, 85mm portrait lens, shallow depth of field, soft bokeh, rim light, golden hour, overcast daylight, tungsten glow, studio lighting, film grain, close-up, medium shot, wide shot, low angle, high angle.
+- Use photographic and cinematic terminology only when appropriate and supported by the input: lens class, depth of field, bokeh, lighting, film grain, shot scale, and camera viewpoint. Do not default to any lens or viewing angle.
 - Use non-photographic terminology when appropriate: cel shading, ink linework, flat vector shapes, paper grain, impasto brushstrokes, airbrush gradients, clay render, vinyl texture, clean geometric layout, editorial typography, generous whitespace.
 - For style hints such as Fuji, film, retro, vintage, portrait, Hong Kong neon, anime, 3D toy, collage, graphic design, or product render, add concise style-specific details without overriding the user's subject.
 - If visible text, signage, labels, quotes, UI text, or typography are requested, include the exact requested text in quotation marks.
@@ -242,6 +262,11 @@ class PromptConfigManager:
                     old_rule_values[new_name] = old_value
                 rules.pop(old_name, None)
                 changed = True
+        for rule_name, rule_text in list(rules.items()):
+            migrated_text = _migrate_builtin_rule_text(rule_name, rule_text)
+            if migrated_text != rule_text:
+                rules[rule_name] = migrated_text
+                changed = True
         modes = data.setdefault("prompt_rule_modes", {})
         for old_name, new_name in ((OLD_RULE_NATURAL, RULE_NATURAL), (OLD_RULE_JSON, RULE_JSON)):
             if old_name in modes:
@@ -271,6 +296,16 @@ class PromptConfigManager:
             service.setdefault("type", "openai_compatible")
             service.setdefault("models", [])
             service.setdefault("model_options", [])
+            if "vision_model" not in service or not str(service.get("vision_model") or "").strip():
+                models = service.get("models") or []
+                selected = next((item for item in models if item.get("is_default")), None)
+                if selected is None and models:
+                    selected = models[0]
+                text_model = (selected or {}).get("name", "")
+                preferred = preferred_vision_model(text_model, service.get("model_options"))
+                if "vision_model" not in service or preferred:
+                    service["vision_model"] = preferred
+                    changed = True
             if service.get("type") == "ollama" and not str(service.get("base_url") or "").strip():
                 service["base_url"] = "http://localhost:11434"
                 changed = True
@@ -335,6 +370,7 @@ class PromptConfigManager:
             service["base_url"] = "http://localhost:11434"
         service.setdefault("models", [])
         service.setdefault("model_options", [])
+        service.setdefault("vision_model", "")
 
         services = config.setdefault("services", [])
         for idx, existing in enumerate(services):

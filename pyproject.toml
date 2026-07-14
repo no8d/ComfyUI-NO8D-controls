@@ -4,7 +4,7 @@ description = "NO8D custom nodes for LoRA stacking, image generation and mask ed
 version = "1.0.6"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["json-repair>=0.61,<1"]
 classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
