@@ -6,6 +6,8 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-07-14
+
 ### Added
 
 - Added an `image_a` output and an auto-output switch to `NO8D-A/B preview`; disabling the switch blocks only the connected downstream branch while keeping comparison previews active.
