@@ -1,19 +1,61 @@
 {
   "id": "2fa2ba21-58fb-4aca-a0c6-6c61f5d588ab",
   "revision": 0,
-  "last_node_id": 1361,
-  "last_link_id": 3217,
+  "last_node_id": 1406,
+  "last_link_id": 3303,
   "nodes": [
     {
-      "id": 1246,
-      "type": "UNETLoader",
+      "id": 1344,
+      "type": "RTXVideoSuperResolution",
       "pos": [
-        -22500,
+        -20910,
         930
       ],
       "size": [
-        400,
-        90
+        310,
+        110
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 3185
+        }
+      ],
+      "outputs": [
+        {
+          "name": "upscaled_images",
+          "type": "IMAGE",
+          "links": [
+            3201,
+            3297
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RTXVideoSuperResolution"
+      },
+      "widgets_values": [
+        "scale by multiplier",
+        2,
+        "ULTRA"
+      ]
+    },
+    {
+      "id": 1362,
+      "type": "VAELoader",
+      "pos": [
+        -22330,
+        1740
+      ],
+      "size": [
+        230,
+        60
       ],
       "flags": {
         "pinned": true
@@ -23,10 +65,184 @@
       "inputs": [],
       "outputs": [
         {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            3218,
+            3271,
+            3287
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "qwen_image_vae.safetensors"
+      ]
+    },
+    {
+      "id": 1340,
+      "type": "ImageAddNoise",
+      "pos": [
+        -21200,
+        930
+      ],
+      "size": [
+        280,
+        110
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 3302
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            3185
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageAddNoise"
+      },
+      "widgets_values": [
+        9,
+        "fixed",
+        0.03
+      ]
+    },
+    {
+      "id": 1351,
+      "type": "NO8DSaveImageTextDataset",
+      "pos": [
+        -21200,
+        1110
+      ],
+      "size": [
+        600,
+        690
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 18,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 3201
+        },
+        {
+          "name": "caption",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        },
+        {
+          "name": "metadata",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "NO8DSaveImageTextDataset"
+      },
+      "widgets_values": [
+        "",
+        "[{\"variable\":\"none\",\"text\":\"test\"}]",
+        "png",
+        100,
+        false
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1301,
+      "type": "NO8DLoraStack",
+      "pos": [
+        -22000,
+        1080
+      ],
+      "size": [
+        600,
+        720
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 3074
+        }
+      ],
+      "outputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "links": [
+            3269
+          ]
+        },
+        {
+          "name": "trigger_words",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DLoraStack"
+      },
+      "widgets_values": [
+        "None",
+        "[]",
+        ""
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1246,
+      "type": "UNETLoader",
+      "pos": [
+        -22000,
+        930
+      ],
+      "size": [
+        600,
+        90
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
           "name": "MODEL",
           "type": "MODEL",
           "links": [
-            3074
+            3074,
+            3291
           ]
         }
       ],
@@ -43,7 +259,7 @@
         ]
       },
       "widgets_values": [
-        "krea2_turbo_fp8_scaled.safetensors",
+        "krea2_turbo_int8_convrot-b19a4f0be264.safetensors",
         "default"
       ]
     },
@@ -52,7 +268,7 @@
       "type": "CLIPLoader",
       "pos": [
         -22500,
-        1080
+        930
       ],
       "size": [
         400,
@@ -61,7 +277,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 1,
+      "order": 2,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -104,406 +320,20 @@
       ]
     },
     {
-      "id": 1201,
-      "type": "MarkdownNote",
-      "pos": [
-        -24400,
-        830
-      ],
-      "size": [
-        500,
-        170
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 2,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [],
-      "properties": {},
-      "widgets_values": [
-        "## [comfyui-NO8D-controls nodes](https://github.com/no8d/ComfyUI-NO8D-controls)"
-      ],
-      "color": "#432",
-      "bgcolor": "#653"
-    },
-    {
-      "id": 989,
-      "type": "CLIPTextEncode",
-      "pos": [
-        -22500,
-        1250
-      ],
-      "size": [
-        400,
-        90
-      ],
-      "flags": {
-        "collapsed": false,
-        "pinned": true
-      },
-      "order": 11,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "clip",
-          "type": "CLIP",
-          "link": 2270
-        },
-        {
-          "name": "text",
-          "type": "STRING",
-          "widget": {
-            "name": "text"
-          },
-          "link": 3071
-        }
-      ],
-      "outputs": [
-        {
-          "label": "条件",
-          "name": "CONDITIONING",
-          "type": "CONDITIONING",
-          "slot_index": 0,
-          "links": [
-            3112,
-            3144
-          ]
-        }
-      ],
-      "title": "CLIP Text Encode (Positive Prompt)",
-      "properties": {
-        "Node name for S&R": "CLIPTextEncode",
-        "cnr_id": "comfy-core",
-        "ver": "0.8.2",
-        "enableTabs": false,
-        "tabWidth": 65,
-        "tabXOffset": 10,
-        "hasSecondTab": false,
-        "secondTabText": "Send Back",
-        "secondTabOffset": 80,
-        "secondTabWidth": 65,
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "version": "7.8",
-          "input_ue_unconnectable": {}
-        }
-      },
-      "widgets_values": [
-        "A realistic photo of a person with a very obese body"
-      ]
-    },
-    {
-      "id": 1300,
-      "type": "NO8DEmptyLatent",
-      "pos": [
-        -22500,
-        1400
-      ],
-      "size": [
-        400,
-        250
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 3,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "label": "latent",
-          "name": "latent",
-          "type": "LATENT",
-          "links": [
-            3114
-          ]
-        },
-        {
-          "label": "width",
-          "name": "width",
-          "type": "INT",
-          "links": null
-        },
-        {
-          "label": "height",
-          "name": "height",
-          "type": "INT",
-          "links": null
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "NO8DEmptyLatent"
-      },
-      "widgets_values": [
-        "SD3 / Flux / Krea2",
-        "768",
-        "2:3",
-        false,
-        0,
-        0,
-        1
-      ],
-      "color": "#232",
-      "bgcolor": "#353"
-    },
-    {
-      "id": 1264,
-      "type": "VAEUtils_CustomVAELoader",
-      "pos": [
-        -22500,
-        1710
-      ],
-      "size": [
-        400,
-        90
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 4,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "VAE",
-          "type": "VAE",
-          "links": [
-            2977,
-            3127,
-            3186
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "VAEUtils_CustomVAELoader"
-      },
-      "widgets_values": [
-        "Wan2.1_VAE_upscale2x_imageonly_real_v1.safetensors",
-        true
-      ]
-    },
-    {
-      "id": 1203,
-      "type": "MarkdownNote",
-      "pos": [
-        -22500,
-        1830
-      ],
-      "size": [
-        400,
-        170
-      ],
-      "flags": {},
-      "order": 5,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [],
-      "properties": {},
-      "widgets_values": [
-        "## [Conditioning Krea2 Rebalance node](https://github.com/nova452/ComfyUI-Conditioning-Rebalance)"
-      ],
-      "color": "#432",
-      "bgcolor": "#653"
-    },
-    {
-      "id": 1348,
-      "type": "NO8DLoadImages",
-      "pos": [
-        -23800,
-        930
-      ],
-      "size": [
-        600,
-        870
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 6,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "label": "Images",
-          "name": "images",
-          "shape": 6,
-          "type": "IMAGE",
-          "links": [
-            3214
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "NO8DLoadImages",
-        "no8d_image_loader_source": "temp",
-        "no8d_image_loader_output_keys": [],
-        "no8d_image_loader_thumb_size": 155,
-        "no8d_image_loader_prev_thumb_size": 155
-      },
-      "widgets_values": [
-        "[]",
-        "[]"
-      ],
-      "color": "#232",
-      "bgcolor": "#353"
-    },
-    {
-      "id": 1301,
-      "type": "NO8DLoraStack",
-      "pos": [
-        -22050,
-        930
-      ],
-      "size": [
-        650,
-        870
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 8,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 3074
-        }
-      ],
-      "outputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "links": [
-            3125,
-            3217
-          ]
-        },
-        {
-          "name": "trigger_words",
-          "type": "STRING",
-          "links": [
-            3215
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "NO8DLoraStack"
-      },
-      "widgets_values": [
-        "None",
-        "[]",
-        ""
-      ],
-      "color": "#232",
-      "bgcolor": "#353"
-    },
-    {
-      "id": 1281,
-      "type": "NO8DPromptView",
-      "pos": [
-        -23150,
-        1340
-      ],
-      "size": [
-        450,
-        460
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 10,
-      "mode": 0,
-      "inputs": [
-        {
-          "label": "Text",
-          "name": "text",
-          "shape": 7,
-          "type": "STRING",
-          "link": 3216
-        }
-      ],
-      "outputs": [
-        {
-          "label": "Positive",
-          "name": "positive",
-          "type": "STRING",
-          "links": [
-            3071,
-            3202
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "NO8DPromptView"
-      },
-      "widgets_values": [
-        true,
-        "atmospheric photography.\nA medium close-up photo of an Irish female model named NO8D with vibrant red hair styled in double buns featuring platinum-blonde highlights in her bangs, blue eyes, round pink glasses, and freckles across her face, smiling broadly while baring her teeth and gritting them with corners of her mouth turned up, showing a \"NO8D\" tattoo on one cheek. She sits on a bed with floral-patterned sheets surrounded by green walls adorned with photos and notes, bathed in warm golden-hour light streaming through yellow curtains.",
-        "0",
-        null
-      ],
-      "color": "#232",
-      "bgcolor": "#353"
-    },
-    {
-      "id": 1340,
-      "type": "ImageAddNoise",
-      "pos": [
-        -21200,
-        1100
-      ],
-      "size": [
-        280,
-        110
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 16,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "image",
-          "type": "IMAGE",
-          "link": 3184
-        }
-      ],
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": [
-            3185
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "ImageAddNoise"
-      },
-      "widgets_values": [
-        9,
-        "fixed",
-        0.03
-      ]
-    },
-    {
       "id": 1268,
       "type": "VAEEncode",
       "pos": [
-        -20750,
-        930
+        -22500,
+        1740
       ],
       "size": [
         150,
-        110
+        60
       ],
       "flags": {
         "pinned": true
       },
-      "order": 14,
+      "order": 13,
       "mode": 0,
       "inputs": [
         {
@@ -514,7 +344,7 @@
         {
           "name": "vae",
           "type": "VAE",
-          "link": 2977
+          "link": 3218
         }
       ],
       "outputs": [
@@ -522,7 +352,7 @@
           "name": "LATENT",
           "type": "LATENT",
           "links": [
-            3209
+            3272
           ]
         }
       ],
@@ -542,23 +372,23 @@
       "id": 1266,
       "type": "ImageScaleToTotalPixels",
       "pos": [
-        -21200,
-        930
+        -22500,
+        1570
       ],
       "size": [
-        440,
+        400,
         110
       ],
       "flags": {
         "pinned": true
       },
-      "order": 13,
+      "order": 12,
       "mode": 0,
       "inputs": [
         {
           "name": "image",
           "type": "IMAGE",
-          "link": 3124
+          "link": 3289
         }
       ],
       "outputs": [
@@ -587,99 +417,135 @@
       ]
     },
     {
-      "id": 1344,
-      "type": "RTXVideoSuperResolution",
+      "id": 1386,
+      "type": "NO8DEmptyLatent",
       "pos": [
-        -20910,
-        1100
+        -22500,
+        1260
       ],
       "size": [
-        310,
-        110
+        400,
+        250
       ],
       "flags": {
         "pinned": true
       },
-      "order": 17,
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "label": "latent",
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            3288
+          ]
+        },
+        {
+          "label": "width",
+          "name": "width",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "label": "height",
+          "name": "height",
+          "type": "INT",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DEmptyLatent"
+      },
+      "widgets_values": [
+        "SD3 / Flux / Krea2",
+        "768",
+        "9:16",
+        true,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": 1390,
+      "type": "NO8DGenerate",
+      "pos": [
+        -23000,
+        -270
+      ],
+      "size": [
+        870,
+        1040
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 14,
       "mode": 0,
       "inputs": [
         {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 3185
+          "name": "model",
+          "type": "MODEL",
+          "link": 3269
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 3270
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 3271
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "link": 3272
+        },
+        {
+          "name": "negative",
+          "shape": 7,
+          "type": "CONDITIONING",
+          "link": null
         }
       ],
       "outputs": [
         {
-          "name": "upscaled_images",
+          "name": "image",
           "type": "IMAGE",
           "links": [
-            3192,
-            3201,
-            3203
+            3300
           ]
         }
       ],
       "properties": {
-        "Node name for S&R": "RTXVideoSuperResolution"
-      },
-      "widgets_values": [
-        "scale by multiplier",
-        2,
-        "ULTRA"
-      ]
-    },
-    {
-      "id": 1351,
-      "type": "NO8DSaveImageTextDataset",
-      "pos": [
-        -21200,
-        1270
-      ],
-      "size": [
-        600,
-        530
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 19,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 3201
-        },
-        {
-          "name": "caption",
-          "shape": 7,
-          "type": "STRING",
-          "link": 3202
-        },
-        {
-          "name": "metadata",
-          "shape": 7,
-          "type": "STRING",
-          "link": null
+        "Node name for S&R": "NO8DGenerate",
+        "no8d_generate_preview": {
+          "filename": "ComfyUI_temp_hoivu_00004_.png",
+          "subfolder": "",
+          "type": "temp"
         }
-      ],
-      "outputs": [],
-      "properties": {
-        "Node name for S&R": "NO8DSaveImageTextDataset"
       },
       "widgets_values": [
-        "NO8D_dataset",
-        "[{\"variable\":\"none\",\"text\":\"test\"},{\"variable\":\"original_name\",\"text\":\"\"},{\"variable\":\"datetime\",\"text\":\"\"},{\"variable\":\"size_class\",\"text\":\"\"}]",
-        "png",
-        100,
-        false
+        9,
+        1,
+        "euler",
+        "kl_optimal",
+        9,
+        "fixed",
+        0.75,
+        50,
+        "",
+        "{\"base_image_file\":\"\",\"mask_image_file\":\"\",\"mask_active\":false,\"mask_tool\":null,\"mask_base_width\":0,\"mask_base_height\":0,\"brush_size\":80,\"eraser_size\":80,\"mask_opacity\":0.4,\"mask_color\":\"#66ccff\",\"invert\":false,\"strokes\":[]}"
       ],
       "color": "#232",
       "bgcolor": "#353"
     },
     {
-      "id": 1352,
+      "id": 1373,
       "type": "PreviewImage",
       "pos": [
         -21280,
@@ -692,13 +558,13 @@
       "flags": {
         "pinned": true
       },
-      "order": 20,
+      "order": 19,
       "mode": 0,
       "inputs": [
         {
           "name": "images",
           "type": "IMAGE",
-          "link": 3203
+          "link": 3297
         }
       ],
       "outputs": [
@@ -714,160 +580,7 @@
       "widgets_values": []
     },
     {
-      "id": 1317,
-      "type": "NO8DGenerate",
-      "pos": [
-        -23900,
-        -270
-      ],
-      "size": [
-        880,
-        1040
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 12,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 3217
-        },
-        {
-          "name": "positive",
-          "type": "CONDITIONING",
-          "link": 3112
-        },
-        {
-          "name": "vae",
-          "type": "VAE",
-          "link": 3186
-        },
-        {
-          "name": "latent",
-          "type": "LATENT",
-          "link": 3114
-        },
-        {
-          "name": "negative",
-          "shape": 7,
-          "type": "CONDITIONING",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "name": "image",
-          "type": "IMAGE",
-          "links": [
-            3124,
-            3195
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "NO8DGenerate",
-        "no8d_generate_preview": {
-          "filename": "ComfyUI_temp_blsit_00008_.png",
-          "subfolder": "",
-          "type": "temp"
-        }
-      },
-      "widgets_values": [
-        9,
-        1,
-        "euler_ancestral",
-        "ddim_uniform",
-        440830293450990,
-        "randomize",
-        1,
-        100,
-        "",
-        "{\"base_image_file\":\"\",\"mask_image_file\":\"\",\"mask_active\":false,\"brush_size\":80,\"eraser_size\":80,\"mask_opacity\":0.4,\"mask_color\":\"#66ccff\"}"
-      ],
-      "color": "#232",
-      "bgcolor": "#353"
-    },
-    {
-      "id": 1323,
-      "type": "NO8DGenerate",
-      "pos": [
-        -23000,
-        -270
-      ],
-      "size": [
-        870,
-        1040
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 15,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 3125
-        },
-        {
-          "name": "positive",
-          "type": "CONDITIONING",
-          "link": 3144
-        },
-        {
-          "name": "vae",
-          "type": "VAE",
-          "link": 3127
-        },
-        {
-          "name": "latent",
-          "type": "LATENT",
-          "link": 3209
-        },
-        {
-          "name": "negative",
-          "shape": 7,
-          "type": "CONDITIONING",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "name": "image",
-          "type": "IMAGE",
-          "links": [
-            3184
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "NO8DGenerate",
-        "no8d_generate_preview": {
-          "filename": "ComfyUI_temp_afdlc_00009_.png",
-          "subfolder": "",
-          "type": "temp"
-        }
-      },
-      "widgets_values": [
-        9,
-        1,
-        "euler_ancestral",
-        "ddim_uniform",
-        861555840992187,
-        "randomize",
-        0.9,
-        100,
-        "",
-        "{\"base_image_file\":\"\",\"mask_image_file\":\"\",\"mask_active\":false,\"brush_size\":80,\"eraser_size\":80,\"mask_opacity\":0.4,\"mask_color\":\"#66ccff\"}"
-      ],
-      "color": "#232",
-      "bgcolor": "#353"
-    },
-    {
-      "id": 1339,
+      "id": 1405,
       "type": "NO8DABPreview",
       "pos": [
         -22110,
@@ -880,113 +593,254 @@
       "flags": {
         "pinned": true
       },
-      "order": 18,
+      "order": 15,
       "mode": 0,
       "inputs": [
         {
           "name": "image_a",
           "shape": 7,
           "type": "IMAGE",
-          "link": 3195
+          "link": 3300
         },
         {
           "name": "image_b",
           "shape": 7,
           "type": "IMAGE",
-          "link": 3192
+          "link": 3301
         }
       ],
-      "outputs": [],
+      "outputs": [
+        {
+          "name": "image_a",
+          "type": "IMAGE",
+          "links": [
+            3302
+          ]
+        }
+      ],
       "properties": {
-        "Node name for S&R": "NO8DABPreview"
+        "Node name for S&R": "NO8DABPreview",
+        "no8d_ab_preview": {
+          "a": {
+            "filename": "NO8DABPreview_A_temp_ebafk_00001_.png",
+            "subfolder": "",
+            "type": "temp"
+          },
+          "b": {
+            "filename": "NO8DABPreview_B_temp_ebafk_00001_.png",
+            "subfolder": "",
+            "type": "temp"
+          }
+        }
       },
       "widgets_values": [
+        true,
         ""
+      ]
+    },
+    {
+      "id": 1348,
+      "type": "NO8DLoadImages",
+      "pos": [
+        -23800,
+        930
+      ],
+      "size": [
+        600,
+        870
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "label": "Images",
+          "name": "images",
+          "shape": 6,
+          "type": "IMAGE",
+          "links": [
+            3280
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DLoadImages",
+        "no8d_image_loader_source": "temp",
+        "no8d_image_loader_output_keys": [],
+        "no8d_image_loader_thumb_size": 400,
+        "no8d_image_loader_prev_thumb_size": 380
+      },
+      "widgets_values": [
+        "[]",
+        "[]"
       ],
       "color": "#232",
       "bgcolor": "#353"
     },
     {
-      "id": 1357,
-      "type": "NO8DBatchPromptPlus",
+      "id": 1400,
+      "type": "NO8DGenerate",
       "pos": [
-        -23150,
-        930
+        -23900,
+        -270
       ],
       "size": [
-        450,
-        350
+        880,
+        1040
       ],
       "flags": {
         "pinned": true
       },
-      "order": 9,
+      "order": 11,
       "mode": 0,
       "inputs": [
         {
-          "label": "Images",
-          "name": "images",
-          "shape": 7,
-          "type": "IMAGE",
-          "link": 3214
+          "name": "model",
+          "type": "MODEL",
+          "link": 3291
         },
         {
-          "name": "fixed_text",
-          "type": "STRING",
-          "widget": {
-            "name": "fixed_text"
-          },
-          "link": 3215
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 3286
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 3287
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "link": 3288
+        },
+        {
+          "name": "negative",
+          "shape": 7,
+          "type": "CONDITIONING",
+          "link": null
         }
       ],
       "outputs": [
         {
-          "label": "prompt",
-          "name": "prompt",
-          "shape": 6,
-          "type": "STRING",
+          "name": "image",
+          "type": "IMAGE",
           "links": [
-            3216
+            3289,
+            3301
           ]
         }
       ],
       "properties": {
-        "Node name for S&R": "NO8DBatchPromptPlus"
+        "Node name for S&R": "NO8DGenerate",
+        "no8d_generate_preview": {
+          "filename": "ComfyUI_temp_tcepq_00004_.png",
+          "subfolder": "",
+          "type": "temp"
+        }
       },
       "widgets_values": [
-        "Natural language",
-        "Auto",
-        "Auto",
-        "Standard",
-        "English",
+        6,
+        1,
+        "res_multistep",
+        "sgm_uniform",
+        636127152439150,
+        "randomize",
+        1,
+        60,
         "",
-        "",
-        1036730314152205,
-        "randomize"
+        "{\"base_image_file\":\"\",\"mask_image_file\":\"\",\"mask_active\":false,\"mask_tool\":null,\"mask_base_width\":0,\"mask_base_height\":0,\"brush_size\":80,\"eraser_size\":80,\"mask_opacity\":0.4,\"mask_color\":\"#66ccff\",\"invert\":false,\"strokes\":[]}"
+      ]
+    },
+    {
+      "id": 989,
+      "type": "CLIPTextEncode",
+      "pos": [
+        -22500,
+        1100
       ],
-      "color": "#232",
-      "bgcolor": "#353"
+      "size": [
+        400,
+        100
+      ],
+      "flags": {
+        "collapsed": false,
+        "pinned": true
+      },
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 2270
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": 3303
+        }
+      ],
+      "outputs": [
+        {
+          "label": "条件",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "slot_index": 0,
+          "links": [
+            3270,
+            3286
+          ]
+        }
+      ],
+      "title": "CLIP Text Encode (Positive Prompt)",
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode",
+        "cnr_id": "comfy-core",
+        "ver": "0.8.2",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65,
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        ""
+      ]
     },
     {
       "id": 1154,
       "type": "Label (rgthree)",
       "pos": [
-        -23790,
+        -23490,
         -720
       ],
       "size": [
-        3073.2421875,
+        2432.8125,
         240
       ],
       "flags": {
         "pinned": true,
         "allow_interaction": false
       },
-      "order": 7,
+      "order": 5,
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "🥸NO8D-Controls Krea 2✨",
+      "title": "🥸 NO8D-Controls ✨",
       "properties": {
         "fontSize": 240,
         "fontFamily": "Arial",
@@ -1004,6 +858,125 @@
       },
       "color": "#fff0",
       "bgcolor": "#fff0"
+    },
+    {
+      "id": 1201,
+      "type": "MarkdownNote",
+      "pos": [
+        -21000,
+        -620
+      ],
+      "size": [
+        500,
+        120
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "## [If you want to know more, you're welcome to join my community](https://patreon.com/no8d?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink)"
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1398,
+      "type": "NO8DBatchPromptPlus",
+      "pos": [
+        -23150,
+        930
+      ],
+      "size": [
+        450,
+        280
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "Images",
+          "name": "images",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 3280
+        }
+      ],
+      "outputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "shape": 6,
+          "type": "STRING",
+          "links": [
+            3283
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DBatchPromptPlus"
+      },
+      "widgets_values": [
+        "Natural language",
+        "Auto",
+        "Auto",
+        "Standard",
+        "English",
+        "",
+        "",
+        9,
+        "fixed"
+      ]
+    },
+    {
+      "id": 1399,
+      "type": "NO8DPromptView",
+      "pos": [
+        -23150,
+        1270
+      ],
+      "size": [
+        450,
+        530
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "Text",
+          "name": "text",
+          "shape": 7,
+          "type": "STRING",
+          "link": 3283
+        }
+      ],
+      "outputs": [
+        {
+          "label": "Positive",
+          "name": "positive",
+          "type": "STRING",
+          "links": [
+            3303
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DPromptView"
+      },
+      "widgets_values": [
+        true,
+        "",
+        "0",
+        null
+      ]
     }
   ],
   "links": [
@@ -1024,22 +997,6 @@
       "IMAGE"
     ],
     [
-      2977,
-      1264,
-      0,
-      1268,
-      1,
-      "VAE"
-    ],
-    [
-      3071,
-      1281,
-      0,
-      989,
-      1,
-      "STRING"
-    ],
-    [
       3074,
       1246,
       0,
@@ -1048,90 +1005,10 @@
       "MODEL"
     ],
     [
-      3112,
-      989,
-      0,
-      1317,
-      1,
-      "CONDITIONING"
-    ],
-    [
-      3114,
-      1300,
-      0,
-      1317,
-      3,
-      "LATENT"
-    ],
-    [
-      3124,
-      1317,
-      0,
-      1266,
-      0,
-      "IMAGE"
-    ],
-    [
-      3125,
-      1301,
-      0,
-      1323,
-      0,
-      "MODEL"
-    ],
-    [
-      3127,
-      1264,
-      0,
-      1323,
-      2,
-      "VAE"
-    ],
-    [
-      3144,
-      989,
-      0,
-      1323,
-      1,
-      "CONDITIONING"
-    ],
-    [
-      3184,
-      1323,
-      0,
-      1340,
-      0,
-      "IMAGE"
-    ],
-    [
       3185,
       1340,
       0,
       1344,
-      0,
-      "IMAGE"
-    ],
-    [
-      3186,
-      1264,
-      0,
-      1317,
-      2,
-      "VAE"
-    ],
-    [
-      3192,
-      1344,
-      0,
-      1339,
-      1,
-      "IMAGE"
-    ],
-    [
-      3195,
-      1317,
-      0,
-      1339,
       0,
       "IMAGE"
     ],
@@ -1144,60 +1021,140 @@
       "IMAGE"
     ],
     [
-      3202,
-      1281,
+      3218,
+      1362,
       0,
-      1351,
+      1268,
       1,
-      "STRING"
+      "VAE"
     ],
     [
-      3203,
-      1344,
+      3269,
+      1301,
       0,
-      1352,
+      1390,
       0,
-      "IMAGE"
+      "MODEL"
     ],
     [
-      3209,
+      3270,
+      989,
+      0,
+      1390,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      3271,
+      1362,
+      0,
+      1390,
+      2,
+      "VAE"
+    ],
+    [
+      3272,
       1268,
       0,
-      1323,
+      1390,
       3,
       "LATENT"
     ],
     [
-      3214,
+      3280,
       1348,
       0,
-      1357,
+      1398,
       0,
       "IMAGE"
     ],
     [
-      3215,
-      1301,
-      1,
-      1357,
-      1,
-      "STRING"
-    ],
-    [
-      3216,
-      1357,
+      3283,
+      1398,
       0,
-      1281,
+      1399,
       0,
       "STRING"
     ],
     [
-      3217,
-      1301,
+      3286,
+      989,
       0,
-      1317,
+      1400,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      3287,
+      1362,
+      0,
+      1400,
+      2,
+      "VAE"
+    ],
+    [
+      3288,
+      1386,
+      0,
+      1400,
+      3,
+      "LATENT"
+    ],
+    [
+      3289,
+      1400,
+      0,
+      1266,
+      0,
+      "IMAGE"
+    ],
+    [
+      3291,
+      1246,
+      0,
+      1400,
       0,
       "MODEL"
+    ],
+    [
+      3297,
+      1344,
+      0,
+      1373,
+      0,
+      "IMAGE"
+    ],
+    [
+      3300,
+      1390,
+      0,
+      1405,
+      0,
+      "IMAGE"
+    ],
+    [
+      3301,
+      1400,
+      0,
+      1405,
+      1,
+      "IMAGE"
+    ],
+    [
+      3302,
+      1405,
+      0,
+      1340,
+      0,
+      "IMAGE"
+    ],
+    [
+      3303,
+      1399,
+      0,
+      989,
+      1,
+      "STRING"
     ]
   ],
   "groups": [
@@ -1217,7 +1174,7 @@
     },
     {
       "id": 3,
-      "title": "base",
+      "title": "Krea2",
       "bounding": [
         -22600,
         800,
@@ -1225,11 +1182,13 @@
         1100
       ],
       "color": "#3f789e",
-      "flags": {}
+      "flags": {
+        "pinned": true
+      }
     },
     {
       "id": 5,
-      "title": "upscale",
+      "title": "output",
       "bounding": [
         -21300,
         800,
@@ -1251,16 +1210,18 @@
         1100
       ],
       "color": "#3f789e",
-      "flags": {}
+      "flags": {
+        "pinned": true
+      }
     }
   ],
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.3719008264462851,
+      "scale": 0.3719008264462825,
       "offset": [
-        24971.367897322718,
-        1006.0788638066192
+        24574.923521270925,
+        772.7671808606332
       ]
     },
     "frontendVersion": "1.45.20",
