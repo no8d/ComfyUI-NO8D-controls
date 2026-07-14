@@ -2,7 +2,7 @@
 
 [English](./README.md) | 简体中文
 
-一套用于 LoRA 控制、提示词扩写、图像载入、生成与局部重绘、图像对比、空 latent 创建和图文数据集保存的 ComfyUI 自定义节点。
+该自定义节点组提供了从图像加载到图像生成的全链路节点优化方案，重点对图像生成、LoRA叠加、提示词生成等关键节点进行重塑，旨在简化comfyui的搭建流程，提高各节点的生成效率，大大降低了工作流搭建和使用的门槛。
 
 ![ComfyUI-NO8D-controls](docs/images/no8d-control-banner-readme.jpg)
 
