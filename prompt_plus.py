@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import concurrent.futures
+import contextlib
 import hashlib
 import io
 import json
@@ -18,13 +19,14 @@ import numpy as np
 from PIL import Image
 
 try:
-    from comfy_execution.graph_utils import ExecutionBlocker
-except Exception:
-    ExecutionBlocker = None
+    from json_repair import repair_json as _repair_json
+except ImportError:
+    _repair_json = None
 
-from .prompt_config import RULE_JSON as _RULE_JSON
 from .prompt_config import RULE_NATURAL as _RULE_NATURAL
 from .prompt_config import prompt_config_manager
+from .prompt_provider import configure_chat_payload as _configure_chat_payload
+from .prompt_provider import is_ark_url as _is_ark_url
 
 
 _IMAGE_MAX_EDGE = 768
@@ -34,17 +36,20 @@ _OPENAI_TIMEOUT = 120
 _OLLAMA_TIMEOUT = 240
 _MAX_PARALLEL_REQUESTS = 3
 _RETRY_HTTP_CODES = {408, 429, 500, 502, 503, 504}
+_ARK_BURST_RETRY_DELAY = 8.0
+_ARK_REQUEST_LOCK = threading.Lock()
+_PROMPT_PIPELINE_VERSION = "structured-geometry-v8"
+# The structured worksheet has substantially more fields than the rendered
+# prompt. Keep its private budget separate from the public 256/512-token target.
+# Native JSON-schema decoding still obeys max_tokens and needs room to emit all
+# required geometry and grounded descriptive fields.
+_NATURAL_ANALYSIS_TOKEN_OVERHEAD = 1792
 _STYLE_PRESETS = (
     "自行判断",
-    "业余摄影",
-    "专业摄影",
-    "影视摄影",
-    "日式动漫",
-    "美式动漫",
-    "插画艺术",
-    "油画艺术",
-    "3d写实",
-    "3d卡通",
+    "写实摄影",
+    "动漫插图",
+    "手绘艺术",
+    "数字艺术",
 )
 _STYLE_PRESET_ALIASES = {
     "无": "自行判断",
@@ -52,27 +57,68 @@ _STYLE_PRESET_ALIASES = {
     "None": "自行判断",
     "Auto": "自行判断",
     "自行判断": "自行判断",
-    "Amateur photography": "业余摄影",
-    "Professional photography": "专业摄影",
-    "Cinematic photography": "影视摄影",
-    "Japanese anime": "日式动漫",
-    "American animation": "美式动漫",
-    "Illustration art": "插画艺术",
-    "Oil painting": "油画艺术",
-    "3D realism": "3d写实",
-    "3D cartoon": "3d卡通",
+    "Realistic photography": "写实摄影",
+    "Anime illustration": "动漫插图",
+    "Hand-drawn art": "手绘艺术",
+    "Digital art": "数字艺术",
+    "艺术手绘": "手绘艺术",
+    "数字绘画": "数字艺术",
+    "Traditional hand-drawn art": "手绘艺术",
+    "Digital painting": "数字艺术",
+    # Migrate style values serialized by releases before the umbrella categories.
+    "业余摄影": "写实摄影",
+    "专业摄影": "写实摄影",
+    "影视摄影": "写实摄影",
+    "Amateur photography": "写实摄影",
+    "Professional photography": "写实摄影",
+    "Cinematic photography": "写实摄影",
+    "日式动漫": "动漫插图",
+    "美式动漫": "动漫插图",
+    "3d卡通": "动漫插图",
+    "Japanese anime": "动漫插图",
+    "American animation": "动漫插图",
+    "3D cartoon": "动漫插图",
+    "油画艺术": "手绘艺术",
+    "Oil painting": "手绘艺术",
+    "插画艺术": "数字艺术",
+    "3d写实": "数字艺术",
+    "Illustration art": "数字艺术",
+    "3D realism": "数字艺术",
 }
 _STYLE_PRESET_INPUTS = _STYLE_PRESETS
 _STYLE_PRESET_RULES = {
-    "业余摄影": "Use a clearly amateur smartphone-photography look. Preserve the visible subject, clothing, styling, and setting, but describe the capture quality as rough and phone-made rather than polished. The final output must include common modern English cues such as phone photo, casual snapshot, handheld framing, available light, spontaneous moment, everyday setting, natural colors, uneven exposure, slight motion blur, phone-camera noise, limited dynamic range, compressed detail, imperfect focus, and believable everyday flaws when appropriate. Make it feel like a real mobile-phone capture or casual social-media photo, not a DSLR shoot, studio setup, commercial advertisement, or polished cinematic still.",
-    "专业摄影": "Use a professional photography look: DSLR or mirrorless camera quality, refined commercial/editorial composition, controlled lighting, crisp lens rendering, polished color grading, and high-end advertising or fashion-shoot detail.",
-    "影视摄影": "Use a cinematic film-still look: dramatic motivated lighting, film grain, expressive shadows, carefully staged blocking, atmospheric depth, lens character, and movie-like color grading.",
-    "日式动漫": "Use a Japanese anime look: clean line art, expressive anime character design, cel shading, detailed background art, controlled color harmonies, and a polished key-visual or animation-still feeling.",
-    "美式动漫": "Use an American animation or comic-inspired look: bold readable shapes, expressive poses, confident outlines, lively character acting, clear staging, saturated but balanced colors, and dynamic graphic energy.",
-    "插画艺术": "Use an illustration-art look: deliberate stylized drawing, cohesive design language, expressive shapes, thoughtful composition, rich surface detail, and a polished editorial or concept-art finish.",
-    "油画艺术": "Use an oil-painting look: visible brushwork, layered paint texture, canvas-like surface, painterly edges, rich pigments, classical light handling, and tactile material depth.",
-    "3d写实": "Use a photorealistic 3D look: physically based materials, realistic geometry, ray-traced lighting, accurate reflections, natural camera perspective, and high-detail render quality.",
-    "3d卡通": "Use a stylized 3D cartoon look: rounded forms, appealing simplified shapes, expressive animation-style characters, clean materials, bright controlled colors, and playful cinematic lighting.",
+    "写实摄影": (
+        "Stay within realistic photography. Infer the best-supported photographic subtype from the image and/or text, "
+        "such as a casual smartphone snapshot, documentary or street photography, DSLR/mirrorless portrait or editorial "
+        "photography, commercial studio or product photography, architecture/interior photography, sports/action, macro, "
+        "wildlife, analog film photography, or a cinematic film still. Describe the selected capture type and only the "
+        "lens character, lighting, depth of field, color response, grain/noise, dynamic range, and believable imperfections "
+        "that fit the evidence. Keep rough phone images rough and polished studio images polished. Do not turn the result "
+        "into illustration, painting, anime, or CGI."
+    ),
+    "动漫插图": (
+        "Stay within anime, animation, comic, and cartoon illustration. Infer the best-supported subtype from the image "
+        "and/or text, such as Japanese anime key art, manga, cel animation, webtoon, western animation, comic-book or "
+        "graphic-novel art, children's cartoon/storybook art, retro animation, or a stylized 3D animated/cartoon render "
+        "when that rendering is clearly intended. Describe the selected subtype through its line quality, shape language, "
+        "color treatment, shading, background treatment, and rendering finish. Apply the visual grammar to the actual "
+        "subject, including non-human subjects, without inventing anime characters or human traits."
+    ),
+    "手绘艺术": (
+        "Stay within art made with physical hand-drawn or hand-painted media. Infer the best-supported traditional medium "
+        "from the image and/or text, such as oil, watercolor, gouache, acrylic, ink wash, pen and ink, pencil, charcoal, "
+        "pastel, marker, printmaking, or mixed media. Describe the selected medium through plausible paper or canvas, "
+        "pigment, stroke, edge, layering, bleeding, granulation, pressure, and surface characteristics. Do not substitute "
+        "a photographic, anime, 3D-rendered, or generically digital finish."
+    ),
+    "数字艺术": (
+        "Stay within digitally created visual art. Infer the best-supported subtype from the image and/or text, such as "
+        "digital painting, concept art, environment design, character key art, matte painting, editorial illustration, "
+        "game art, painterly photobashing, pixel art, or a photoreal/stylized CGI hybrid when the evidence calls for it. "
+        "Describe the selected subtype through its brush or rendering language, edge control, material treatment, layer-like "
+        "depth, color design, lighting, and finish. Do not mislabel it as an ordinary camera photograph or a physical "
+        "traditional artwork."
+    ),
 }
 _COMPOSITION_PRESETS = (
     "自行判断",
@@ -131,12 +177,12 @@ _LENGTH_PRESET_ALIASES = {
 }
 _LENGTH_PRESET_INPUTS = _LENGTH_PRESETS + tuple(_LENGTH_PRESET_ALIASES.keys())
 _LENGTH_TOKEN_LIMITS = {
-    "标准": 240,
-    "详细": 480,
+    "标准": 256,
+    "详细": 512,
 }
 _LENGTH_PRESET_RULES = {
-    "标准": "Target output length: standard, about 120-240 tokens. For natural-language output, write a compact single paragraph with about 3-5 clear sentences. Prioritize the subject, action, setting, composition, lighting, medium, and mood. Do not pad the prompt with secondary details.",
-    "详细": "Target output length: detailed, about 240-480 tokens. For natural-language output, write a visibly longer single paragraph with about 6-10 rich sentences. Add more concrete visual evidence: subject details, pose, spatial layout, foreground and background, lighting direction, materials, textures, color relationships, camera or medium language, atmosphere, and visible text when present. The detailed result must be substantially more developed than the standard result while staying coherent and non-repetitive.",
+    "标准": "Target output length: approximately 256 tokens. Aim close to 256 tokens but never exceed the hard maximum of 256 output tokens. For natural-language output, write one cohesive paragraph with enough clear sentences to use the available budget without padding or repetition. Put the main subject, action, camera-to-subject relationship, frame placement, and composition before secondary style or atmosphere details so essential spatial information survives downstream truncation. Prioritize setting, lighting, medium, and mood after those essentials.",
+    "详细": "Target output length: approximately 512 tokens. Aim close to 512 tokens but never exceed the hard maximum of 512 output tokens. For natural-language output, write one cohesive, richly developed paragraph that uses the available budget without padding or repetition. Put the main subject, action, camera-to-subject relationship, frame placement, and composition first. Then add grounded visual evidence: subject details, pose or orientation, spatial layout, foreground and background, lighting direction, materials, textures, color relationships, camera or medium language, atmosphere, and visible text when present. The detailed result must be substantially more developed than the standard result while staying coherent.",
 }
 _OUTPUT_LANGUAGES = ("英文", "中文")
 _OUTPUT_LANGUAGE_ALIASES = {
@@ -175,6 +221,105 @@ def _endpoint_from_base_url(base_url):
     if "api.openai.com" in url and "/v1" not in url:
         url = url.rstrip("/") + "/v1"
     return url.rstrip("/") + "/chat/completions"
+
+
+def _uses_streaming_chat(base_url):
+    """Use Ark's SSE transport so long generations do not wait for one final response."""
+    return _is_ark_url(base_url)
+
+
+def _content_text(content):
+    if isinstance(content, list):
+        return "".join(part.get("text", "") if isinstance(part, dict) else str(part) for part in content)
+    return str(content or "")
+
+
+class _StreamingAPIError(RuntimeError):
+    def __init__(self, error, had_content=False):
+        self.error = error if isinstance(error, dict) else {"message": str(error)}
+        self.code = str(self.error.get("code") or "").strip()
+        self.error_type = str(self.error.get("type") or "").strip()
+        self.had_content = bool(had_content)
+        super().__init__(f"NO8D-Prompt: API streaming error: {self.error}")
+
+    @property
+    def retryable_burst(self):
+        return not self.had_content and (
+            self.code == "RequestBurstTooFast" or self.error_type == "TooManyRequests"
+        )
+
+
+def _read_chat_response(response, streaming=False):
+    if not streaming:
+        raw = response.read().decode("utf-8", errors="replace")
+        parsed = json.loads(raw)
+        choices = parsed.get("choices") or []
+        if not choices:
+            raise RuntimeError("NO8D-Prompt: API returned no choices")
+        message = choices[0].get("message") or {}
+        content = _content_text(message.get("content") or choices[0].get("text"))
+        if not content.strip():
+            raise RuntimeError("NO8D-Prompt: API returned empty content")
+        return content
+
+    parts = []
+    had_generation = False
+    for raw_line in response:
+        line = raw_line.decode("utf-8", errors="replace").strip()
+        if not line or line.startswith(":") or not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if not data or data == "[DONE]":
+            if data == "[DONE]":
+                break
+            continue
+        try:
+            event = json.loads(data)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("NO8D-Prompt: API returned an invalid streaming event") from exc
+        if isinstance(event, dict) and event.get("error"):
+            raise _StreamingAPIError(event["error"], had_content=had_generation)
+        choices = event.get("choices") or [] if isinstance(event, dict) else []
+        if not choices:
+            continue
+        choice = choices[0]
+        message = choice.get("delta") or choice.get("message") or {}
+        if any(message.get(field) for field in ("content", "reasoning_content", "refusal", "tool_calls")):
+            had_generation = True
+        content = _content_text(message.get("content") or choice.get("text"))
+        if content:
+            parts.append(content)
+    content = "".join(parts)
+    if not content.strip():
+        raise RuntimeError("NO8D-Prompt: API returned empty streaming content")
+    return content
+
+
+def _timeout_message(base_url, model):
+    host = urllib.parse.urlparse(str(base_url or "")).hostname or str(base_url or "API")
+    model_name = str(model or "unknown model").strip()
+    message = (
+        f"NO8D-Prompt: model {model_name} at {host} did not return data for {_OPENAI_TIMEOUT}s. "
+        "The request was not repeated."
+    )
+    if _uses_streaming_chat(base_url):
+        return message + " Check the Ark model status, account quota, and provider load, or select a faster available model."
+    return message + " For image inputs, select a faster Vision model; for Qwen, prefer an Instruct variant over Thinking."
+
+
+def _request_guard(base_url):
+    if _uses_streaming_chat(base_url):
+        return _ARK_REQUEST_LOCK
+    return contextlib.nullcontext()
+
+
+def _should_parallelize_requests(item_count, base_url, service_type):
+    return (
+        item_count > 1
+        and not _uses_ollama_native(base_url, service_type)
+        and not _is_local_url(base_url)
+        and not _uses_streaming_chat(base_url)
+    )
 
 
 def _is_local_url(url):
@@ -235,6 +380,23 @@ def _safe_bool(value, default=False):
     return default
 
 
+def _prompt_view_text(value):
+    """Normalize ComfyUI STRING inputs, including empty bypass/list values."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            text = _prompt_view_text(item)
+            if text.strip():
+                return text
+        return ""
+    if isinstance(value, (dict, set)):
+        return ""
+    return str(value)
+
+
 def _strip_thinking(text):
     return re.sub(r"<think>.*?</think>", "", text or "", flags=re.IGNORECASE | re.DOTALL).strip()
 
@@ -289,7 +451,7 @@ def _image_array_to_data_url_uncached(arr):
     arr = np.clip(arr * 255.0, 0, 255).astype(np.uint8)
     pil = Image.fromarray(arr, "RGB")
     max_edge = max(pil.size)
-    if max_edge > _IMAGE_MAX_EDGE:
+    if max_edge != _IMAGE_MAX_EDGE:
         scale = _IMAGE_MAX_EDGE / max_edge
         size = (max(1, round(pil.width * scale)), max(1, round(pil.height * scale)))
         resampling = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.BICUBIC)
@@ -518,11 +680,331 @@ def _normalize_ideogram_json(obj):
     return normalized
 
 
-def _clean_prompt_output(text, rule):
+def _point_xy(value):
+    if not isinstance(value, (list, tuple)) or len(value) < 2:
+        return None
+    try:
+        return max(0, min(1000, int(value[0]))), max(0, min(1000, int(value[1])))
+    except (TypeError, ValueError):
+        return None
+
+
+def _point_region(point, language):
+    if point is None:
+        return ""
+    x, y = point
+    if language == "中文":
+        horizontal = "左侧" if x < 300 else "中间偏左" if x < 450 else "中部" if x <= 550 else "中间偏右" if x <= 700 else "右侧"
+        vertical = "上部" if y < 333 else "中部" if y < 667 else "下部"
+        return f"画面{vertical}{horizontal}"
+    horizontal = "left" if x < 300 else "left-of-center" if x < 450 else "center" if x <= 550 else "right-of-center" if x <= 700 else "right"
+    vertical = "upper" if y < 333 else "middle" if y < 667 else "lower"
+    return f"{vertical} {horizontal}"
+
+
+def _derived_shot_scale(analysis, language):
+    extent = str(analysis.get("primary_subject_visible_extent") or analysis.get("visible_body_extent") or "").lower()
+    if any(token in extent for token in ("full", "head to feet", "head-to-feet", "全身", "头到脚")):
+        return "全身景别" if language == "中文" else "a full-body view"
+    if any(token in extent for token in ("near_full", "near-full", "most of", "大部分身体")):
+        return "近全身景别" if language == "中文" else "a near-full-body view"
+    if any(token in extent for token in ("waist", "腰")):
+        return "中景" if language == "中文" else "a waist-up medium view"
+    if any(token in extent for token in ("chest", "胸")):
+        return "近景" if language == "中文" else "a chest-up close view"
+    return str(analysis.get("shot_scale") or "").strip()
+
+
+def _derived_axis(analysis, language):
+    anchors = analysis.get("primary_subject_key_anchors") or {}
+    start = _point_xy(anchors.get("head_or_front_xy"))
+    end = _point_xy(anchors.get("legs_rear_or_far_extent_xy"))
+    if start is None or end is None:
+        return "", start, end
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    start_region = _point_region(start, language)
+    end_region = _point_region(end, language)
+    if abs(dx) >= 120 and abs(dy) >= 120:
+        if language == "中文":
+            return f"主体从{start_region}斜向延伸至{end_region}", start, end
+        return f"subject axis: {start_region} to {end_region} diagonal", start, end
+    if abs(dx) >= 160:
+        if language == "中文":
+            return f"主体横向延伸于{start_region}与{end_region}之间", start, end
+        return f"subject axis: {start_region} to {end_region} horizontal", start, end
+    if abs(dy) >= 160:
+        if language == "中文":
+            return f"主体纵向延伸于{start_region}与{end_region}之间", start, end
+        return f"subject axis: {start_region} to {end_region} vertical", start, end
+    return "", start, end
+
+
+def _lens_phrase(analysis, language):
+    lens = str(analysis.get("lens_class") or "").strip()
+    lens = re.sub(r"\s+lens$", "", lens, flags=re.IGNORECASE).strip()
+    lens = re.sub(r"镜头$", "", lens).strip()
+    lens_lower = lens.lower()
+    if not lens:
+        return ""
+    if any(token in lens_lower for token in ("ultra", "wide", "广角")):
+        effect = "强化近大远小、边缘拉伸和前后景纵深" if language == "中文" else "with foreground exaggeration, edge stretch, and deep perspective"
+    elif any(token in lens_lower for token in ("tele", "long lens", "长焦")):
+        effect = "压缩前后景距离" if language == "中文" else "compresses front-to-back distance"
+    else:
+        effect = "保持较自然的空间比例" if language == "中文" else "keeps relatively natural spatial proportions"
+    if language == "中文":
+        return f"{lens}镜头{effect}"
+    article = "an" if lens[:1].lower() in "aeiou" else "a"
+    return f"{article} {lens} lens {effect}"
+
+
+def _secondary_layout(analysis, language):
+    parts = []
+    for subject in analysis.get("secondary_subjects") or []:
+        if not isinstance(subject, dict):
+            continue
+        descriptor = str(subject.get("visible_descriptor") or subject.get("descriptor") or "secondary subject").strip()
+        region = _point_region(_point_xy(subject.get("anchor_xy") or subject.get("xy")), language)
+        depth = str(subject.get("depth_layer") or subject.get("depth") or "").strip()
+        if language == "中文":
+            parts.append("位于".join(part for part in (descriptor, f"{region}{depth}" if region or depth else "") if part))
+        else:
+            detail = " ".join(part for part in (region, depth) if part)
+            parts.append(f"{descriptor} at {detail}" if detail else descriptor)
+    if not parts:
+        return ""
+    joiner = "，" if language == "中文" else ", "
+    prefix = "次要主体分别为" if language == "中文" else "secondary subjects are "
+    return prefix + joiner.join(parts)
+
+
+def _expression_phrase(analysis, language):
+    expression = str(
+        analysis.get("primary_subject_expression")
+        or analysis.get("facial_expression_and_gaze")
+        or ""
+    ).strip()
+    if not expression:
+        return ""
+    return f"主体表情与视线为{expression}" if language == "中文" else f"facial expression and gaze: {expression}"
+
+
+def _expression_priority(analysis):
+    shot = str(analysis.get("shot_scale") or "").lower()
+    extent = str(analysis.get("primary_subject_visible_extent") or "").lower()
+    scale = f"{shot} {extent}"
+    if any(token in scale for token in ("extreme wide", "very wide", "extreme long", "tiny face", "face not visible", "no visible face")):
+        return "omit"
+    if any(token in shot for token in ("full-body", "full body", "near-full", "near full", "wide shot", "long shot")):
+        return "low"
+    if any(token in shot for token in ("medium", "three-quarter", "three quarter", "cowboy", "knee", "thigh", "waist")):
+        return "normal"
+    if any(token in shot for token in ("extreme close", "close-up", "close up", "headshot", "head shot", "bust", "chest-up", "chest up")):
+        return "high"
+    if any(token in extent for token in ("head-to-toe", "head to toe", "full body", "near-full", "near full", "feet visible")):
+        return "low"
+    if any(token in extent for token in ("knee", "thigh", "waist", "three-quarter", "three quarter")):
+        return "normal"
+    if any(token in extent for token in ("head-and-shoulders", "head and shoulders", "face only", "chest-up", "chest up", "bust")):
+        return "high"
+    return "normal"
+
+
+def _description_detail_band(analysis):
+    priority = _expression_priority(analysis)
+    if priority == "omit":
+        return "extreme_far"
+    if priority == "low":
+        return "far"
+    if priority == "high":
+        return "near"
+    return "medium"
+
+
+def _descriptive_fields(analysis):
+    return {
+        "appearance": str(analysis.get("primary_subject_appearance_and_clothing") or "").strip(),
+        "pose": str(analysis.get("primary_subject_pose_and_action") or "").strip(),
+        "environment": str(analysis.get("environment_and_spatial_context") or "").strip(),
+        "atmosphere": str(analysis.get("lighting_color_and_atmosphere") or "").strip(),
+    }
+
+
+def _weighted_descriptive_fields(descriptive, detail_band):
+    budgets = {
+        "near": {"appearance": 48, "pose": 28, "environment": 24, "atmosphere": 28},
+        "medium": {"appearance": 48, "pose": 40, "environment": 36, "atmosphere": 32},
+        "far": {"appearance": 44, "pose": 40, "environment": 40, "atmosphere": 28},
+        "extreme_far": {"appearance": 28, "pose": 40, "environment": 56, "atmosphere": 36},
+    }.get(detail_band, {})
+    compacted = {}
+    for key, value in descriptive.items():
+        budget = budgets.get(key, 40)
+        compact = _limit_prompt_to_approx_tokens(value, budget) if value else ""
+        compacted[key] = compact.rstrip(" .;；,，:：")
+    return compacted
+
+
+def _validated_vertical_relation(analysis, conservative_image_geometry=False):
+    elevation = str(analysis.get("camera_elevation") or "").strip().lower()
+    direction = str(analysis.get("view_direction") or "").strip().lower()
+    if (elevation == "above" and direction == "upward") or (elevation == "below" and direction == "downward"):
+        return "level", "level"
+    if not conservative_image_geometry or (elevation == "level" and direction == "level"):
+        return elevation, direction
+
+    extent = " ".join(
+        str(analysis.get(key) or "").lower()
+        for key in ("primary_subject_visible_extent", "shot_scale")
+    )
+    tight_portrait = any(token in extent for token in ("close", "head", "face", "shoulder", "chest", "bust", "portrait"))
+    tight_portrait = tight_portrait and not any(token in extent for token in ("full", "near-full", "near_full", "waist"))
+    if not tight_portrait or (elevation, direction) not in {("above", "downward"), ("below", "upward")}:
+        return elevation, direction
+
+    evidence_value = analysis.get("geometry_evidence_or_design_basis") or []
+    if not isinstance(evidence_value, (list, tuple)):
+        evidence_value = [evidence_value]
+    evidence = " ".join(str(item or "").lower() for item in evidence_value)
+    if elevation == "above":
+        plane_cue = any(token in evidence for token in ("top plane", "top surface", "top of head", "floor plane", "bird's-eye", "top-down"))
+    else:
+        plane_cue = any(token in evidence for token in ("underside", "bottom plane", "worm's-eye"))
+    perspective_cue = any(token in evidence for token in ("foreshorten", "converg", "steep", "pronounced", "clearly above", "clearly below"))
+    if not (plane_cue and perspective_cue):
+        return "level", "level"
+    return elevation, direction
+
+
+def _render_natural_prompt(envelope, output_language, conservative_image_geometry=False):
+    analysis = envelope.get("visual_analysis") if isinstance(envelope, dict) else None
+    scene = str(
+        (envelope or {}).get("scene_description")
+        or ((analysis or {}).get("scene_description") if isinstance(analysis, dict) else "")
+        or ""
+    ).strip()
+    descriptive = _descriptive_fields(analysis) if isinstance(analysis, dict) else {}
+    if not isinstance(analysis, dict) or not (scene or any(descriptive.values())):
+        return ""
+    language = _normalize_output_language(output_language)
+    style = str(analysis.get("style_subtype") or analysis.get("style_category") or "").strip()
+    primary = str(
+        analysis.get("explicit_subject_requirement")
+        or analysis.get("primary_subject")
+        or ("主体" if language == "中文" else "the primary subject")
+    ).strip()
+    elevation, direction = _validated_vertical_relation(analysis, conservative_image_geometry)
+    azimuth = str(analysis.get("camera_azimuth_or_visible_side") or "").strip()
+    shot_scale = _derived_shot_scale(analysis, language)
+    axis, _, _ = _derived_axis(analysis, language)
+    occupancy = analysis.get("primary_subject_frame_occupancy_percent")
+    occupancy_text = ""
+    try:
+        occupancy_value = max(0, min(100, round(float(occupancy))))
+        if occupancy_value:
+            occupancy_text = f"约占画面{occupancy_value}%" if language == "中文" else f"occupying about {occupancy_value}% of the frame"
+    except (TypeError, ValueError):
+        pass
+    lens = _lens_phrase(analysis, language)
+    secondary = _secondary_layout(analysis, language)
+    expression = _expression_phrase(analysis, language)
+    expression_priority = _expression_priority(analysis)
+    detail_band = _description_detail_band(analysis)
+    descriptive = _weighted_descriptive_fields(descriptive, detail_band)
+    if expression_priority == "omit":
+        expression = ""
+    elif expression_priority == "low":
+        expression = _limit_prompt_to_approx_tokens(expression, 12).rstrip(" .;；,，:：")
+    elif expression_priority == "normal":
+        expression = _limit_prompt_to_approx_tokens(expression, 24).rstrip(" .;；,，:：")
+    if language == "中文":
+        if elevation == "level" and direction == "level":
+            elevation, direction = "平视", ""
+        camera = "、".join(dict.fromkeys(part for part in (elevation, direction, azimuth) if part))
+        geometry = "，".join(part for part in (shot_scale, f"镜头相对{primary}呈{camera}" if camera else "", axis, occupancy_text) if part)
+        if detail_band == "near":
+            content = (expression, lens, descriptive["appearance"], descriptive["pose"], descriptive["atmosphere"], descriptive["environment"], secondary, scene)
+        elif detail_band == "medium":
+            content = (lens, descriptive["pose"], descriptive["appearance"], descriptive["environment"], descriptive["atmosphere"], expression, secondary, scene)
+        else:
+            content = (lens, descriptive["pose"], descriptive["appearance"], descriptive["environment"], descriptive["atmosphere"], secondary, scene, expression)
+        return "。".join(part.strip("。") for part in (style, geometry, *content) if part).strip("。") + "。"
+    if elevation == "level" and direction == "level":
+        elevation, direction = "at subject eye level", ""
+    camera = ", ".join(dict.fromkeys(part for part in (elevation, direction, azimuth) if part))
+    geometry = "; ".join(part for part in (shot_scale, f"the camera is {camera} relative to {primary}" if camera else "", axis, occupancy_text) if part)
+    if detail_band == "near":
+        content = (expression, lens, descriptive["appearance"], descriptive["pose"], descriptive["atmosphere"], descriptive["environment"], secondary, scene)
+    elif detail_band == "medium":
+        content = (lens, descriptive["pose"], descriptive["appearance"], descriptive["environment"], descriptive["atmosphere"], expression, secondary, scene)
+    else:
+        content = (lens, descriptive["pose"], descriptive["appearance"], descriptive["environment"], descriptive["atmosphere"], secondary, scene, expression)
+    return ". ".join(part.strip(". ") for part in (style, geometry, *content) if part).strip() + "."
+
+
+def _parse_analysis_envelope(text):
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("response has no complete JSON object boundary")
+    candidate = text[start:end + 1]
+    try:
+        envelope = json.loads(candidate)
+    except json.JSONDecodeError as original_error:
+        if _repair_json is None:
+            raise ValueError(f"invalid JSON: {original_error}") from original_error
+        try:
+            envelope = _repair_json(candidate, return_objects=True)
+        except Exception as repair_error:
+            raise ValueError(f"invalid JSON: {original_error}; repair failed: {repair_error}") from repair_error
+    if not isinstance(envelope, dict):
+        raise ValueError("visual-analysis envelope is not a JSON object")
+    return envelope
+
+
+def _partial_analysis_envelope(text):
+    """Return usable worksheet parts without treating them as a final result."""
+    cleaned = _strip_code_fence(_strip_thinking(str(text or ""))).strip()
+    try:
+        envelope = _parse_analysis_envelope(cleaned)
+    except ValueError:
+        return None, ""
+    analysis = envelope.get("visual_analysis")
+    if not isinstance(analysis, dict):
+        analysis = None
+    scene = str(
+        envelope.get("scene_description")
+        or ((analysis or {}).get("scene_description") if analysis else "")
+        or ""
+    ).strip()
+    return analysis, scene
+
+
+def _clean_prompt_output(text, rule, output_language="英文", strict_natural=False):
     text = _strip_code_fence(_strip_thinking(text)).strip()
     text = re.sub(r"^\s*(expanded prompt|positive prompt|prompt|result|output)\s*:\s*", "", text, flags=re.IGNORECASE)
     text = text.strip().strip('"').strip()
-    if prompt_config_manager.prompt_rule_mode(rule) == "json":
+    rule_mode = prompt_config_manager.prompt_rule_mode(rule)
+    if rule_mode == "natural":
+        parse_error = None
+        try:
+            envelope = _parse_analysis_envelope(text)
+            rendered = _render_natural_prompt(envelope, output_language, strict_natural)
+            if rendered:
+                return rendered
+            if not strict_natural:
+                prompt = envelope.get("prompt")
+                if isinstance(prompt, str) and prompt.strip():
+                    return prompt.strip().strip('"').strip()
+            parse_error = "JSON object is missing visual_analysis or grounded descriptive fields"
+        except ValueError as exc:
+            parse_error = str(exc)
+        if strict_natural:
+            raise ValueError(
+                f"natural prompt response did not contain a complete visual-analysis envelope: {parse_error}"
+            )
+    if rule_mode == "json":
         start = text.find("{")
         end = text.rfind("}")
         if start >= 0 and end > start:
@@ -545,6 +1027,37 @@ def _finish_fixed_prompt(text):
     if text and not _has_terminal_punctuation(text):
         text += "."
     return text
+
+
+def _approx_prompt_tokens(text):
+    """Provider-neutral estimate used only to keep the public prompt near its preset."""
+    text = str(text or "")
+    cjk = len(re.findall(r"[\u3400-\u9fff\uf900-\ufaff]", text))
+    non_cjk = re.sub(r"[\u3400-\u9fff\uf900-\ufaff]", "", text)
+    return cjk + max(0, (len(non_cjk) + 3) // 4)
+
+
+def _limit_prompt_to_approx_tokens(text, target_tokens):
+    text = str(text or "").strip()
+    target_tokens = max(1, _safe_int(target_tokens, 256))
+    if _approx_prompt_tokens(text) <= target_tokens:
+        return text
+    low, high = 0, len(text)
+    while low < high:
+        mid = (low + high + 1) // 2
+        if _approx_prompt_tokens(text[:mid]) <= target_tokens:
+            low = mid
+        else:
+            high = mid - 1
+    fragment = text[:low].rstrip()
+    minimum = int(len(fragment) * 0.7)
+    sentence_end = max(fragment.rfind(mark, minimum) for mark in ("。", "！", "？", ".", "!", "?", ";"))
+    if sentence_end >= minimum:
+        return fragment[:sentence_end + 1].strip()
+    word_end = max(fragment.rfind(" "), fragment.rfind("，"), fragment.rfind(","))
+    if word_end > 0:
+        fragment = fragment[:word_end].rstrip()
+    return fragment.rstrip("，,;；:：") + ("。" if re.search(r"[\u3400-\u9fff]", fragment) else ".")
 
 
 def _join_prompt_parts(fixed_text="", prompt_text=""):
@@ -605,21 +1118,234 @@ Write all descriptive JSON string values in the requested output language.
 def _style_preset_rule(style_preset):
     preset = _normalize_style_preset(style_preset)
     if preset == "自行判断":
-        return "Infer the most suitable visual style automatically from the user's text and/or the input image. Do not force a preset style; choose the style, medium, lighting language, and camera or rendering vocabulary that best fits the subject and visible evidence."
-    return _STYLE_PRESET_RULES.get(preset, "")
+        return (
+            "Perform a mandatory two-level style classification. First choose exactly one supported upper-level category "
+            "from realistic photography, anime illustration, hand-drawn art, or digital art. Then choose exactly one "
+            "concrete subtype inside it from the user's text and/or image evidence. Photography subtypes include casual "
+            "smartphone snapshot, documentary/street photography, editorial/fashion photography, commercial studio or "
+            "product photography, architecture/interior photography, analog film photography, and cinematic film still. "
+            "Anime-illustration subtypes include anime key art, manga, cel animation, webtoon, western comic/animation, "
+            "children's cartoon art, and stylized animation rendering. Hand-drawn subtypes identify a physical medium such "
+            "as oil, watercolor, gouache, acrylic, ink, pencil, charcoal, pastel, printmaking, or mixed media. Digital-art "
+            "subtypes include digital painting, concept art, matte painting, editorial illustration, game key art, pixel "
+            "art, photobashing, and CGI hybrid art. State the selected concrete subtype and its supported visual vocabulary "
+            "in the final prompt without exposing the classification process or listing alternatives."
+        )
+    category_rule = _STYLE_PRESET_RULES.get(preset, "")
+    if not category_rule:
+        return ""
+    return (
+        f"Treat {preset} as an upper-level style category, not as a single fixed look. {category_rule} "
+        "Choose one best-fitting subtype, or one concise hybrid only when the evidence genuinely supports it. Explicitly "
+        "name or unambiguously describe that subtype in the final prompt. Do not list alternatives, default to the most "
+        "polished/common subtype, or add unsupported style traits. With an image, visual evidence determines the subtype; "
+        "with text only, infer it from the subject, context, and stated intent."
+    )
+
+
+def _style_task_instruction(style_preset):
+    preset = _normalize_style_preset(style_preset)
+    if preset == "自行判断":
+        return (
+            "Mandatory style task: classify the reference into exactly one of these four categories—realistic photography, "
+            "anime illustration, hand-drawn art, or digital art—then select one evidence-based concrete subtype inside it. "
+            "The opening sentence of the final prompt must explicitly contain that subtype, not merely a vague adjective."
+        )
+    return (
+        f"Mandatory style task: the upper-level category is locked to {preset}. Select one concrete subtype inside this "
+        "category from the image and/or text evidence, and explicitly describe that subtype in the opening sentence of "
+        "the final prompt. An "
+        "explicit text subtype is valid only when it belongs to the selected category."
+    )
+
+
+def _camera_task_instruction(input_mode):
+    has_image = input_mode in {"image", "image_text"}
+    source_rule = (
+        "Derive and reproduce these facts from the image"
+        if has_image
+        else "Design these facts explicitly from the user's intent"
+    )
+    return (
+        "Mandatory camera/subject relationship task: the opening sentence of the final prompt must combine the primary "
+        "subject with a coherent spatial description that "
+        "states (1) whether the camera is above, roughly level with, or below the primary subject and whether it looks "
+        "downward, level, or upward; (2) the supported frontal, side, rear, or three-quarter relationship between camera "
+        "and subject, or the visible face/side for a subject without a natural front; (3) the primary subject's viewer-"
+        "relative left/center/right and upper/middle/lower frame placement, scale, and foreground/midground/background "
+        "position, including the subject's head/front, center mass, lower/rear extent, and dominant diagonal or horizontal/"
+        "vertical axis when applicable; and (4) the lens class and its visible perspective effect. For multiple important subjects, state their "
+        "left/right and front/back relationship. Do not replace these facts with generic phrases such as dynamic angle, "
+        f"immersive composition, or cinematic framing. {source_rule}. This task is mandatory for photographic and non-"
+        "photographic styles alike; use a virtual viewpoint for illustration or artwork. Do not omit it when the user "
+        "supplies no camera wording. Repeating a user-provided lens phrase alone does not satisfy this task."
+    )
+
+
+def _final_output_audit(style_preset, input_mode):
+    preset = _normalize_style_preset(style_preset)
+    category_check = (
+        "one of the four allowed upper-level categories and one concrete subtype"
+        if preset == "自行判断"
+        else f"the selected {preset} category and one concrete subtype within it"
+    )
+    checks = [
+        f"Style: the final prompt must clearly communicate {category_check}.",
+        "Specificity: generic phrases by themselves—such as atmospheric photography, cinematic style, realistic look, "
+        "anime style, hand-drawn look, or digital art—do not count as a subtype; replace them with a supported concrete "
+        "form such as editorial photography, casual smartphone snapshot, cinematic film still, anime key art, watercolor, "
+        "or concept art.",
+    ]
+    geometry_source = (
+        "reproduce these relationships from image evidence"
+        if input_mode in {"image", "image_text"}
+        else "design these relationships coherently from the user's intent"
+    )
+    checks.append(
+        "Opening sentence: the answer is invalid unless its first sentence combines the concrete style subtype with "
+        "the camera's vertical relationship to the primary subject, the camera/subject front-side-rear relationship, the "
+        "subject's viewer-relative spatial extent, dominant axis and depth layer, and the lens class/perspective effect. "
+        "For a person, the visible head-to-feet/body extent must determine shot scale; a visible full or nearly full body "
+        "must not be called a medium shot. A diagonal subject must be described through its endpoints rather than reduced "
+        "to centered framing. For multiple "
+        "important subjects, it must also state their left/right and front/back arrangement. It must "
+        f"{geometry_source}. Generic composition adjectives do not satisfy this requirement, and merely repeating camera "
+        "wording supplied by the user does not replace the required analysis or design."
+    )
+    checks.append(
+        "Expression scales with shot distance: for extreme close-up, close-up, head-and-shoulders, or chest-up views, "
+        "give the visible expression and gaze high priority and describe eye openness/direction, brows, nose tension when "
+        "relevant, mouth/lips/teeth, jaw, and facial muscle tension. For medium shots, keep only the clearest expression "
+        "and gaze cues. For full-body or wide shots, use only broad expression cues that are genuinely readable. For an "
+        "extreme-wide subject or a face that is not visible, omit expression. Never invent an unsupported inner state."
+    )
+    return "\n".join(f"- {check}" for check in checks)
 
 
 def _composition_preset_rule(composition_preset):
     preset = _normalize_composition_preset(composition_preset)
     if preset == "自行判断":
-        return "Infer the most suitable subject shot scale automatically from the user's text and/or the input image. Do not force a preset shot scale; choose how close or far the main subject should appear based on the scene, intent, and visible evidence."
+        return (
+            "Infer the subject shot scale from the available evidence. When an image is provided, reproduce its observed "
+            "shot scale instead of replacing it with a more conventional or aesthetically preferred framing. When no image "
+            "is provided, choose how close or far the main subject should appear from the user's intent."
+        )
     return _COMPOSITION_PRESET_RULES.get(preset, "")
 
 
+def _camera_geometry_rule(input_mode):
+    if input_mode == "text":
+        return """
+Designed camera geometry and subject relationship (mandatory for every text expansion):
+- Identify the primary visual subject or, for an environment-led scene, its dominant visual anchor.
+- Deliberately choose and state a coherent shot scale, camera elevation and viewing direction, camera azimuth or visible subject side, subject orientation, viewer-relative frame placement, depth layer, and lens/perspective character.
+- The choices must serve the user's subject, action, mood, and selected style rather than defaulting to eye-level centered framing, a low angle, or an ultra-wide lens.
+- Keep camera position, subject orientation, and frame placement as separate facts. For multiple important subjects, define their left/right and front/back arrangement.
+- For anime, hand-drawn art, digital art, and other non-photographic media, treat camera as the virtual viewpoint used to construct the image; camera-to-subject geometry remains mandatory even when physical camera terminology would be inappropriate.
+- Do not omit this relationship because the user supplied only a brief concept. Do not replace it with vague phrases such as dynamic composition or cinematic angle.
+""".strip()
+    if input_mode not in {"image", "image_text"}:
+        return ""
+    conflict_rule = (
+        "Explicit text requirements override conflicting image evidence."
+        if input_mode == "image_text"
+        else "Treat the image as the source of truth."
+    )
+    return f"""
+Camera geometry and subject relationship evidence (mandatory and direction-neutral for every image input):
+- Inspect visual evidence before choosing terminology. Determine these properties independently: (1) shot scale, (2) vertical viewing direction, (3) horizontal camera position and optical-axis direction, (4) subject orientation, (5) subject placement in the image frame, (6) lens perspective / field of view, (7) camera roll, and (8) depth arrangement.
+- Keep three coordinate systems separate. The camera's position relative to the subject, the subject's own facing/orientation, and the subject's placement inside the image frame are different facts and must never be substituted for one another. `frame-left` and `frame-right` always mean the viewer's image coordinates, not the subject's anatomical left/right.
+- Classify vertical viewing direction with exactly one internal result: downward-looking, level, upward-looking, or indeterminate. Do not blend opposite directions in the final prompt.
+- Evidence must determine the sign of the angle. Visible top surfaces, a camera position above the subject, and a receding ground plane support downward-looking; visible undersides, a camera position below the subject, and a subject silhouetted against the upper background support upward-looking. A centered horizon with neither set of cues supports level. Perspective convergence or a subject's gaze alone does not determine the sign.
+- Treat angle direction and angle strength separately. Only use strong labels such as top-down, bird's-eye, worm's-eye, steep high angle, or steep low angle when the corresponding evidence is unmistakable. Never use "slight upward", "slight downward", or a similar angle label as an uncertainty hedge; choose level or omit the angle when evidence is insufficient.
+- Determine horizontal camera-to-subject position independently from vertical angle. When the primary subject has an identifiable front and back, choose one supported azimuth: frontal, front-left three-quarter, left-side/profile, rear-left three-quarter, rear, rear-right three-quarter, right-side/profile, front-right three-quarter, or indeterminate. This applies to people, animals, buildings, vehicles, products, plants, furniture, and other objects. For a subject without a meaningful front, do not invent one; describe the visible side, leading face, facade, long axis, or scene direction instead.
+- Determine the camera's optical-axis direction separately from its position. Use vanishing points, visible side planes, overlap, foreshortening, and scene depth to describe whether the camera looks straight toward the subject or diagonally across it, and whether the view travels through the scene from frame-left to frame-right or frame-right to frame-left. Do not infer left/right direction from subject gaze alone.
+- Determine subject orientation separately: facing the camera, facing away, oriented toward frame-left, oriented toward frame-right, or diagonal when supported. For non-human subjects, use the identifiable front, facade, nose, entrance, display face, or direction of travel; otherwise mark orientation indeterminate rather than anthropomorphizing the object.
+- Determine frame placement using viewer coordinates: left / center / right and upper / middle / lower regions, with left-third, right-third, edge placement, foreground overlap, or negative-space direction when clearly visible. State the primary subject's relative size and frame occupancy when useful. For multiple important subjects, describe each one's placement and their left-right/front-back relationship without forcing every element into the center.
+- Do not reduce an extended or diagonal subject to a single center label. Track its meaningful endpoints or parts independently—for a person, at least head, torso/center mass, and legs/feet; for a vehicle, building, animal, product, or other subject, use its front/leading end, center mass, and rear/far extent. State the dominant frame axis such as lower-left to upper-right when visible.
+- Determine human shot scale from visible body extent, not face prominence. If the head and most or all legs/feet are visible, describe a full or near-full-body view even when the face is large; reserve medium shot for roughly waist-up framing and medium close-up for chest-up framing.
+- Use explicit intermediate scales instead of collapsing them into medium shot: head-to-chest is medium close-up, head-to-waist is medium shot, head-to-upper-thigh is medium-long/cowboy shot, head-to-knee or lower is three-quarter shot, and visible feet is full/near-full-body. Apply the same visible-extent logic to non-human subjects.
+- Identify secondary subjects by visible appearance and placement unless text or unmistakable markings establish an exact identity. Do not guess a character name from costume color alone.
+- In the final prompt, express supported relationships concretely: camera elevation plus camera azimuth/side, optical-axis direction, subject orientation, and subject frame placement. Do not collapse these into vague words such as dynamic angle or cinematic composition, and do not add a left/right label merely to fill every category.
+- Lens width and camera elevation are independent. Wide or ultra-wide perspective is not evidence of looking upward, and telephoto compression is not evidence of looking downward. Classify lens character only from field of view, edge stretching, barrel distortion, foreground exaggeration, convergence, or background compression. Do not invent an exact focal length when only a qualitative lens class is supported.
+- Preserve the observed direction without normalizing it: downward remains downward, upward remains upward, and level remains level. In the final prompt, state a supported camera angle and lens/perspective explicitly; omit an indeterminate property rather than guessing.
+- Before finalizing, perform a contradiction check: reject any upward-looking wording when downward evidence was selected, reject any downward-looking wording when upward evidence was selected, and remove all angle wording when the result was indeterminate. Also reject left/right statements that confuse camera position, subject orientation, or frame placement, and reject mirrored placement relative to the visible image.
+- A selected subject shot-scale preset may change only camera distance / the visible amount of the main subject. Preserve viewing direction, lens character, camera roll, and perspective strength unless the user's text explicitly changes them or they are physically incompatible with the selected shot scale.
+- For JSON output, express camera geometry inside the allowed descriptive fields; do not add forbidden keys such as camera, lens, or metadata.
+{conflict_rule}
+""".strip()
+
+
+def _natural_analysis_contract(input_mode):
+    basis = (
+        "observed image evidence"
+        if input_mode in {"image", "image_text"}
+        else "an intentional design derived from the user's text"
+    )
+    return f"""
+Natural-prompt analysis envelope (mandatory response transport format):
+- Before writing the prompt, fill every visual_analysis field below using {basis}. This is a compact composition worksheet, not a place for narrative prose.
+- Estimate the primary subject's occupied bounding box and three meaningful anchors in viewer-relative normalized coordinates from 0 to 1000, with origin at image top-left and bbox order [x_min, y_min, x_max, y_max]. Use head/front, center mass, and legs/rear/far extent so an extended or diagonal subject cannot collapse into an assumed centered position.
+- State the primary subject's dominant spatial axis, visible body/object extent, and approximate percentage of frame occupancy. For a person, visible legs or feet prevent a false medium-shot label even when the face is prominent.
+- In image-plus-text mode, copy the user's explicit subject identity constraints into explicit_subject_requirement as one concise noun phrase, preserving stated name, nationality or ethnicity, gender, and age wording without substitution; for example, "an American woman" must not become "a young woman". Leave this field empty when the user did not explicitly specify a subject. Never infer these attributes from the image for this field.
+- Describe every important secondary subject with a visible descriptor, anchor coordinate, and foreground/midground/background layer. Do not infer a named identity from color or costume alone.
+- Scale primary_subject_expression with shot distance. In extreme close-up, close-up, head-and-shoulders, or chest-up views, record detailed eye/gaze, brow, nose, mouth/lips/teeth, jaw, and facial-muscle evidence. In medium shots, keep only the clearest readable cues. In full-body or wide shots, use only broad expression cues that remain visibly legible. In extreme-wide views or when the face is not visible, leave it empty. Add an emotion word only when observable cues clearly support it.
+- Fill primary_subject_appearance_and_clothing from visible evidence only. List garments first in head-to-toe order—type, cut, layers, exact visible colors, materials, openings, straps, and footwear—then eyewear, jewelry, hair, and other accessories. Do not replace unusual clothing with a conventional outfit or infer hidden garments.
+- Fill primary_subject_pose_and_action as an articulated body/object description. For people, state head tilt, torso lean/twist, both arms and hands, both legs and feet, support points, grasped objects, and weight distribution when visible. Full-body and wide views require more pose detail than facial detail.
+- In pose/action, do not guess anatomical left/right from image position. Use hand/arm at frame-left or frame-right when anatomy is uncertain; reserve anatomical left/right for unambiguous evidence. Keep the contacted prop in the same viewer-relative coordinate system.
+- Fill environment_and_spatial_context with the actual floor/ground, background surfaces, equipment, furniture, props, negative space, and foreground/midground/background relationships. Full-body, wide, and extreme-wide views require progressively more environmental detail.
+- Fill lighting_color_and_atmosphere with visible light sources and direction, dominant colors, color temperature, contrast, shadow quality, saturation, and the resulting visual atmosphere. Do not use unsupported generic words such as cinematic, moody, or atmospheric without visible color/light evidence.
+- Allocate detail by shot distance before writing any descriptive field: close views prioritize expression and local appearance; medium views balance expression, pose, clothing, and setting; full-body/wide views prioritize articulated pose, clothing silhouette, environment, spatial relationships, light, and palette; extreme-wide views omit facial detail.
+- Keep each dedicated descriptive field concise and information-dense. List distinctive evidence before generic context, preserve every clearly visible garment/limb/prop/color cue, and remove filler adjectives or repeated facts so all four fields can survive the final token budget.
+- Determine vertical camera direction from visible planes and perspective: top surfaces support a camera above/looking downward; undersides support below/looking upward. Do not call a view eye-level merely because the subject looks toward the camera.
+- Determine lens class from field of view, foreground/background scale difference, edge stretching, convergence, or compression. A user-provided lens phrase is a requirement but is not visual evidence.
+- Fill visual_analysis from observable evidence or intentional text-mode design. The node, not the model, will convert these fields into the final style-and-geometry sentence.
+- Keep categorical analysis values in the English canonical forms shown by the schema even when the requested final output language is Chinese. Write all visible descriptive fields in the requested output language.
+- Return exactly one valid JSON object with these keys and no markdown:
+{{
+  "visual_analysis": {{
+    "style_category": "",
+    "style_subtype": "",
+    "explicit_subject_requirement": "",
+    "primary_subject": "",
+    "primary_subject_bbox_xyxy": [0, 0, 0, 0],
+    "primary_subject_key_anchors": {{
+      "head_or_front_xy": [0, 0],
+      "center_mass_xy": [0, 0],
+      "legs_rear_or_far_extent_xy": [0, 0]
+    }},
+    "primary_subject_dominant_axis": "",
+    "primary_subject_visible_extent": "",
+    "primary_subject_frame_occupancy_percent": 0,
+    "primary_subject_appearance_and_clothing": "",
+    "primary_subject_pose_and_action": "",
+    "primary_subject_expression": "",
+    "shot_scale": "",
+    "camera_elevation": "above | level | below",
+    "view_direction": "downward | level | upward",
+    "camera_azimuth_or_visible_side": "",
+    "subject_orientation": "",
+    "frame_placement_and_depth": "",
+    "lens_class": "",
+    "perspective_effect": "",
+    "secondary_subjects": [
+      {{"visible_descriptor": "", "anchor_xy": [0, 0], "depth_layer": ""}}
+    ],
+    "multiple_subject_layout": "",
+    "environment_and_spatial_context": "",
+    "lighting_color_and_atmosphere": "",
+    "geometry_evidence_or_design_basis": ["", ""]
+  }}
+}}
+- Keep the four descriptive fields mutually non-duplicative and faithful. The node orders them by shot distance and renders the final prompt; the worksheet itself does not count toward the selected final prompt length.
+""".strip()
+
+
 def _build_messages(prompt_input, rule, extra_rules, seed, image_data_url="", style_preset="自行判断", composition_preset="自行判断", length_preset="标准", output_language="英文", input_mode="text"):
+    rule_mode = prompt_config_manager.prompt_rule_mode(rule)
     system = (
         _json_system_prompt(rule)
-        if prompt_config_manager.prompt_rule_mode(rule) == "json"
+        if rule_mode == "json"
         else _natural_system_prompt(rule)
     )
     normalized_style = _normalize_style_preset(style_preset)
@@ -635,7 +1361,7 @@ def _build_messages(prompt_input, rule, extra_rules, seed, image_data_url="", st
             system += (
                 "\n\nStyle preset:\n"
                 f"{style_rule}\n"
-                "Apply this style preset clearly in the final output. If both text and image are provided, preserve the user's text requirements first and use the image only for compatible visual reference. If only an image is provided, reverse-engineer the image content while rewriting the caption in this selected style. This style preset must not override an explicit subject shot-scale selection."
+                "Apply the selected upper-level category and the inferred subtype clearly in the final output. If both text and image are provided, preserve the user's text requirements first and use the image only for compatible visual reference. If only an image is provided, reverse-engineer both its content and the best-supported subtype within the selected category. This style category must not override an explicit subject shot-scale selection."
             )
     composition_rule = _composition_preset_rule(composition_preset)
     if composition_rule:
@@ -644,6 +1370,9 @@ def _build_messages(prompt_input, rule, extra_rules, seed, image_data_url="", st
             f"{composition_rule}\n"
             "Apply this shot-scale requirement to the main subject as a hard visual constraint. Expand or reverse-engineer the prompt so the described subject distance, visible body area, and amount of environment match this shot scale. Treat the subject/environment/lighting balance as a soft proportional guide, not a rigid formula. The closer the shot scale is, such as extreme close-up or close-up, the more the caption should focus on the subject's visible details and the less it should describe environment or broad atmosphere. The farther the shot scale is, such as wide shot or extreme wide shot, the more concise the subject description should be and the more the caption should describe environment, atmosphere, spatial relationships, and overall scene scale. Subject description may include angle, makeup or grooming, expression, clothing or surface appearance, and action when visible, but it must not contradict the selected shot scale. Do not add details that contradict the selected shot scale. If an input image is provided, preserve visible subject facts, identity, action, clothing, props, and setting evidence, but do not preserve the original image's camera distance when a different shot scale is selected."
         )
+    camera_geometry_rule = _camera_geometry_rule(input_mode)
+    if camera_geometry_rule:
+        system += f"\n\n{camera_geometry_rule}"
     length_preset = _normalize_length_preset(length_preset)
     system += (
         "\n\nOutput length:\n"
@@ -654,7 +1383,22 @@ def _build_messages(prompt_input, rule, extra_rules, seed, image_data_url="", st
         system += "\n\nOutput language:\nWrite the final caption in fluent, natural Simplified Chinese. For JSON output, keep all keys exactly as required, but write descriptive string values in Simplified Chinese."
     else:
         system += "\n\nOutput language:\nWrite the final caption in fluent, common, modern English."
+    audit_tail = (
+        "If any applicable check fails, revise visual_analysis before returning the analysis envelope."
+        if rule_mode == "natural"
+        else "If any applicable check fails, revise the output before returning it."
+    )
+    system += (
+        "\n\nMandatory final audit (perform silently before answering):\n"
+        f"{_final_output_audit(style_preset, input_mode)}\n"
+        f"{audit_tail}"
+    )
+    if rule_mode == "natural":
+        system += f"\n\n{_natural_analysis_contract(input_mode)}"
     prompt_text = str(prompt_input or "").strip()
+    style_task = _style_task_instruction(style_preset)
+    camera_task = _camera_task_instruction(input_mode)
+    mandatory_tasks = "\n\n".join(task for task in (style_task, camera_task) if task)
     if input_mode == "image_text" and prompt_text:
         system += (
             "\n\nMandatory user requirements from text input:\n"
@@ -669,13 +1413,17 @@ def _build_messages(prompt_input, rule, extra_rules, seed, image_data_url="", st
                 "Use the image only as compatible visual reference for pose, framing, setting, lighting, color palette, atmosphere, and production style. "
                 "If the image shows a different person, clothing, hair, accessory, action, medium, or setting than the text requests, replace the image detail with the text detail. "
                 "Fuse text and image into one final prompt that clearly includes the user's text requirements.\n\n"
-                f"Mandatory user requirements:\n{prompt_text}"
+                f"Mandatory user requirements:\n{prompt_text}\n\n{mandatory_tasks}"
             )
         else:
             instruction = (
                 "Input mode: image only.\n"
                 "Reverse-engineer the image into a high-quality T2I prompt. Describe visible subject, setting, composition, "
-                "camera distance, lighting, color, medium, style, and atmosphere. Do not invent unsupported story details."
+                "camera distance, camera elevation, horizontal camera-to-subject position, optical-axis direction, subject "
+                "orientation and frame placement, lens perspective and field of view, perspective distortion or compression, "
+                "framing, lighting, color, medium, style, and atmosphere. Preserve unusual "
+                "viewpoints and lens geometry exactly when they are visible. Do not invent unsupported story details.\n\n"
+                f"{mandatory_tasks}"
             )
         user_content = [
             {"type": "text", "text": f"User request:\n{instruction}"},
@@ -686,7 +1434,7 @@ def _build_messages(prompt_input, rule, extra_rules, seed, image_data_url="", st
             "Input mode: text only.\n"
             "Use the text as a creative seed or detailed prompt. If it is short, develop a coherent visual direction. "
             "If it is already detailed, preserve its direction and lightly polish it.\n\n"
-            f"User text:\n{prompt_text}"
+            f"User text:\n{prompt_text}\n\n{mandatory_tasks}"
         )
     if _safe_int(seed, 0):
         seed_text = (
@@ -702,6 +1450,93 @@ def _build_messages(prompt_input, rule, extra_rules, seed, image_data_url="", st
         {"role": "system", "content": system},
         {"role": "user", "content": user_content},
     ]
+
+
+def _build_image_analysis_messages(prompt_input, image_data_url, style_preset, composition_preset, length_preset, output_language):
+    """Build a compact VLM request whose only job is grounded visual analysis."""
+    language = _normalize_output_language(output_language)
+    style_preset = _normalize_style_preset(style_preset)
+    composition_preset = _normalize_composition_preset(composition_preset)
+    length_preset = _normalize_length_preset(length_preset)
+    target_tokens = _LENGTH_TOKEN_LIMITS.get(length_preset, 256)
+    style_instruction = _style_task_instruction(style_preset)
+    if style_preset != "自行判断":
+        style_instruction += "\n" + _STYLE_PRESET_RULES.get(style_preset, "")
+    composition_instruction = _composition_preset_rule(composition_preset)
+    text_requirement = str(prompt_input or "").strip()
+    conflict_instruction = (
+        "The user requirement below overrides only facts it explicitly states; a lens requirement never determines camera elevation.\n"
+        f"User requirement: {text_requirement}"
+        if text_requirement
+        else "The image is the sole source of truth."
+    )
+    system = f"""
+You are a visual-geometry analyzer for an image-prompt node. Analyze the supplied image; do not write a finished prompt.
+Return exactly one valid JSON object and no markdown or prose outside it. The node will render the final prompt from this data.
+Every string must obey JSON escaping rules. Escape internal double quotes as \\" or rewrite the phrase without quotation marks; never place raw double quotes inside a JSON string.
+
+Required decisions:
+- Identify the primary subject and estimate its bbox and three anchors in viewer coordinates 0..1000, origin at image top-left.
+- If the user text explicitly specifies the subject, copy its stated identity into explicit_subject_requirement as one concise noun phrase. Preserve stated name, nationality or ethnicity, gender, and age wording exactly in meaning; do not replace "an American woman" with "a young woman". Leave it empty for image-only input or when text specifies no subject. Never infer these attributes from the image for this field.
+- Keep camera elevation, viewing direction, subject orientation, and frame placement separate.
+- Vertical sign requires converging evidence. Use above/downward only when a visible top plane is accompanied by clear perspective foreshortening or scene convergence proving that the camera is elevated; use below/upward only when visible undersides are accompanied by equivalent perspective evidence. A visible crown, forehead, shoulders, chest, or neckline alone is insufficient.
+- For a tight face, head-and-shoulders, bust, or chest-up portrait, choose level unless strong plane and perspective evidence jointly proves a high or low angle. Head tilt, chin position, facial expression, subject gaze, cropping, and wide-angle distortion do not determine camera elevation.
+- A reclining or diagonal person must be located by head, center mass, and feet; do not reduce the person to "centered".
+- Human shot scale follows visible body extent. Visible head plus most legs/feet is full-body or near-full-body, not medium shot.
+- Use explicit intermediate scales: head-to-chest is medium close-up, head-to-waist is medium, head-to-upper-thigh is medium-long/cowboy, head-to-knee or lower is three-quarter, and visible feet is full/near-full-body. Never call a thigh-up or knee-up subject a plain medium shot.
+- Lens width is independent of elevation. Describe the visible field of view and perspective effect.
+- Locate every important secondary subject with an anchor and depth layer. Use visible descriptors unless identity is unmistakable.
+- Scale expression detail and priority with shot distance. For extreme close-up, close-up, head-and-shoulders, or chest-up views, record detailed eye/gaze, brow, nose, mouth/lips/teeth, jaw, and facial-muscle evidence. For medium shots, retain only clearly readable expression cues. For full-body or wide shots, use only broad cues that remain visible. For extreme-wide views or an invisible face, leave the field empty. Do not reduce a readable close expression to "expressive", "happy", or "serious", and do not invent emotion.
+- Select one concrete style subtype. {style_instruction}
+- Shot-scale instruction: {composition_instruction}
+- {conflict_instruction}
+- Record appearance/clothing, articulated pose/action, environment/spatial context, and lighting/color/atmosphere in their dedicated fields. In appearance/clothing, list garment type, cut, layers, openings/straps, colors, materials, and footwear before hair, eyewear, jewelry, or makeup. Keep all fields mutually non-duplicative and grounded in visible evidence.
+- In pose/action, do not guess anatomical left/right from screen position. If anatomy is uncertain, use the arm/hand at frame-left or frame-right and describe its contacted railing, prop, or support in the same viewer coordinates.
+- Allocate detail by shot distance: close views prioritize readable facial and local appearance evidence; medium views balance expression, pose, clothing, and setting; full-body/wide views prioritize complete pose, clothing silhouette, equipment/props, environment, spatial relationships, palette, and atmosphere; extreme-wide views omit facial detail.
+- Write descriptive fields in {"Simplified Chinese" if language == "中文" else "English"}, with enough combined detail for a final prompt near {target_tokens} tokens. Never normalize unusual clothing, pose, equipment, color cast, or lighting into a generic scene.
+- Keep the four fields concise: appearance/clothing about {50 if target_tokens == 256 else 100} tokens, pose/action about {42 if target_tokens == 256 else 84}, environment/spatial context about {45 if target_tokens == 256 else 90}, and lighting/color/atmosphere about {32 if target_tokens == 256 else 64}. Put distinctive evidence such as unusual garments, hand-object contact, cables/equipment, and dominant color casts before generic background facts.
+- Before returning JSON, reject any combination of camera_elevation=above with view_direction=upward, or below with downward.
+
+Schema:
+{{
+  "visual_analysis": {{
+    "style_category": "realistic photography | anime illustration | hand-drawn art | digital art",
+    "style_subtype": "",
+    "explicit_subject_requirement": "",
+    "primary_subject": "",
+    "primary_subject_bbox_xyxy": [0, 0, 0, 0],
+    "primary_subject_key_anchors": {{
+      "head_or_front_xy": [0, 0],
+      "center_mass_xy": [0, 0],
+      "legs_rear_or_far_extent_xy": [0, 0]
+    }},
+    "primary_subject_dominant_axis": "",
+    "primary_subject_visible_extent": "",
+    "primary_subject_frame_occupancy_percent": 0,
+    "primary_subject_appearance_and_clothing": "",
+    "primary_subject_pose_and_action": "",
+    "primary_subject_expression": "",
+    "shot_scale": "",
+    "camera_elevation": "above | level | below",
+    "view_direction": "downward | level | upward",
+    "camera_azimuth_or_visible_side": "",
+    "subject_orientation": "",
+    "frame_placement_and_depth": "",
+    "lens_class": "",
+    "perspective_effect": "",
+    "secondary_subjects": [{{"visible_descriptor": "", "anchor_xy": [0, 0], "depth_layer": "foreground | midground | background"}}],
+    "multiple_subject_layout": "",
+    "environment_and_spatial_context": "",
+    "lighting_color_and_atmosphere": "",
+    "geometry_evidence_or_design_basis": ["", ""]
+  }}
+}}
+""".strip()
+    user_content = [
+        {"type": "text", "text": "Analyze this image into the required JSON worksheet. Inspect visible planes and subject anchors before choosing the vertical angle."},
+        {"type": "image_url", "image_url": {"url": image_data_url}},
+    ]
+    return [{"role": "system", "content": system}, {"role": "user", "content": user_content}]
 
 
 def _message_cache_text(messages):
@@ -790,49 +1625,35 @@ def _ollama_chat(base_url, model, messages, temperature, max_tokens, seed=0):
     return str(content)
 
 
-def _chat_completion(base_url, api_key, model, messages, temperature, max_tokens, seed=0, service_type="openai_compatible"):
-    if _uses_ollama_native(base_url, service_type):
-        return _ollama_chat(base_url, model, messages, temperature, max_tokens, seed)
-
-    endpoint = _endpoint_from_base_url(base_url)
-    if not endpoint:
-        raise ValueError("NO8D-Prompt: API base URL is empty")
-    if not str(model or "").strip():
-        raise ValueError("NO8D-Prompt: model is empty")
-
-    payload = {
-        "model": str(model).strip(),
-        "messages": messages,
-        "temperature": _safe_float(temperature, 0.7),
-        "max_tokens": _safe_int(max_tokens, 800),
-    }
-    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
-    key = _clean_key(api_key) or _clean_key(os.getenv("NO8D_PROMPT_API_KEY")) or _clean_key(os.getenv("OPENAI_API_KEY"))
-    if key:
-        headers["Authorization"] = f"Bearer {key}"
+def _send_chat_completion(base_url, endpoint, data, headers, streaming, model):
     last_http_error = None
     for attempt in range(2):
         request = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
         try:
             with _urlopen(request, timeout=_OPENAI_TIMEOUT, base_url=base_url or endpoint) as response:
-                raw = response.read().decode("utf-8", errors="replace")
-            break
+                return _read_chat_response(response, streaming)
+        except _StreamingAPIError as exc:
+            if exc.retryable_burst and attempt == 0:
+                time.sleep(_ARK_BURST_RETRY_DELAY)
+                continue
+            if exc.retryable_burst:
+                raise RuntimeError(
+                    f"NO8D-Prompt: Ark rejected model {model} with {exc.code or exc.error_type} after one paced retry. "
+                    "Wait briefly before running again, reduce simultaneous prompt jobs, or check the Ark endpoint capacity."
+                ) from exc
+            raise
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             last_http_error = (exc, body)
             if exc.code in _RETRY_HTTP_CODES and attempt == 0:
-                time.sleep(1.2)
+                time.sleep(_ARK_BURST_RETRY_DELAY if _uses_streaming_chat(base_url) else 1.2)
                 continue
             hint = ""
             if "Model does not exist" in body or "model" in body.lower():
                 hint = " Please open NO8D Prompt API Manager, validate the service again, and select an available model. Image reverse prompting also requires a vision-capable model."
             raise RuntimeError(f"NO8D-Prompt: API HTTP {exc.code}: {body[:800]}{hint}") from exc
         except (TimeoutError, socket.timeout) as exc:
-            if attempt == 0:
-                time.sleep(1.0)
-                continue
-            raise RuntimeError(f"NO8D-Prompt: API request timed out after {_OPENAI_TIMEOUT}s") from exc
+            raise RuntimeError(_timeout_message(base_url, model)) from exc
         except urllib.error.URLError as exc:
             if attempt == 0:
                 time.sleep(1.0)
@@ -842,22 +1663,142 @@ def _chat_completion(base_url, api_key, model, messages, temperature, max_tokens
         exc, body = last_http_error
         raise RuntimeError(f"NO8D-Prompt: API HTTP {exc.code}: {body[:800]}") from exc
 
-    parsed = json.loads(raw)
-    choices = parsed.get("choices") or []
-    if not choices:
-        raise RuntimeError("NO8D-Prompt: API returned no choices")
-    message = choices[0].get("message") or {}
-    content = message.get("content") or choices[0].get("text") or ""
-    if isinstance(content, list):
-        content = "".join(part.get("text", "") if isinstance(part, dict) else str(part) for part in content)
-    if not str(content).strip():
-        raise RuntimeError("NO8D-Prompt: API returned empty content")
-    return str(content)
+    raise RuntimeError("NO8D-Prompt: API request ended without a response")
+
+
+def _chat_completion(base_url, api_key, model, messages, temperature, max_tokens, seed=0, service_type="openai_compatible", response_format=None):
+    if _uses_ollama_native(base_url, service_type):
+        return _ollama_chat(base_url, model, messages, temperature, max_tokens, seed)
+
+    endpoint = _endpoint_from_base_url(base_url)
+    if not endpoint:
+        raise ValueError("NO8D-Prompt: API base URL is empty")
+    if not str(model or "").strip():
+        raise ValueError("NO8D-Prompt: model is empty")
+
+    streaming = _uses_streaming_chat(base_url)
+    payload = _configure_chat_payload({
+        "model": str(model).strip(),
+        "messages": messages,
+        "temperature": _safe_float(temperature, 0.7),
+        "max_tokens": _safe_int(max_tokens, 800),
+        "stream": streaming,
+    }, base_url, model)
+    if response_format:
+        payload["response_format"] = response_format
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    key = _clean_key(api_key) or _clean_key(os.getenv("NO8D_PROMPT_API_KEY")) or _clean_key(os.getenv("OPENAI_API_KEY"))
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    with _request_guard(base_url):
+        return _send_chat_completion(base_url, endpoint, data, headers, streaming, model)
 
 
 def _max_tokens_for_length(length_preset):
     length_preset = _normalize_length_preset(length_preset)
     return _LENGTH_TOKEN_LIMITS.get(length_preset, _LENGTH_TOKEN_LIMITS["标准"])
+
+
+def _max_tokens_for_request(length_preset, prompt_rule):
+    prompt_tokens = _max_tokens_for_length(length_preset)
+    if prompt_config_manager.prompt_rule_mode(prompt_rule) == "natural":
+        return prompt_tokens + _NATURAL_ANALYSIS_TOKEN_OVERHEAD
+    return prompt_tokens
+
+
+def _supports_native_json_schema(base_url):
+    try:
+        host = (urllib.parse.urlparse(str(base_url or "")).hostname or "").lower()
+    except Exception:
+        return False
+    return (host.startswith("ark.") and host.endswith(".volces.com")) or host == "api.siliconflow.cn"
+
+
+def _image_analysis_response_format(base_url, scene_only=False):
+    if not _supports_native_json_schema(base_url):
+        return None
+    if scene_only:
+        schema = {
+            "type": "object",
+            "properties": {"scene_description": {"type": "string"}},
+            "required": ["scene_description"],
+            "additionalProperties": False,
+        }
+        name = "no8d_scene_description"
+    else:
+        string_fields = (
+            "style_category", "style_subtype", "explicit_subject_requirement", "primary_subject",
+            "primary_subject_dominant_axis", "primary_subject_visible_extent",
+            "primary_subject_appearance_and_clothing", "primary_subject_pose_and_action",
+            "primary_subject_expression", "shot_scale", "camera_elevation",
+            "view_direction", "camera_azimuth_or_visible_side", "subject_orientation",
+            "frame_placement_and_depth", "lens_class", "perspective_effect",
+            "multiple_subject_layout", "environment_and_spatial_context",
+            "lighting_color_and_atmosphere",
+        )
+        properties = {field: {"type": "string"} for field in string_fields}
+        properties.update({
+            "explicit_subject_requirement": {"type": "string", "maxLength": 100},
+            "primary_subject_appearance_and_clothing": {"type": "string", "maxLength": 200},
+            "primary_subject_pose_and_action": {"type": "string", "maxLength": 170},
+            "environment_and_spatial_context": {"type": "string", "maxLength": 180},
+            "lighting_color_and_atmosphere": {"type": "string", "maxLength": 130},
+        })
+        point = {"type": "array", "items": {"type": "integer"}}
+        properties.update({
+            "primary_subject_bbox_xyxy": point,
+            "primary_subject_key_anchors": {
+                "type": "object",
+                "properties": {
+                    "head_or_front_xy": point,
+                    "center_mass_xy": point,
+                    "legs_rear_or_far_extent_xy": point,
+                },
+                "required": ["head_or_front_xy", "center_mass_xy", "legs_rear_or_far_extent_xy"],
+                "additionalProperties": False,
+            },
+            "primary_subject_frame_occupancy_percent": {"type": "number"},
+            "secondary_subjects": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "visible_descriptor": {"type": "string"},
+                        "anchor_xy": point,
+                        "depth_layer": {"type": "string"},
+                    },
+                    "required": ["visible_descriptor", "anchor_xy", "depth_layer"],
+                    "additionalProperties": False,
+                },
+            },
+            "geometry_evidence_or_design_basis": {"type": "array", "items": {"type": "string"}},
+        })
+        analysis_schema = {
+            "type": "object",
+            "properties": properties,
+            "required": list(properties),
+            "additionalProperties": False,
+        }
+        schema = {
+            "type": "object",
+            "properties": {"visual_analysis": analysis_schema},
+            "required": ["visual_analysis"],
+            "additionalProperties": False,
+        }
+        name = "no8d_visual_analysis"
+    return {"type": "json_schema", "json_schema": {"name": name, "strict": True, "schema": schema}}
+
+
+def _temperature_for_input(temperature, input_mode):
+    value = _safe_float(temperature, 0.7)
+    return min(value, 0.1) if input_mode in {"image", "image_text"} else value
+
+
+def _model_for_input(service, text_model, input_mode):
+    if input_mode in {"image", "image_text"}:
+        return str((service or {}).get("vision_model") or text_model or "").strip()
+    return str(text_model or "").strip()
 
 
 def _api_key_fingerprint(api_key):
@@ -914,6 +1855,7 @@ class NO8DBatchPromptPlus:
         length_preset = _normalize_length_preset(length_preset)
         output_language = _normalize_output_language(output_language)
         payload = {
+            "pipeline_version": _PROMPT_PIPELINE_VERSION,
             "prompt": prompt_text,
             "image_hashes": image_hashes,
             "prompt_rules": prompt_rule,
@@ -930,6 +1872,7 @@ class NO8DBatchPromptPlus:
             "service_type": service.get("type", "openai_compatible"),
             "api_base_url": service.get("base_url", ""),
             "model": model_cfg.get("name", ""),
+            "vision_model": service.get("vision_model", ""),
             "api_key": _api_key_fingerprint(service.get("api_key", "")),
             "temperature": _safe_float(model_cfg.get("temperature"), 0.7),
             "seed": _safe_int(seed, 0),
@@ -982,14 +1925,29 @@ class NO8DBatchPromptPlus:
         else:
             input_mode = "text"
             instruction = prompt
-        messages = _build_messages(instruction, prompt_rule, extra_rules, effective_seed, image_data_url, style_preset, composition_preset, length_preset, output_language, input_mode)
+        request_model = _model_for_input(service, model, input_mode)
+        request_temperature = _temperature_for_input(temperature, input_mode)
+        strict_image_analysis = bool(
+            image_data_url and prompt_config_manager.prompt_rule_mode(prompt_rule) == "natural"
+        )
+        if strict_image_analysis:
+            messages = _build_image_analysis_messages(
+                instruction,
+                image_data_url,
+                style_preset,
+                composition_preset,
+                length_preset,
+                output_language,
+            )
+        else:
+            messages = _build_messages(instruction, prompt_rule, extra_rules, effective_seed, image_data_url, style_preset, composition_preset, length_preset, output_language, input_mode)
         cache_payload = {
             "messages": _message_cache_text(messages),
             "service_id": service.get("id"),
             "base_url": api_base_url,
-            "model": model,
+            "model": request_model,
             "api_key": _api_key_fingerprint(api_key),
-            "temperature": temperature,
+            "temperature": request_temperature,
             "max_tokens": max_tokens,
             "seed": effective_seed,
             "image": image_hash,
@@ -998,8 +1956,52 @@ class NO8DBatchPromptPlus:
         cache_key = hashlib.sha1(json.dumps(cache_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
         result = self._cache_get(cache_key)
         if result is None:
-            raw = _chat_completion(api_base_url, api_key, model, messages, temperature, max_tokens, effective_seed, service_type)
-            result = _clean_prompt_output(raw, prompt_rule)
+            response_format = _image_analysis_response_format(api_base_url) if strict_image_analysis else None
+            raw = _chat_completion(api_base_url, api_key, request_model, messages, request_temperature, max_tokens, effective_seed, service_type, response_format)
+            try:
+                result = _clean_prompt_output(raw, prompt_rule, output_language, strict_image_analysis)
+            except ValueError:
+                partial_analysis, partial_scene = _partial_analysis_envelope(raw)
+                if partial_analysis and not partial_scene:
+                    repair_instruction = (
+                        "The visual_analysis object is already complete and will be preserved. Return exactly one JSON "
+                        "object with only this key: {\"scene_description\": \"...\"}. Describe visible subject appearance "
+                        "and action, setting, lighting, colors, materials, textures, and atmosphere in the requested "
+                        "language. Do not include camera angle, lens, framing, placement, style labels, coordinates, "
+                        "markdown, or any other key."
+                    )
+                    repair_max_tokens = _max_tokens_for_length(length_preset) + 128
+                else:
+                    repair_instruction = (
+                        "The previous response was not a complete valid JSON worksheet. Return the required JSON "
+                        "object only. Reinspect the image; do not copy camera wording from the invalid response."
+                    )
+                    repair_max_tokens = max_tokens + 128
+                repair_messages = messages + [
+                    {"role": "assistant", "content": raw},
+                    {"role": "user", "content": repair_instruction},
+                ]
+                repair_format = _image_analysis_response_format(
+                    api_base_url,
+                    scene_only=bool(partial_analysis and not partial_scene),
+                )
+                repaired = _chat_completion(api_base_url, api_key, request_model, repair_messages, 0.0, repair_max_tokens, effective_seed, service_type, repair_format)
+                try:
+                    if partial_analysis and not partial_scene:
+                        _, repaired_scene = _partial_analysis_envelope(repaired)
+                        merged = {
+                            "visual_analysis": partial_analysis,
+                            "scene_description": repaired_scene,
+                        }
+                        repaired = json.dumps(merged, ensure_ascii=False)
+                    result = _clean_prompt_output(repaired, prompt_rule, output_language, True)
+                except ValueError as exc:
+                    raise RuntimeError(
+                        "NO8D-Prompt: the vision model did not return a complete visual-analysis result after one correction. "
+                        "No unverified composition prompt was emitted."
+                    ) from exc
+            if prompt_config_manager.prompt_rule_mode(prompt_rule) == "natural":
+                result = _limit_prompt_to_approx_tokens(result, _max_tokens_for_length(length_preset))
             self._cache_put(cache_key, result)
         return result
 
@@ -1023,7 +2025,7 @@ class NO8DBatchPromptPlus:
         composition_preset = _normalize_composition_preset(composition_preset)
         length_preset = _normalize_length_preset(length_preset)
         output_language = _normalize_output_language(output_language)
-        max_tokens = _max_tokens_for_length(length_preset)
+        max_tokens = _max_tokens_for_request(length_preset, prompt_rule)
         base_seed = _safe_int(seed, 0)
         items = encoded or [("", "")]
         common = {
@@ -1045,11 +2047,7 @@ class NO8DBatchPromptPlus:
             "max_tokens": max_tokens,
         }
 
-        use_parallel = (
-            len(items) > 1
-            and not _uses_ollama_native(api_base_url, service_type)
-            and not _is_local_url(api_base_url)
-        )
+        use_parallel = _should_parallelize_requests(len(items), api_base_url, service_type)
         if use_parallel:
             prompts = [None] * len(items)
             max_workers = min(_MAX_PARALLEL_REQUESTS, len(items))
@@ -1081,8 +2079,6 @@ class NO8DBatchPromptPlus:
 
 
 class NO8DPromptView:
-    _last_send_seq = {}
-
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -1109,43 +2105,55 @@ class NO8DPromptView:
     @classmethod
     def IS_CHANGED(cls, auto_output, edited_text="", send_seq=0, text="", prompt=None, unique_id=None):
         auto = _safe_bool(auto_output, True)
-        if auto:
+        incoming = _prompt_view_text(text)
+        edited = _prompt_view_text(edited_text)
+        sequence = _safe_int(send_seq, 0)
+        if sequence > 0:
             payload = {
-                "text": text or "",
-                "auto_output": True,
+                "mode": "send",
+                "edited_text": edited,
+                "send_seq": sequence,
+                "unique_id": unique_id,
+            }
+        elif auto:
+            payload = {
+                "mode": "auto",
+                "text": incoming,
                 "unique_id": unique_id,
                 "linked_inputs": _linked_inputs_signature(prompt, unique_id, ("text",)),
             }
+            if not incoming.strip():
+                payload["edited_text"] = edited
         else:
             payload = {
-                "auto_output": False,
-                "edited_text": edited_text,
-                "send_seq": _safe_int(send_seq, 0),
+                "mode": "edit",
+                "text": incoming,
+                "edited_text": edited,
                 "unique_id": unique_id,
+                "linked_inputs": _linked_inputs_signature(prompt, unique_id, ("text",)),
             }
         return hashlib.sha1(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
     def view(self, auto_output=True, edited_text="", send_seq=0, text="", prompt=None, unique_id=None):
-        incoming = str(text or "")
-        edited = str(edited_text or "")
-        node_key = str(unique_id or "default")
-        send_seq = _safe_int(send_seq, 0)
-        if _safe_bool(auto_output, True):
-            output = incoming or edited
-            display_text = output
-        elif edited.strip() and send_seq > int(self._last_send_seq.get(node_key, 0)):
-            output = edited
-            self._last_send_seq[node_key] = send_seq
+        incoming = _prompt_view_text(text)
+        edited = _prompt_view_text(edited_text)
+        incoming_output = incoming if incoming.strip() else ""
+        edited_output = edited if edited.strip() else ""
+        is_send = _safe_int(send_seq, 0) > 0
+        if is_send:
+            output = edited_output
             display_text = edited
+        elif _safe_bool(auto_output, True):
+            output = incoming_output or edited_output
+            display_text = output
         else:
-            output = ExecutionBlocker(None) if ExecutionBlocker else ""
-            display_text = edited or incoming
-        ui_output = "" if ExecutionBlocker and isinstance(output, ExecutionBlocker) else output
+            output = ""
+            display_text = incoming_output or edited
         return {
             "ui": {
                 "edited_text": [display_text],
                 "NO8DPromptView_text": [display_text],
-                "NO8DPromptView_output": [ui_output],
+                "NO8DPromptView_output": [output],
             },
             "result": (output,),
         }

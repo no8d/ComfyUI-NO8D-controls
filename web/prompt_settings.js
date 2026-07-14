@@ -82,75 +82,100 @@ function select(options, value) {
 
 function searchableSelect(options, value, placeholder = "") {
     const wrap = document.createElement("div");
-    wrap.style.cssText = "display:flex; flex-direction:column; gap:8px; min-width:0;";
+    wrap.style.cssText = "position:relative; display:flex; flex-direction:column; min-width:0;";
+    const control = document.createElement("div");
+    control.style.cssText = "display:grid; grid-template-columns:minmax(0,1fr) 34px; min-width:0;";
     const search = document.createElement("input");
     search.type = "text";
     search.placeholder = placeholder || t("searchModel");
     search.style.cssText = [
         "height:32px",
         "border:1px solid var(--border-color,#444)",
-        "border-radius:4px",
+        "border-radius:4px 0 0 4px",
         "background:var(--comfy-input-bg,#111)",
         "color:var(--input-text,#eee)",
         "padding:4px 8px",
         "box-sizing:border-box",
         "min-width:0",
     ].join(";");
-    const list = document.createElement("select");
-    list.size = Math.min(8, Math.max(2, options.length));
-    list.style.cssText = "display:none; width:100%; min-width:0; min-height:36px; max-height:210px; border:1px solid var(--border-color,#444); border-radius:6px; background:var(--comfy-input-bg,#111); color:var(--input-text,#eee); padding:4px 6px; box-sizing:border-box;";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.textContent = "▾";
+    toggle.setAttribute("aria-label", placeholder || t("searchModel"));
+    toggle.style.cssText = "height:32px; border:1px solid var(--border-color,#444); border-left:0; border-radius:0 4px 4px 0; background:var(--comfy-input-bg,#181818); color:var(--input-text,#eee); cursor:pointer; padding:0;";
+    const list = document.createElement("div");
+    list.style.cssText = "display:none; position:absolute; z-index:20; top:34px; left:0; right:0; max-height:240px; overflow:auto; border:1px solid var(--border-color,#444); border-radius:6px; background:var(--comfy-menu-bg,#181818); color:var(--input-text,#eee); padding:4px; box-sizing:border-box; box-shadow:0 10px 24px rgba(0,0,0,.45);";
     let selected = value || options[0] || "";
     let open = false;
+    let filtered = [];
     const setOpen = (value) => {
-        open = value;
+        open = Boolean(value && filtered.length);
         list.style.display = open ? "block" : "none";
+        toggle.textContent = open ? "▴" : "▾";
+        search.setAttribute("aria-expanded", String(open));
+    };
+    const choose = (name) => {
+        selected = String(name || "");
+        search.value = selected;
+        wrap.onSelect?.(selected);
+        setOpen(false);
     };
     const render = () => {
         const queryText = search.value.trim();
         const query = queryText && queryText !== selected ? queryText.toLowerCase() : "";
-        const filtered = options.filter((name) => String(name).toLowerCase().includes(query));
+        filtered = options.filter((name) => String(name).toLowerCase().includes(query));
         list.replaceChildren();
         for (const name of filtered) {
-            const option = document.createElement("option");
-            option.value = name;
-            option.textContent = name;
-            list.appendChild(option);
+            const item = document.createElement("button");
+            item.type = "button";
+            item.textContent = name;
+            item.title = name;
+            item.style.cssText = `display:block; width:100%; min-height:32px; border:0; border-radius:4px; background:${name === selected ? "#3b82f6" : "transparent"}; color:${name === selected ? "#fff" : "var(--input-text,#eee)"}; text-align:left; padding:6px 8px; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;`;
+            item.addEventListener("pointerdown", (event) => event.preventDefault());
+            item.addEventListener("click", () => choose(name));
+            list.appendChild(item);
         }
-        if (filtered.includes(selected)) {
-            list.value = selected;
-        } else if (filtered.length) {
-            list.value = filtered[0];
-        }
-        setOpen(open && filtered.length > 0);
+        setOpen(open);
     };
     search.placeholder = selected || placeholder || t("searchModel");
     search.value = selected;
     search.addEventListener("focus", () => {
-        setOpen(options.length > 0);
+        open = true;
         render();
     });
-    search.addEventListener("input", render);
-    list.addEventListener("change", () => {
-        selected = list.value;
-        search.value = selected;
-        wrap.onchange?.(selected);
-        setOpen(false);
+    search.addEventListener("input", () => {
+        open = true;
+        render();
     });
     search.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter") return;
-        event.preventDefault();
-        if (list.value) {
-            selected = list.value;
-            search.value = selected;
-            wrap.onchange?.(selected);
+        if (event.key === "Escape") {
             setOpen(false);
+            return;
+        }
+        if (event.key === "ArrowDown") {
+            event.preventDefault();
+            list.querySelector("button")?.focus();
+            return;
+        }
+        if (event.key === "Enter" && filtered[0]) {
+            event.preventDefault();
+            choose(filtered[0]);
         }
     });
-    search.addEventListener("blur", () => {
-        window.setTimeout(() => setOpen(false), 120);
+    toggle.addEventListener("pointerdown", (event) => event.preventDefault());
+    toggle.addEventListener("click", () => {
+        open = !open;
+        render();
+        if (open) search.focus();
+    });
+    wrap.addEventListener("focusout", () => {
+        window.setTimeout(() => {
+            if (!wrap.contains(document.activeElement)) setOpen(false);
+        }, 0);
     });
     wrap.value = () => selected;
-    wrap.append(search, list);
+    control.append(search, toggle);
+    wrap.append(control, list);
     render();
     return wrap;
 }
@@ -430,6 +455,15 @@ function setSelectedModel(service, name) {
     normalizeModels(service);
 }
 
+function preferredVisionModel(textModel, options) {
+    const selected = String(textModel || "").trim();
+    if (selected.endsWith("-Thinking")) {
+        const instruct = `${selected.slice(0, -"-Thinking".length)}-Instruct`;
+        if ((options || []).includes(instruct)) return instruct;
+    }
+    return selected;
+}
+
 function showApiManager(initialConfig, onSaved) {
     const { overlay, body, footer } = makeModal(t("promptApiManagerTitle"), "1040px");
     body.style.cssText = "display:grid; grid-template-columns:240px 1fr; min-height:520px; overflow:hidden;";
@@ -540,6 +574,7 @@ function showApiManager(initialConfig, onSaved) {
                 api_key: "",
                 models: [],
                 model_options: [],
+                vision_model: "",
             });
             state.selectedId = id;
             state.config.current_service = id;
@@ -601,7 +636,7 @@ function showApiManager(initialConfig, onSaved) {
         function renderModels() {
             modelList.replaceChildren();
             normalizeModels(service);
-            const selectedName = service.models?.[0]?.name || "";
+            let selectedName = service.models?.[0]?.name || "";
             const fetched = state.modelLists[service.id] || [];
             const saved = service.model_options || [];
             const options = fetched.length ? fetched : (saved.length ? saved : (selectedName ? [selectedName] : []));
@@ -612,10 +647,27 @@ function showApiManager(initialConfig, onSaved) {
                 modelList.appendChild(empty);
                 return;
             }
-            if (!selectedName && options[0]) setSelectedModel(service, options[0]);
+            if ((!selectedName || !options.includes(selectedName)) && options[0]) {
+                setSelectedModel(service, options[0]);
+                selectedName = options[0];
+            }
+            if (!service.vision_model || !options.includes(service.vision_model)) {
+                service.vision_model = preferredVisionModel(service.models?.[0]?.name || options[0], options);
+            }
+            const textLabel = document.createElement("div");
+            textLabel.textContent = t("textModel");
+            textLabel.style.cssText = "font-weight:600; margin-top:2px;";
             const modelSelect = searchableSelect(options, selectedName || options[0], t("searchModel"));
-            modelSelect.onchange = (value) => setSelectedModel(service, value);
-            modelList.appendChild(modelSelect);
+            modelSelect.onSelect = (value) => setSelectedModel(service, value);
+            const visionLabel = document.createElement("div");
+            visionLabel.textContent = t("visionModel");
+            visionLabel.style.cssText = "font-weight:600; margin-top:8px;";
+            const visionSelect = searchableSelect(options, service.vision_model || options[0], t("searchModel"));
+            visionSelect.onSelect = (value) => { service.vision_model = String(value || "").trim(); };
+            const visionHint = document.createElement("div");
+            visionHint.textContent = t("visionModelHint");
+            visionHint.style.cssText = "font-size:12px; line-height:1.45; color:var(--descrip-text,#aaa);";
+            modelList.append(textLabel, modelSelect, visionLabel, visionSelect, visionHint);
         }
 
         typeWrap.input.addEventListener("change", () => {
@@ -633,12 +685,16 @@ function showApiManager(initialConfig, onSaved) {
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ service }),
                 });
-                toast("success", t("apiValidated"), result.message || "");
+                const warnings = Array.isArray(result.warnings) ? result.warnings.filter(Boolean) : [];
+                toast(warnings.length ? "warn" : "success", warnings.length ? t("apiValidationWarning") : t("apiValidated"), warnings.join("\n") || result.message || "");
                 state.modelLists[service.id] = result.models || [];
                 service.model_options = state.modelLists[service.id];
                 const currentName = service.models?.[0]?.name || "";
                 if ((!currentName || !state.modelLists[service.id].includes(currentName)) && state.modelLists[service.id][0]) {
                     setSelectedModel(service, state.modelLists[service.id][0]);
+                }
+                if (!service.vision_model || !state.modelLists[service.id].includes(service.vision_model)) {
+                    service.vision_model = preferredVisionModel(service.models?.[0]?.name, state.modelLists[service.id]);
                 }
                 renderModels();
             } catch (error) {

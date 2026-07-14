@@ -15,6 +15,9 @@ const DEFAULT_MASK_COLOR = "#66ccff";
 const DEFAULT_MASK_OPACITY = 0.4;
 const EMPTY_IMAGE_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const MAX_PREVIEW_EDGE = 1024;
+const BRUSH_FEATHER_RADIUS_MULTIPLIER = 2;
+const MASK_FEATHER_VALUE = 128;
+const EXECUTION_MASK_GRADIENT_STEPS = 32;
 let activeLocale = "";
 
 function isGenerateNode(node) {
@@ -60,18 +63,10 @@ function clampNumber(value, min, max) {
     return Math.min(max, Math.max(min, value));
 }
 
-function forceSeedControlBeforeQueue(node) {
-    const control = seedControlWidget(node);
-    if (!control || control._no8dGenerateBeforeQueue) return;
-    const nativeBefore = control.beforeQueued;
-    const nativeAfter = control.afterQueued;
-    control.beforeQueued = function (options) {
-        nativeBefore?.call(this, options);
-        if (String(this.value || "randomize") !== "fixed") nativeAfter?.call(this, options);
-        node._no8dGenerateSyncSampler?.();
-    };
-    control.afterQueued = function () {};
-    control._no8dGenerateBeforeQueue = true;
+function selectNumberOnFocus(element) {
+    const select = () => element.select();
+    element.addEventListener("focus", select);
+    element.addEventListener("click", select);
 }
 
 function createSamplerPanel(node) {
@@ -125,6 +120,7 @@ function createSamplerPanel(node) {
         element.max = String(max);
         element.step = String(digits > 0 ? 10 ** -digits : 1);
         element.dataset.digits = String(digits);
+        selectNumberOnFocus(element);
         element.addEventListener("change", () => {
             const value = Number(element.value);
             if (Number.isFinite(value)) setNativeWidget(widget, value);
@@ -228,7 +224,6 @@ function createSamplerPanel(node) {
         };
         seedWidget._no8dGenerateCallback = true;
     }
-    forceSeedControlBeforeQueue(node);
     sync();
 }
 
@@ -332,55 +327,6 @@ function refsFromMessage(message) {
     return [];
 }
 
-function collectDownstreamNodeIds(node) {
-    const graph = node?.graph || app?.graph;
-    const output = node?.outputs?.[0];
-    const links = Array.isArray(output?.links) ? output.links : [];
-    const linkParts = [];
-    const pending = [];
-    for (const linkId of links) {
-        const link = graph?.links?.[linkId];
-        if (!link || link.target_id == null) continue;
-        pending.push(link.target_id);
-        linkParts.push(`${link.id}:${link.origin_id}:${link.origin_slot}:${link.target_id}:${link.target_slot}`);
-    }
-    const signature = linkParts.sort().join("|");
-    if (node?._no8dGenerateDownstreamCache?.signature === signature) {
-        return node._no8dGenerateDownstreamCache.ids;
-    }
-
-    const result = new Set();
-    while (pending.length) {
-        const id = pending.shift();
-        if (id == null || result.has(String(id))) continue;
-        result.add(String(id));
-        const next = graph?.getNodeById?.(id);
-        for (const nextOutput of next?.outputs || []) {
-            for (const linkId of Array.isArray(nextOutput.links) ? nextOutput.links : []) {
-                const link = graph?.links?.[linkId];
-                if (!link || link.target_id == null) continue;
-                pending.push(link.target_id);
-            }
-        }
-    }
-    const ids = [...result];
-    if (node) node._no8dGenerateDownstreamCache = { signature, ids };
-    return ids;
-}
-
-function findGenerateNodeForPreviewEvent(id) {
-    const direct = findGenerateNodeFromExecutionId(id);
-    if (direct) return direct;
-    const eventId = String(id || "").split(".")[0];
-    for (const node of app?.graph?._nodes || []) {
-        if (!isGenerateNode(node) || !node._no8dGenerateCanvas) continue;
-        if (collectDownstreamNodeIds(node).some((downstreamId) => String(downstreamId) === eventId)) {
-            return node;
-        }
-    }
-    return null;
-}
-
 function makeViewUrl(ref) {
     const params = new URLSearchParams();
     params.set("filename", ref.filename);
@@ -428,7 +374,29 @@ function makePreviewCanvas(image) {
     return canvas;
 }
 
-async function uploadBlob(blob, filename) {
+function safeFilenamePart(value) {
+    return String(value ?? "node").replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 48) || "node";
+}
+
+async function contentAddressedFilename(blob, prefix, nodeId) {
+    let version = Date.now().toString(36);
+    if (globalThis.crypto?.subtle && typeof blob?.arrayBuffer === "function") {
+        try {
+            const digest = await globalThis.crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+            version = Array.from(
+                new Uint8Array(digest).slice(0, 12),
+                (byte) => byte.toString(16).padStart(2, "0"),
+            ).join("");
+        } catch (_) {
+            // Keep uploads functional on older/insecure browser contexts without WebCrypto.
+        }
+    }
+    return `${safeFilenamePart(prefix)}_${safeFilenamePart(nodeId)}_${version}.png`;
+}
+
+async function uploadBlob(blob, prefix, nodeId, isCurrent = () => true) {
+    const filename = await contentAddressedFilename(blob, prefix, nodeId);
+    if (!isCurrent()) return null;
     const body = new FormData();
     body.append("image", new File([blob], filename, { type: "image/png" }));
     body.append("type", "input");
@@ -473,6 +441,11 @@ function hexToRgb(hex) {
     return [number >> 16, (number >> 8) & 255, number & 255];
 }
 
+function rgba(hex, alpha) {
+    const [red, green, blue] = hexToRgb(hex);
+    return `rgba(${red}, ${green}, ${blue}, ${Math.min(1, Math.max(0, Number(alpha) || 0))})`;
+}
+
 function rgbToHue(red, green, blue) {
     const r = red / 255;
     const g = green / 255;
@@ -513,6 +486,10 @@ function drawStrokeGeometry(ctx, stroke) {
         if (stroke.points.length > 2) {
             ctx.closePath();
             ctx.fill();
+            if (stroke.outlineSize > 0) {
+                ctx.lineWidth = stroke.outlineSize;
+                ctx.stroke();
+            }
         }
     } else if (stroke.points.length === 1) {
         ctx.arc(stroke.points[0][0], stroke.points[0][1], stroke.brushSize / 2, 0, Math.PI * 2);
@@ -530,14 +507,143 @@ function drawStrokeGeometry(ctx, stroke) {
     }
 }
 
-function drawScaledStrokeGeometry(ctx, stroke, scale) {
-    if (!stroke?.points?.length) return;
-    const scaledStroke = {
+function strokeCoreBounds(stroke, clipWidth = null, clipHeight = null) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const [x, y] of stroke.points || []) {
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+    }
+    if (!Number.isFinite(minX)) return null;
+    if (stroke.kind !== "lasso") {
+        const radius = Math.max(1, Number(stroke.brushSize) || 1) / 2;
+        minX -= radius;
+        minY -= radius;
+        maxX += radius;
+        maxY += radius;
+    }
+    if (Number.isFinite(clipWidth) && Number.isFinite(clipHeight)) {
+        if (maxX < 0 || maxY < 0 || minX > clipWidth || minY > clipHeight) return null;
+        minX = Math.max(0, minX);
+        minY = Math.max(0, minY);
+        maxX = Math.min(clipWidth, maxX);
+        maxY = Math.min(clipHeight, maxY);
+    }
+    return { minX, minY, maxX, maxY };
+}
+
+function boundsOverlap(a, b) {
+    return a.minX <= b.maxX && a.maxX >= b.minX
+        && a.minY <= b.maxY && a.maxY >= b.minY;
+}
+
+function strokeFeatherDiameters(strokes, clipWidth = null, clipHeight = null) {
+    const entries = (strokes || []).map((stroke) => ({
+        stroke,
+        bounds: strokeCoreBounds(stroke, clipWidth, clipHeight),
+    })).filter((entry) => entry.bounds);
+    const parent = entries.map((_, index) => index);
+    const find = (index) => {
+        while (parent[index] !== index) {
+            parent[index] = parent[parent[index]];
+            index = parent[index];
+        }
+        return index;
+    };
+    const union = (left, right) => {
+        const leftRoot = find(left);
+        const rightRoot = find(right);
+        if (leftRoot !== rightRoot) parent[rightRoot] = leftRoot;
+    };
+    for (let left = 0; left < entries.length; left += 1) {
+        for (let right = left + 1; right < entries.length; right += 1) {
+            const a = entries[left];
+            const b = entries[right];
+            if (a.stroke.op !== b.stroke.op || a.stroke.kind !== b.stroke.kind) continue;
+            if (boundsOverlap(a.bounds, b.bounds)) union(left, right);
+        }
+    }
+    const groups = new Map();
+    entries.forEach((entry, index) => {
+        const root = find(index);
+        const bounds = groups.get(root) || { ...entry.bounds };
+        bounds.minX = Math.min(bounds.minX, entry.bounds.minX);
+        bounds.minY = Math.min(bounds.minY, entry.bounds.minY);
+        bounds.maxX = Math.max(bounds.maxX, entry.bounds.maxX);
+        bounds.maxY = Math.max(bounds.maxY, entry.bounds.maxY);
+        groups.set(root, bounds);
+    });
+    const result = new Map();
+    entries.forEach((entry, index) => {
+        const bounds = groups.get(find(index));
+        result.set(entry.stroke, Math.max(1, Math.min(
+            bounds.maxX - bounds.minX,
+            bounds.maxY - bounds.minY,
+        )));
+    });
+    return result;
+}
+
+function scaledStroke(stroke, scale, brushScale = 1, featherDiameter = null) {
+    const diameter = featherDiameter ?? Math.max(1, Number(stroke.brushSize) || 1);
+    const featherGrowth = diameter * Math.max(0, brushScale - 1);
+    return {
         ...stroke,
-        brushSize: stroke.brushSize * scale,
+        brushSize: (stroke.brushSize + (stroke.kind === "lasso" ? 0 : featherGrowth)) * scale,
+        outlineSize: stroke.kind === "lasso"
+            ? featherGrowth * scale
+            : 0,
         points: stroke.points.map((point) => [point[0] * scale, point[1] * scale]),
     };
-    drawStrokeGeometry(ctx, scaledStroke);
+}
+
+function scaledMaskStroke(stroke, scale, brushScale, featherDiameter, visible) {
+    if (visible) return scaledStroke(stroke, scale, brushScale, featherDiameter);
+    if (brushScale <= 1 || stroke.kind === "lasso") {
+        return scaledStroke(stroke, scale, 1, featherDiameter);
+    }
+    const contractedSize = stroke.brushSize
+        - featherDiameter * Math.max(0, brushScale - 1);
+    if (contractedSize <= 0) return null;
+    return {
+        ...stroke,
+        brushSize: contractedSize * scale,
+        outlineSize: 0,
+        points: stroke.points.map((point) => [point[0] * scale, point[1] * scale]),
+    };
+}
+
+function executionMaskGradientStep(step, featherPercent) {
+    const progress = step / EXECUTION_MASK_GRADIENT_STEPS;
+    return {
+        brushScale: 1 + (BRUSH_FEATHER_RADIUS_MULTIPLIER - 1)
+            * featherPercent * progress,
+        value: Math.round(255 * (1 - progress)),
+    };
+}
+
+function serializeStrokes(strokes) {
+    if (!Array.isArray(strokes)) return [];
+    return strokes.filter((stroke) => stroke && typeof stroke === "object").map((stroke) => ({
+        op: stroke.op === "subtract" ? "subtract" : "add",
+        kind: stroke.kind === "lasso" ? "lasso" : "brush",
+        brushSize: Math.min(512, Math.max(1, Number(stroke.brushSize) || 80)),
+        points: (Array.isArray(stroke.points) ? stroke.points : []).filter((point) => (
+            Array.isArray(point) && Number.isFinite(Number(point[0])) && Number.isFinite(Number(point[1]))
+        )).map((point) => [
+            Math.round(Number(point[0]) * 100) / 100,
+            Math.round(Number(point[1]) * 100) / 100,
+        ]),
+    })).filter((stroke) => stroke.points.length > 0);
+}
+
+function restoreStrokes(value) {
+    if (!Array.isArray(value)) return [];
+    return serializeStrokes(value);
 }
 
 class NO8DGenerateCanvasWidget {
@@ -564,17 +670,23 @@ class NO8DGenerateCanvasWidget {
         this.maskColor = DEFAULT_MASK_COLOR;
         this.baseImageFile = "";
         this.maskImageFile = "";
+        this.maskBaseWidth = 0;
+        this.maskBaseHeight = 0;
         this.maskOverlay = null;
-        this.interactiveMaskCanvas = null;
+        this.maskOverlayKey = "";
         this.maskDirty = false;
         this.pending = null;
         this.maskCommitTimer = null;
+        this.maskRevision = 0;
         this.valueEditorClose = null;
         this.activeEditor = null;
         this.activeEditorAction = null;
         this.flashAction = null;
         this.previewLoadToken = 0;
         this.disposed = false;
+        this.beforeQueued = async () => {
+            await this.serializeValue();
+        };
     }
 
     computeLayoutSize() {
@@ -586,14 +698,20 @@ class NO8DGenerateCanvasWidget {
     }
 
     getValue() {
+        const maskModeActive = this.isMaskModeActive();
         return JSON.stringify({
             base_image_file: this.baseImageFile,
             mask_image_file: this.maskImageFile,
-            mask_active: this.strokes.length > 0 || this.invert,
+            mask_active: maskModeActive && Boolean(this.baseImageFile && this.maskImageFile),
+            mask_tool: this.isMaskToolActive() ? this.tool : null,
+            mask_base_width: this.maskBaseWidth,
+            mask_base_height: this.maskBaseHeight,
             brush_size: this.brushSize,
             eraser_size: this.eraserSize,
             mask_opacity: this.maskOpacity,
             mask_color: this.maskColor,
+            invert: this.invert,
+            strokes: serializeStrokes(this.strokes),
         });
     }
 
@@ -601,30 +719,54 @@ class NO8DGenerateCanvasWidget {
         return this.strokes.length > 0 || this.invert;
     }
 
+    isMaskToolActive() {
+        return this.tool === "brush" || this.tool === "lasso" || this.tool === "eraser";
+    }
+
+    isMaskModeActive() {
+        return this.hasMaskContent();
+    }
+
+    invalidateMaskCommit() {
+        this.maskRevision += 1;
+        if (this.maskCommitTimer) {
+            clearTimeout(this.maskCommitTimer);
+            this.maskCommitTimer = null;
+        }
+        this.pending = null;
+        return this.maskRevision;
+    }
+
+    markMaskDirty() {
+        this.invalidateMaskCommit();
+        this.maskDirty = true;
+    }
+
+    isCurrentMaskRevision(revision) {
+        return !this.disposed && revision === this.maskRevision;
+    }
+
     clearMaskState() {
+        this.previewLoadToken += 1;
+        this.invalidateMaskCommit();
         this.strokes = [];
         this.activeStroke = null;
         this.hoverImagePoint = null;
         this.invert = false;
         this.baseImageFile = "";
         this.maskImageFile = "";
+        this.maskBaseWidth = 0;
+        this.maskBaseHeight = 0;
         this.clearMaskOverlay();
         this.maskDirty = false;
-        this.pending = null;
-        if (this.maskCommitTimer) {
-            clearTimeout(this.maskCommitTimer);
-            this.maskCommitTimer = null;
-        }
-        if (this.interactiveMaskCanvas) {
-            releasePreviewCanvas(this.interactiveMaskCanvas);
-            this.interactiveMaskCanvas = null;
-        }
         this.clearRenderCache();
+        this.value = this.getValue();
     }
 
     clearMaskOverlay() {
         if (this.maskOverlay) releasePreviewCanvas(this.maskOverlay);
         this.maskOverlay = null;
+        this.maskOverlayKey = "";
     }
 
     clearRenderCache() {
@@ -636,18 +778,10 @@ class NO8DGenerateCanvasWidget {
         if (this.disposed) return;
         this.disposed = true;
         this.previewLoadToken += 1;
+        this.invalidateMaskCommit();
         this.closeActiveEditor();
-        if (this.maskCommitTimer) {
-            clearTimeout(this.maskCommitTimer);
-            this.maskCommitTimer = null;
-        }
-        this.pending = null;
         this.clearRenderCache();
         this.clearMaskOverlay();
-        if (this.interactiveMaskCanvas) {
-            releasePreviewCanvas(this.interactiveMaskCanvas);
-            this.interactiveMaskCanvas = null;
-        }
         if (this.previewImage) {
             releasePreviewCanvas(this.previewImage);
             this.previewImage = null;
@@ -663,15 +797,25 @@ class NO8DGenerateCanvasWidget {
     }
 
     setValue(value) {
+        this.previewLoadToken += 1;
+        this.invalidateMaskCommit();
         this.value = String(value || "");
         try {
             const state = JSON.parse(this.value || "{}");
-            this.baseImageFile = String(state.base_image_file || "");
-            this.maskImageFile = String(state.mask_image_file || "");
+            this.strokes = restoreStrokes(state.strokes);
+            this.invert = Boolean(state.invert);
+            this.tool = ["brush", "lasso", "eraser"].includes(state.mask_tool) ? state.mask_tool : null;
+            const hasRestorableMask = this.isMaskModeActive();
+            this.baseImageFile = hasRestorableMask ? String(state.base_image_file || "") : "";
+            this.maskImageFile = hasRestorableMask ? String(state.mask_image_file || "") : "";
+            this.maskBaseWidth = Math.max(0, Number(state.mask_base_width) || 0);
+            this.maskBaseHeight = Math.max(0, Number(state.mask_base_height) || 0);
             this.brushSize = Math.max(1, Number(state.brush_size) || 80);
             this.eraserSize = Math.max(1, Number(state.eraser_size) || 80);
             this.maskOpacity = Math.min(1, Math.max(0.05, Number(state.mask_opacity) || DEFAULT_MASK_OPACITY));
             this.maskColor = /^#[0-9a-f]{6}$/i.test(state.mask_color) ? state.mask_color : DEFAULT_MASK_COLOR;
+            this.maskDirty = hasRestorableMask && (!this.baseImageFile || !this.maskImageFile);
+            this.value = this.getValue();
             if (this.baseImageFile && !this.image) {
                 const token = ++this.previewLoadToken;
                 loadImage({ filename: this.baseImageFile, type: "input" })
@@ -689,7 +833,20 @@ class NO8DGenerateCanvasWidget {
                     })
                     .catch(() => {});
             }
-        } catch (_) {}
+        } catch (_) {
+            this.strokes = [];
+            this.activeStroke = null;
+            this.invert = false;
+            this.tool = null;
+            this.baseImageFile = "";
+            this.maskImageFile = "";
+            this.maskBaseWidth = 0;
+            this.maskBaseHeight = 0;
+            this.maskDirty = false;
+            this.clearMaskOverlay();
+            this.clearRenderCache();
+            this.value = this.getValue();
+        }
     }
 
     async serializeValue() {
@@ -698,21 +855,21 @@ class NO8DGenerateCanvasWidget {
             this.maskCommitTimer = null;
         }
         if (this.pending) await this.pending;
-        if (this.maskDirty) await this.commitMask();
+        if (this.maskDirty) await this.startMaskCommit();
         this.value = this.getValue();
+        setDirty();
         return this.value;
     }
 
-    nodePos(pos) {
-        if (pointInRect(pos, this.rect)) return pos;
-        return [pos[0] + this.rect[0], pos[1] + this.rect[1]];
-    }
-
-    imagePoint(pos) {
-        if (!pointInRect(pos, this.imageRect) || !this.imageRect?.[4]) return null;
+    imagePoint(pos, allowOutside = false) {
+        if (!this.imageRect?.[2] || !this.imageRect?.[3]) return null;
+        if (!allowOutside && !pointInRect(pos, this.imageRect)) return null;
+        const baseWidth = this.maskBaseWidth || this.image?.naturalWidth || 0;
+        const baseHeight = this.maskBaseHeight || this.image?.naturalHeight || 0;
+        if (!baseWidth || !baseHeight) return null;
         return [
-            (pos[0] - this.imageRect[0]) / this.imageRect[4],
-            (pos[1] - this.imageRect[1]) / this.imageRect[4],
+            ((pos[0] - this.imageRect[0]) / this.imageRect[2]) * baseWidth,
+            ((pos[1] - this.imageRect[1]) / this.imageRect[3]) * baseHeight,
         ];
     }
 
@@ -722,90 +879,153 @@ class NO8DGenerateCanvasWidget {
             this.clearMaskOverlay();
             return;
         }
-        if (this.activeStroke) {
-            this.drawInteractiveMask(ctx);
-            return;
-        }
-        if (this.maskOverlay) {
+        const overlayKey = this.maskOverlayCacheKey();
+        if (this.maskOverlay && this.maskOverlayKey === overlayKey) {
             ctx.drawImage(this.maskOverlay, this.imageRect[0], this.imageRect[1], this.imageRect[2], this.imageRect[3]);
             return;
         }
-        const core = this.makeBinaryMask();
-        const overlay = this.renderMask();
-        if (!core || !overlay) return;
-        const overlayCtx = overlay.getContext("2d");
-        const pixels = overlayCtx.getImageData(0, 0, overlay.width, overlay.height);
-        const corePixels = core.getContext("2d").getImageData(0, 0, core.width, core.height);
-        const [red, green, blue] = hexToRgb(this.maskColor);
-        for (let index = 0; index < pixels.data.length; index += 4) {
-            const maskLevel = pixels.data[index] / 255;
-            const coreLevel = corePixels.data[index + 3] / 255;
-            pixels.data[index] = red;
-            pixels.data[index + 1] = green;
-            pixels.data[index + 2] = blue;
-            const featherRingVisible = Math.min(1, Math.max(0, maskLevel / 0.05));
-            const ringOpacity = this.maskOpacity * 0.5;
-            const previewOpacity = ringOpacity * featherRingVisible
-                + (this.maskOpacity - ringOpacity) * coreLevel;
-            pixels.data[index + 3] = Math.round(255 * previewOpacity);
-        }
-        overlayCtx.putImageData(pixels, 0, 0);
+        this.clearMaskOverlay();
         const displayOverlay = document.createElement("canvas");
         displayOverlay.width = Math.max(1, Math.round(this.imageRect[2]));
         displayOverlay.height = Math.max(1, Math.round(this.imageRect[3]));
-        displayOverlay.getContext("2d").drawImage(overlay, 0, 0, displayOverlay.width, displayOverlay.height);
-        if (overlay !== core) releasePreviewCanvas(core);
-        releasePreviewCanvas(overlay);
+        const displayCtx = displayOverlay.getContext("2d");
+        const maskScale = this.previewMaskScale();
+        this.drawMaskPreview(displayCtx, maskScale);
         this.maskOverlay = displayOverlay;
+        this.maskOverlayKey = overlayKey;
         ctx.drawImage(displayOverlay, this.imageRect[0], this.imageRect[1], this.imageRect[2], this.imageRect[3]);
     }
 
-    drawInteractiveMask(ctx) {
-        const displayWidth = Math.max(1, Math.round(this.imageRect[2]));
-        const displayHeight = Math.max(1, Math.round(this.imageRect[3]));
-        const sourceWidth = this.image.naturalWidth;
-        const sourceHeight = this.image.naturalHeight;
-        if (!sourceWidth || !sourceHeight) return;
-
-        const layer = this.getInteractiveMaskCanvas(displayWidth, displayHeight);
-        const layerCtx = layer.getContext("2d");
-        layerCtx.setTransform(1, 0, 0, 1, 0, 0);
-        layerCtx.globalCompositeOperation = "source-over";
-        layerCtx.clearRect(0, 0, displayWidth, displayHeight);
-        const scaleX = displayWidth / sourceWidth;
-        const scaleY = displayHeight / sourceHeight;
-        const scale = Math.min(scaleX, scaleY);
-
-        if (this.invert) {
-            layerCtx.fillStyle = "#fff";
-            layerCtx.fillRect(0, 0, displayWidth, displayHeight);
-        }
-        for (const stroke of this.strokes) {
-            if (!stroke.points.length) continue;
-            const visible = this.invert ? stroke.op !== "add" : stroke.op === "add";
-            layerCtx.globalCompositeOperation = visible ? "source-over" : "destination-out";
-            layerCtx.strokeStyle = visible ? "#fff" : "#000";
-            layerCtx.fillStyle = layerCtx.strokeStyle;
-            layerCtx.lineCap = "round";
-            layerCtx.lineJoin = "round";
-            layerCtx.lineWidth = stroke.brushSize * scale;
-            drawScaledStrokeGeometry(layerCtx, stroke, scale);
-        }
-
-        layerCtx.globalCompositeOperation = "source-in";
-        const [red, green, blue] = hexToRgb(this.maskColor);
-        layerCtx.fillStyle = `rgba(${red}, ${green}, ${blue}, ${this.maskOpacity})`;
-        layerCtx.fillRect(0, 0, displayWidth, displayHeight);
-
-        ctx.drawImage(layer, this.imageRect[0], this.imageRect[1], this.imageRect[2], this.imageRect[3]);
+    maskOverlayCacheKey() {
+        const strokeKey = this.strokes.map((stroke) => {
+            const points = stroke.points || [];
+            const first = points[0] || [0, 0];
+            const last = points[points.length - 1] || first;
+            const checksum = points.reduce((total, point, index) => (
+                total + (index + 1) * (Math.round(point[0]) * 31 + Math.round(point[1]) * 17)
+            ), 0);
+            return `${stroke.op}:${stroke.kind}:${stroke.brushSize}:${points.length}:${Math.round(first[0])},${Math.round(first[1])}:${Math.round(last[0])},${Math.round(last[1])}:${checksum}`;
+        }).join("|");
+        return [
+            Math.round(this.imageRect?.[0] || 0),
+            Math.round(this.imageRect?.[1] || 0),
+            Math.round(this.imageRect?.[2] || 0),
+            Math.round(this.imageRect?.[3] || 0),
+            this.maskBaseWidth || this.image?.naturalWidth || 0,
+            this.maskBaseHeight || this.image?.naturalHeight || 0,
+            this.strokes.length,
+            strokeKey,
+            this.invert ? 1 : 0,
+            this.getFeatherPercent(),
+            this.maskOpacity,
+            this.maskColor,
+        ].join(":");
     }
 
-    getInteractiveMaskCanvas(width, height) {
-        const canvas = this.interactiveMaskCanvas || document.createElement("canvas");
-        if (canvas.width !== width) canvas.width = width;
-        if (canvas.height !== height) canvas.height = height;
-        this.interactiveMaskCanvas = canvas;
-        return canvas;
+    previewMaskScale() {
+        const baseWidth = this.maskBaseWidth || this.image?.naturalWidth || 0;
+        const baseHeight = this.maskBaseHeight || this.image?.naturalHeight || 0;
+        if (!baseWidth || !baseHeight || !this.imageRect?.[2] || !this.imageRect?.[3]) return 1;
+        return Math.min(this.imageRect[2] / baseWidth, this.imageRect[3] / baseHeight);
+    }
+
+    drawMaskPreview(ctx, scale) {
+        const core = this.makePreviewCoreMask(ctx.canvas.width, ctx.canvas.height, scale);
+        if (!core) return;
+        const percent = this.getFeatherPercent() / 100;
+        if (percent > 0) {
+            const outer = this.makePreviewOuterMask(ctx.canvas.width, ctx.canvas.height, scale, percent);
+            if (outer) {
+                const blend = this.makePreviewBlendMask(core, outer);
+                this.drawTintedPreviewMask(ctx, blend, Math.min(1, this.maskOpacity));
+                releasePreviewCanvas(blend);
+                releasePreviewCanvas(outer);
+                releasePreviewCanvas(core);
+                return;
+            }
+        }
+        this.drawTintedPreviewMask(ctx, core, Math.min(1, this.maskOpacity));
+        releasePreviewCanvas(core);
+    }
+
+    makePreviewCoreMask(width, height, scale, brushScale = 1) {
+        const layer = document.createElement("canvas");
+        layer.width = width;
+        layer.height = height;
+        const layerCtx = layer.getContext("2d");
+        if (this.invert) {
+            layerCtx.fillStyle = "#fff";
+            layerCtx.fillRect(0, 0, layer.width, layer.height);
+        }
+        const baseWidth = this.maskBaseWidth || this.image?.naturalWidth || 0;
+        const baseHeight = this.maskBaseHeight || this.image?.naturalHeight || 0;
+        const featherDiameters = strokeFeatherDiameters(this.strokes, baseWidth, baseHeight);
+        for (const pass of ["add", "subtract"]) for (const stroke of this.strokes) {
+            if (!stroke.points.length) continue;
+            if (stroke.op !== pass) continue;
+            const visible = this.invert ? stroke.op !== "add" : stroke.op === "add";
+            layerCtx.globalCompositeOperation = visible ? "source-over" : "destination-out";
+            layerCtx.strokeStyle = "#fff";
+            layerCtx.fillStyle = "#fff";
+            layerCtx.lineCap = "round";
+            layerCtx.lineJoin = "round";
+            const scaled = scaledMaskStroke(
+                stroke, scale, brushScale, featherDiameters.get(stroke), visible,
+            );
+            if (!scaled) continue;
+            layerCtx.lineWidth = scaled.brushSize;
+            drawStrokeGeometry(layerCtx, scaled);
+        }
+        layerCtx.globalCompositeOperation = "source-over";
+        return layer;
+    }
+
+    makePreviewOuterMask(width, height, scale, percent) {
+        return this.makePreviewCoreMask(
+            width,
+            height,
+            scale,
+            1 + (BRUSH_FEATHER_RADIUS_MULTIPLIER - 1) * percent,
+        );
+    }
+
+    makePreviewBlendMask(coreMask, outerMask) {
+        const coreCtx = coreMask.getContext("2d");
+        const corePixels = coreCtx.getImageData(0, 0, coreMask.width, coreMask.height);
+        const outerPixels = outerMask.getContext("2d").getImageData(0, 0, outerMask.width, outerMask.height);
+        const blend = document.createElement("canvas");
+        blend.width = outerMask.width;
+        blend.height = outerMask.height;
+        const image = blend.getContext("2d").createImageData(blend.width, blend.height);
+        for (let index = 0; index < image.data.length; index += 4) {
+            const inCore = corePixels.data[index + 3] > 0;
+            const inOuter = outerPixels.data[index + 3] > 0;
+            const value = inCore
+                ? 255
+                : inOuter
+                ? MASK_FEATHER_VALUE
+                : 0;
+            image.data[index] = value;
+            image.data[index + 1] = value;
+            image.data[index + 2] = value;
+            image.data[index + 3] = value;
+        }
+        blend.getContext("2d").putImageData(image, 0, 0);
+        return blend;
+    }
+
+    drawTintedPreviewMask(ctx, mask, opacity) {
+        const layer = document.createElement("canvas");
+        layer.width = mask.width;
+        layer.height = mask.height;
+        const layerCtx = layer.getContext("2d");
+        layerCtx.drawImage(mask, 0, 0);
+        layerCtx.globalCompositeOperation = "source-in";
+        layerCtx.fillStyle = rgba(this.maskColor, opacity);
+        layerCtx.fillRect(0, 0, layer.width, layer.height);
+        layerCtx.globalCompositeOperation = "source-over";
+        ctx.drawImage(layer, 0, 0);
+        releasePreviewCanvas(layer);
     }
 
     hasActiveTool() {
@@ -864,12 +1084,14 @@ class NO8DGenerateCanvasWidget {
         return left + width + 6;
     }
 
-    makeBinaryMask() {
-        if (!this.image?.naturalWidth || !this.image?.naturalHeight) return null;
+    makeBinaryMask(brushScale = 1, featherDiameters = null) {
+        const width = this.maskBaseWidth || this.image?.naturalWidth || 0;
+        const height = this.maskBaseHeight || this.image?.naturalHeight || 0;
+        if (!width || !height) return null;
         if (!this.hasMaskContent()) return null;
         const overlay = document.createElement("canvas");
-        overlay.width = this.image.naturalWidth;
-        overlay.height = this.image.naturalHeight;
+        overlay.width = Math.max(1, Math.round(width));
+        overlay.height = Math.max(1, Math.round(height));
         const overlayCtx = overlay.getContext("2d");
         overlayCtx.lineCap = "round";
         overlayCtx.lineJoin = "round";
@@ -877,14 +1099,20 @@ class NO8DGenerateCanvasWidget {
             overlayCtx.fillStyle = "#fff";
             overlayCtx.fillRect(0, 0, overlay.width, overlay.height);
         }
-        for (const stroke of this.strokes) {
+        featherDiameters ||= strokeFeatherDiameters(this.strokes, width, height);
+        for (const pass of ["add", "subtract"]) for (const stroke of this.strokes) {
             if (!stroke.points.length) continue;
+            if (stroke.op !== pass) continue;
             const visible = this.invert ? stroke.op !== "add" : stroke.op === "add";
             overlayCtx.globalCompositeOperation = visible ? "source-over" : "destination-out";
             overlayCtx.strokeStyle = visible ? "#fff" : "#000";
             overlayCtx.fillStyle = overlayCtx.strokeStyle;
-            overlayCtx.lineWidth = stroke.brushSize;
-            drawStrokeGeometry(overlayCtx, stroke);
+            const scaled = scaledMaskStroke(
+                stroke, 1, brushScale, featherDiameters.get(stroke), visible,
+            );
+            if (!scaled) continue;
+            overlayCtx.lineWidth = scaled.brushSize;
+            drawStrokeGeometry(overlayCtx, scaled);
         }
         return overlay;
     }
@@ -957,18 +1185,26 @@ class NO8DGenerateCanvasWidget {
 
     }
 
-    getFeatherWidth() {
-        const percent = Math.min(100, Math.max(0, Number(findWidget(this.node, "mask_feather")?.value || 0)));
-        return (this.currentToolSize() / 2) * (percent / 100);
+    getFeatherPercent() {
+        return Math.min(100, Math.max(0, Number(findWidget(this.node, "mask_feather")?.value || 0)));
+    }
+
+    getFeatherWidth(baseRadius = this.currentToolSize() / 2) {
+        return baseRadius * (BRUSH_FEATHER_RADIUS_MULTIPLIER - 1) * (this.getFeatherPercent() / 100);
     }
 
     drawBrushCursor(ctx) {
-        if (!this.activeStroke || !this.hoverImagePoint || !this.imageRect?.[4] || this.tool === "lasso") return;
-        const scale = this.imageRect[4];
-        const x = this.imageRect[0] + this.hoverImagePoint[0] * scale;
-        const y = this.imageRect[1] + this.hoverImagePoint[1] * scale;
-        const feather = this.getFeatherWidth();
-        const toolSize = this.currentToolSize();
+        if (!this.hoverImagePoint || !this.imageRect?.[4] || this.tool === "lasso" || !["brush", "eraser"].includes(this.tool)) return;
+        const baseWidth = this.maskBaseWidth || this.image?.naturalWidth || 0;
+        const baseHeight = this.maskBaseHeight || this.image?.naturalHeight || 0;
+        if (!baseWidth || !baseHeight) return;
+        const scaleX = this.imageRect[2] / baseWidth;
+        const scaleY = this.imageRect[3] / baseHeight;
+        const scale = Math.min(scaleX, scaleY);
+        const x = this.imageRect[0] + this.hoverImagePoint[0] * scaleX;
+        const y = this.imageRect[1] + this.hoverImagePoint[1] * scaleY;
+        const toolSize = this.activeStroke?.brushSize || this.currentToolSize();
+        const feather = (toolSize / 2) * (BRUSH_FEATHER_RADIUS_MULTIPLIER - 1) * (this.getFeatherPercent() / 100);
         const innerRadius = Math.max(1, toolSize * scale / 2);
         const outerRadius = Math.max(innerRadius, (toolSize / 2 + feather) * scale);
         const ring = (radius, opacity = 1) => {
@@ -986,6 +1222,15 @@ class NO8DGenerateCanvasWidget {
     }
 
     renderCacheKey(previewRect, imageRect) {
+        const strokeKey = this.strokes.map((stroke) => {
+            const points = stroke.points || [];
+            const first = points[0] || [0, 0];
+            const last = points[points.length - 1] || first;
+            const checksum = points.reduce((total, point, index) => (
+                total + (index + 1) * (Math.round(point[0]) * 31 + Math.round(point[1]) * 17)
+            ), 0);
+            return `${stroke.op}:${stroke.kind}:${stroke.brushSize}:${points.length}:${Math.round(first[0])},${Math.round(first[1])}:${Math.round(last[0])},${Math.round(last[1])}:${checksum}`;
+        }).join("|");
         return [
             Math.round(previewRect[2]), Math.round(previewRect[3]),
             Math.round(imageRect[0] - previewRect[0]), Math.round(imageRect[1] - previewRect[1]),
@@ -993,6 +1238,11 @@ class NO8DGenerateCanvasWidget {
             this.image?.src || "",
             this.previewImage?.width || this.image?.naturalWidth || 0,
             this.previewImage?.height || this.image?.naturalHeight || 0,
+            this.maskBaseWidth || 0,
+            this.maskBaseHeight || 0,
+            this.strokes.length,
+            strokeKey,
+            this.getFeatherPercent(),
             this.hasMaskContent() ? "mask" : "nomask",
             this.maskOpacity,
             this.maskColor,
@@ -1076,33 +1326,48 @@ class NO8DGenerateCanvasWidget {
         this.repositionActiveEditor();
     }
 
-    renderMask() {
-        const binary = this.makeBinaryMask();
-        const feather = this.getFeatherWidth();
-        if (!binary || feather <= 0) return binary;
+    renderExecutionMask() {
+        const width = this.maskBaseWidth || this.image?.naturalWidth || 0;
+        const height = this.maskBaseHeight || this.image?.naturalHeight || 0;
+        const featherDiameters = strokeFeatherDiameters(this.strokes, width, height);
+        const coreMask = this.makeBinaryMask(1, featherDiameters);
+        if (!coreMask) return null;
+        if (this.getFeatherPercent() <= 0) return coreMask;
         const canvas = document.createElement("canvas");
-        canvas.width = binary.width;
-        canvas.height = binary.height;
+        canvas.width = coreMask.width;
+        canvas.height = coreMask.height;
         const ctx = canvas.getContext("2d");
-        const blurred = document.createElement("canvas");
-        blurred.width = binary.width;
-        blurred.height = binary.height;
-        const blurredCtx = blurred.getContext("2d");
-        blurredCtx.filter = `blur(${feather}px)`;
-        blurredCtx.drawImage(binary, 0, 0);
-        blurredCtx.filter = "none";
-        const image = blurredCtx.getImageData(0, 0, blurred.width, blurred.height);
-        for (let index = 0; index < image.data.length; index += 4) {
-            // A Gaussian blur leaves roughly half strength at the original
-            // mask boundary. Normalize that boundary back to full strength,
-            // then retain the continuous falloff outside it.
-            const value = Math.min(255, image.data[index + 3] * 2);
-            image.data[index] = value;
-            image.data[index + 1] = value;
-            image.data[index + 2] = value;
-            image.data[index + 3] = 255;
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const featherPercent = this.getFeatherPercent() / 100;
+        for (let step = EXECUTION_MASK_GRADIENT_STEPS - 1; step >= 0; step -= 1) {
+            const { brushScale, value } = executionMaskGradientStep(step, featherPercent);
+            const layer = step === 0
+                ? coreMask
+                : this.makeBinaryMask(brushScale, featherDiameters);
+            if (!layer) continue;
+            const layerCtx = layer.getContext("2d");
+            layerCtx.globalCompositeOperation = "source-in";
+            layerCtx.fillStyle = `rgb(${value}, ${value}, ${value})`;
+            layerCtx.fillRect(0, 0, layer.width, layer.height);
+            layerCtx.globalCompositeOperation = "source-over";
+            ctx.drawImage(layer, 0, 0);
+            if (layer !== coreMask) releasePreviewCanvas(layer);
         }
-        ctx.putImageData(image, 0, 0);
+        releasePreviewCanvas(coreMask);
+        return canvas;
+    }
+
+    makeEmptyExecutionMask() {
+        const width = this.maskBaseWidth || this.image?.naturalWidth || 0;
+        const height = this.maskBaseHeight || this.image?.naturalHeight || 0;
+        if (!width || !height) return null;
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, width, height);
         return canvas;
     }
 
@@ -1111,19 +1376,58 @@ class NO8DGenerateCanvasWidget {
             clearTimeout(this.maskCommitTimer);
             this.maskCommitTimer = null;
         }
-        if (!this.strokes.length && !this.invert) {
-            this.maskImageFile = "";
-            this.maskDirty = false;
+        const revision = this.maskRevision;
+        if (!this.isMaskModeActive()) {
+            if (this.isCurrentMaskRevision(revision)) {
+                this.baseImageFile = "";
+                this.maskImageFile = "";
+                this.maskBaseWidth = 0;
+                this.maskBaseHeight = 0;
+                this.maskDirty = false;
+                this.value = this.getValue();
+            }
             return;
         }
+        if (!this.image?.src && !this.baseImageFile) return;
         if (!this.baseImageFile && this.image?.src) {
             const source = await (await fetch(this.image.src)).blob();
-            this.baseImageFile = await uploadBlob(source, `base_${this.node.id}_${Date.now()}.png`);
+            if (!this.isCurrentMaskRevision(revision)) return;
+            const uploadedBase = await uploadBlob(
+                source, "base", this.node.id, () => this.isCurrentMaskRevision(revision),
+            );
+            if (!this.isCurrentMaskRevision(revision)) return;
+            this.baseImageFile = uploadedBase;
         }
-        const mask = this.renderMask();
+        if (!this.isCurrentMaskRevision(revision)) return;
+        if (!this.maskBaseWidth || !this.maskBaseHeight) {
+            this.maskBaseWidth = this.image?.naturalWidth || 0;
+            this.maskBaseHeight = this.image?.naturalHeight || 0;
+        }
+        const mask = this.renderExecutionMask() || this.makeEmptyExecutionMask();
         if (!mask) return;
-        this.maskImageFile = await uploadBlob(await canvasBlob(mask), `mask_${this.node.id}_${Date.now()}.png`);
-        this.maskDirty = false;
+        try {
+            const blob = await canvasBlob(mask);
+            if (!this.isCurrentMaskRevision(revision)) return;
+            const uploadedMask = await uploadBlob(
+                blob, "mask", this.node.id, () => this.isCurrentMaskRevision(revision),
+            );
+            if (!this.isCurrentMaskRevision(revision)) return;
+            this.maskImageFile = uploadedMask;
+            this.maskDirty = false;
+            this.value = this.getValue();
+        } finally {
+            releasePreviewCanvas(mask);
+        }
+    }
+
+    startMaskCommit() {
+        const task = this.commitMask();
+        this.pending = task;
+        const clearPending = () => {
+            if (this.pending === task) this.pending = null;
+        };
+        task.then(clearPending, clearPending);
+        return task;
     }
 
     scheduleMaskCommit(delay = 700) {
@@ -1131,7 +1435,7 @@ class NO8DGenerateCanvasWidget {
         this.maskCommitTimer = setTimeout(() => {
             this.maskCommitTimer = null;
             if (!this.maskDirty) return;
-            this.pending = this.commitMask().catch((error) => console.error("[NO8D Generate] mask upload failed", error));
+            this.startMaskCommit().catch((error) => console.error("[NO8D Generate] mask upload failed", error));
         }, delay);
     }
 
@@ -1143,7 +1447,7 @@ class NO8DGenerateCanvasWidget {
             this.invert = !this.invert;
             this.clearMaskOverlay();
             this.clearRenderCache();
-            this.maskDirty = true;
+            this.markMaskDirty();
             this.scheduleMaskCommit();
         } else if (action === "clear") {
             this.clearMaskState();
@@ -1155,6 +1459,7 @@ class NO8DGenerateCanvasWidget {
                 setDirty();
             }, 140);
         }
+        this.value = this.getValue();
         setDirty();
     }
 
@@ -1174,7 +1479,7 @@ class NO8DGenerateCanvasWidget {
         } else if (action === "mask_feather") {
             const widget = findWidget(this.node, "mask_feather");
             if (widget) widget.value = Math.round(Math.min(100, Math.max(0, value)));
-            this.maskDirty = true;
+            this.markMaskDirty();
         } else {
             this.maskOpacity = Math.min(1, Math.max(0.05, value / 100));
         }
@@ -1341,8 +1646,8 @@ class NO8DGenerateCanvasWidget {
         const presetValues = action === "brush_size"
             ? [40, 80, 160]
             : action === "mask_feather"
-                ? [0, 50, 100]
-                : [30, 50, 70];
+                ? [30, 60, 90]
+                : [20, 40, 60];
         const presetButtons = [];
         for (const value of presetValues) {
             const preset = document.createElement("button");
@@ -1369,6 +1674,7 @@ class NO8DGenerateCanvasWidget {
         input.min = String(min);
         input.max = String(max);
         input.step = "1";
+        selectNumberOnFocus(input);
         input.style.cssText = [
             "width:72px", "height:28px", "box-sizing:border-box", "padding:3px 6px",
             "color:#eee", "background:#181818", "border:1px solid #555", "border-radius:4px",
@@ -1449,14 +1755,16 @@ class NO8DGenerateCanvasWidget {
     }
 
     mouse(event, pos) {
-        const nodePos = this.nodePos(pos);
+        // ComfyUI passes custom-widget mouse positions in node-local
+        // coordinates and keeps routing an active drag through CanvasPointer.
+        const nodePos = pos;
         const type = String(event?.type || "");
         if (type.includes("contextmenu") || (type.includes("down") && event.button !== 0)) return false;
 
         if (type.includes("move")) {
-            this.hoverImagePoint = this.imagePoint(nodePos);
+            this.hoverImagePoint = this.imagePoint(nodePos, Boolean(this.activeStroke));
             setCursorDirty();
-        } else if (type.includes("leave") || type.includes("out")) {
+        } else if ((type.includes("leave") || type.includes("out")) && !this.activeStroke) {
             this.hoverImagePoint = null;
             setCursorDirty();
         }
@@ -1484,8 +1792,13 @@ class NO8DGenerateCanvasWidget {
                 }
                 return true;
             }
+            if (event.button !== 0 || !this.hasActiveTool()) return false;
+            if (!this.maskBaseWidth || !this.maskBaseHeight) {
+                this.maskBaseWidth = this.image?.naturalWidth || 0;
+                this.maskBaseHeight = this.image?.naturalHeight || 0;
+            }
             const point = this.imagePoint(nodePos);
-            if (!point || event.button !== 0 || !this.hasActiveTool()) return false;
+            if (!point) return false;
             this.hoverImagePoint = point;
             this.activeStroke = {
                 op: this.tool === "eraser" ? "subtract" : "add",
@@ -1494,15 +1807,15 @@ class NO8DGenerateCanvasWidget {
                 points: [point],
             };
             this.strokes.push(this.activeStroke);
+            this.markMaskDirty();
             this.clearMaskOverlay();
             this.clearRenderCache();
-            this.maskDirty = true;
             setDirty();
             return true;
         }
 
         if (type.includes("move") && this.activeStroke) {
-            const point = this.imagePoint(nodePos);
+            const point = this.imagePoint(nodePos, true);
             if (point) this.activeStroke.points.push(point);
             this.clearMaskOverlay();
             this.clearRenderCache();
@@ -1512,6 +1825,10 @@ class NO8DGenerateCanvasWidget {
         }
 
         if ((type.includes("up") || type.includes("cancel")) && this.activeStroke) {
+            if (type.includes("up")) {
+                const point = this.imagePoint(nodePos, true);
+                if (point) this.activeStroke.points.push(point);
+            }
             this.activeStroke = null;
             this.scheduleMaskCommit();
             return true;
@@ -1538,21 +1855,37 @@ class NO8DGenerateCanvasWidget {
         this.clearRenderCache();
         if (options.clearMask) this.clearMaskState();
         else {
+            const maskNeedsCommit = this.maskDirty;
+            this.invalidateMaskCommit();
             this.activeStroke = null;
             this.clearMaskOverlay();
-            this.maskDirty = false;
-            this.pending = null;
+            this.maskDirty = maskNeedsCommit;
         }
+        if (this.maskDirty) this.scheduleMaskCommit();
         setDirty();
     }
 }
 
-function findGenerateNodeFromExecutionId(id) {
-    const direct = app.graph?.getNodeById?.(id);
-    if (isGenerateNode(direct)) return direct;
-    const rootId = String(id || "").split(".")[0];
-    const root = app.graph?.getNodeById?.(rootId) || app.graph?.getNodeById?.(Number(rootId));
-    return isGenerateNode(root) ? root : null;
+function findNodeFromExecutionId(id) {
+    const executionId = String(id ?? "").split(".")[0];
+    if (!executionId) return null;
+    const parts = executionId.split(":").filter(Boolean);
+    let graph = app.rootGraph || app.graph;
+    let node = null;
+    for (let index = 0; index < parts.length; index += 1) {
+        const part = parts[index];
+        node = graph?.getNodeById?.(part) || graph?.getNodeById?.(Number(part));
+        if (!node) return null;
+        if (index < parts.length - 1) graph = node.subgraph;
+    }
+    return node;
+}
+
+function findGenerateNodeForPreviewEvent(detail) {
+    const displayNode = findNodeFromExecutionId(detail?.display_node);
+    if (isGenerateNode(displayNode)) return displayNode;
+    const directNode = findNodeFromExecutionId(detail?.node);
+    return isGenerateNode(directNode) ? directNode : null;
 }
 
 app.registerExtension({
@@ -1566,7 +1899,9 @@ app.registerExtension({
         // editable canvas instead, so the native preview must not be created.
         nodeType.prototype.onDrawBackground = function () {};
         wrapBypassRefresh(nodeType);
+        const originalOnExecuted = nodeType.prototype.onExecuted;
         nodeType.prototype.onExecuted = function () {
+            originalOnExecuted?.apply(this, arguments);
             suppressNativePreview(this);
         };
         const originalOnRemoved = nodeType.prototype.onRemoved;
@@ -1618,13 +1953,13 @@ app.registerExtension({
         window.addEventListener("storage", () => refreshAllGenerateLabels(true));
         window.addEventListener("languagechange", () => refreshAllGenerateLabels(true));
         api.addEventListener("executed", async ({ detail }) => {
-            const node = findGenerateNodeForPreviewEvent(detail?.node);
+            const node = findGenerateNodeForPreviewEvent(detail);
             const widget = node?._no8dGenerateCanvas;
             if (!widget) return;
             const refs = refsFromMessage(detail?.output || detail);
             if (!refs.length) return;
             try {
-                await widget.setPreview(refs[refs.length - 1], { clearMask: true, refs });
+                await widget.setPreview(refs[refs.length - 1], { clearMask: false, refs });
                 suppressNativePreview(node);
                 setDirty();
             } catch (error) {

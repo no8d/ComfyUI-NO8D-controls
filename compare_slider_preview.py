@@ -1,4 +1,5 @@
 import nodes as comfy_nodes
+from comfy_execution.graph import ExecutionBlocker
 
 
 class NO8DABPreview:
@@ -7,6 +8,10 @@ class NO8DABPreview:
         return {
             "required": {},
             "optional": {
+                "auto_output": (
+                    "BOOLEAN",
+                    {"default": True, "label_on": "on", "label_off": "off"},
+                ),
                 "image_a": ("IMAGE",),
                 "image_b": ("IMAGE",),
             },
@@ -16,12 +21,20 @@ class NO8DABPreview:
             },
         }
 
-    RETURN_TYPES = ()
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image_a",)
     FUNCTION = "preview"
     OUTPUT_NODE = True
     CATEGORY = "NO8D-control"
 
-    def preview(self, image_a=None, image_b=None, prompt=None, extra_pnginfo=None):
+    def preview(
+        self,
+        auto_output=True,
+        image_a=None,
+        image_b=None,
+        prompt=None,
+        extra_pnginfo=None,
+    ):
         saver = comfy_nodes.PreviewImage()
         result = {"a_images": [], "b_images": []}
         if image_a is not None:
@@ -36,7 +49,8 @@ class NO8DABPreview:
                 filename_prefix="NO8DABPreview_B",
             )
             result["b_images"] = b_ui["ui"]["images"]
-        return {"ui": result}
+        output = image_a if auto_output and image_a is not None else ExecutionBlocker(None)
+        return {"ui": result, "result": (output,)}
 
 
 NODE_CLASS_MAPPINGS = {"NO8DABPreview": NO8DABPreview}

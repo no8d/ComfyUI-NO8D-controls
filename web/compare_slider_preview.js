@@ -9,6 +9,10 @@ const EDGE_PAD = 10;
 const NATIVE_PREVIEW_WIDGET = "$$canvas-image-preview";
 const EMPTY_IMAGE_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const MAX_PREVIEW_EDGE = 1024;
+const BADGE_HEIGHT = 22;
+const BADGE_INSET = 8;
+const BADGE_GAP = 6;
+const FOOTER_HEIGHT = 32;
 
 const legacyDomStyle = document.createElement("style");
 legacyDomStyle.textContent = `
@@ -80,6 +84,33 @@ function drawContainedImage(ctx, img, rect) {
     if (!fit) return null;
     ctx.drawImage(img, fit[0], fit[1], fit[2], fit[3]);
     return fit;
+}
+
+function imageDimensionLabel(entry, side) {
+    const width = Number(entry?.img?.naturalWidth) || 0;
+    const height = Number(entry?.img?.naturalHeight) || 0;
+    return width && height ? `${side} · ${width} × ${height}` : "";
+}
+
+function drawDimensionBadge(ctx, entry, side, rect, align, maxWidth) {
+    const label = imageDimensionLabel(entry, side);
+    if (!label) return null;
+    ctx.font = "12px sans-serif";
+    const badgeWidth = Math.min(ctx.measureText(label).width + 14, maxWidth);
+    const x = align === "right"
+        ? rect[0] + rect[2] - badgeWidth - BADGE_INSET
+        : rect[0] + BADGE_INSET;
+    const y = rect[1] + (rect[3] - BADGE_HEIGHT) / 2;
+    ctx.fillStyle = "rgba(0,0,0,0.68)";
+    ctx.beginPath();
+    ctx.roundRect?.(x, y, badgeWidth, BADGE_HEIGHT, 5);
+    if (!ctx.roundRect) ctx.rect(x, y, badgeWidth, BADGE_HEIGHT);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, x + badgeWidth / 2, y + BADGE_HEIGHT / 2, Math.max(1, badgeWidth - 10));
+    return [x, y, badgeWidth, BADGE_HEIGHT];
 }
 
 function releaseDecodedImage(img) {
@@ -533,20 +564,35 @@ class NO8DCompareWidget {
             return;
         }
 
-        const baseRect = fitRect(a || b, rect) || rect;
+        const imageAreaHeight = Math.max(1, rect[3] - FOOTER_HEIGHT);
+        const imageAreaRect = [rect[0], rect[1], rect[2], imageAreaHeight];
+        const footerRect = [rect[0], rect[1] + imageAreaHeight, rect[2], FOOTER_HEIGHT];
+        const baseRect = fitRect(a || b, imageAreaRect) || imageAreaRect;
         this.imageRect = baseRect;
         const splitX = baseRect[0] + baseRect[2] * (node._no8dSplit ?? 50) / 100;
         const preview = this.getRenderedPreview(rect, baseRect, splitX, aEntry, bEntry, a, b, hasA, hasB);
         ctx.drawImage(preview, rect[0], rect[1], rect[2], rect[3]);
+        ctx.strokeStyle = "rgba(255,255,255,0.12)";
+        ctx.beginPath();
+        ctx.moveTo(footerRect[0], footerRect[1] + 0.5);
+        ctx.lineTo(footerRect[0] + footerRect[2], footerRect[1] + 0.5);
+        ctx.stroke();
         const total = listLength(node);
+        ctx.font = "12px sans-serif";
+        const pageLabel = total > 1 ? `${(Number(node._no8dABListIndex) || 0) + 1}/${total}` : "";
+        const pageBadgeWidth = pageLabel ? ctx.measureText(pageLabel).width + 14 : 0;
+        const centerReserve = pageBadgeWidth ? pageBadgeWidth + BADGE_GAP * 2 : BADGE_GAP;
+        const splitFooterSpace = (hasA && hasB) || pageBadgeWidth > 0;
+        const dimensionBadgeMaxWidth = splitFooterSpace
+            ? Math.max(1, (footerRect[2] - BADGE_INSET * 2 - centerReserve) / 2)
+            : Math.max(1, footerRect[2] - BADGE_INSET * 2 - centerReserve);
+        if (hasA) drawDimensionBadge(ctx, aEntry, "A", footerRect, "left", dimensionBadgeMaxWidth);
+        if (hasB) drawDimensionBadge(ctx, bEntry, "B", footerRect, "right", dimensionBadgeMaxWidth);
         if (total > 1) {
-            const index = Number(node._no8dABListIndex) || 0;
-            const label = `${index + 1}/${total}`;
-            ctx.font = "12px sans-serif";
-            const labelWidth = ctx.measureText(label).width + 14;
-            const labelHeight = 22;
-            const x = rect[0] + rect[2] - labelWidth - 8;
-            const yPos = rect[1] + rect[3] - labelHeight - 8;
+            const labelWidth = pageBadgeWidth;
+            const labelHeight = BADGE_HEIGHT;
+            const x = footerRect[0] + (footerRect[2] - labelWidth) / 2;
+            const yPos = footerRect[1] + (footerRect[3] - labelHeight) / 2;
             this.pageRect = [x, yPos, labelWidth, labelHeight];
             ctx.fillStyle = "rgba(0,0,0,0.6)";
             ctx.beginPath();
@@ -556,7 +602,7 @@ class NO8DCompareWidget {
             ctx.fillStyle = "#fff";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.fillText(label, x + labelWidth / 2, yPos + labelHeight / 2);
+            ctx.fillText(pageLabel, x + labelWidth / 2, yPos + labelHeight / 2);
         } else {
             this.pageRect = null;
         }
@@ -571,6 +617,24 @@ function installWidget(node) {
     node.size = node.size || [MIN_WIDTH, MIN_HEIGHT];
     node.size[0] = Math.max(node.size[0] || MIN_WIDTH, MIN_WIDTH);
     node.size[1] = Math.max(node.size[1] || MIN_HEIGHT, MIN_HEIGHT);
+}
+
+function syncWidgetLabels(node) {
+    const autoOutput = (node.widgets || []).find((widget) => widget?.name === "auto_output");
+    if (!autoOutput) return;
+    const label = t("abAutoOutput");
+    autoOutput.label = label;
+    autoOutput.options = autoOutput.options || {};
+    autoOutput.options.label = label;
+}
+
+function orderWidgets(node) {
+    if (!Array.isArray(node.widgets)) return;
+    const previewIndex = node.widgets.findIndex((widget) => widget === node._no8dCompareWidget);
+    const autoOutputIndex = node.widgets.findIndex((widget) => widget?.name === "auto_output");
+    if (previewIndex < 0 || autoOutputIndex < 0 || autoOutputIndex < previewIndex) return;
+    const [autoOutput] = node.widgets.splice(autoOutputIndex, 1);
+    node.widgets.splice(previewIndex, 0, autoOutput);
 }
 
 function removeLegacyDomWidgets(node) {
@@ -594,7 +658,9 @@ function activateNode(node) {
     if (node.properties) delete node.properties.no8d_ab_previous_single;
     suppressNativePreviewWidget(node);
     removeLegacyDomWidgets(node);
+    syncWidgetLabels(node);
     installWidget(node);
+    orderWidgets(node);
     restorePreviewRefs(node);
     syncNativeImageState(node);
 }

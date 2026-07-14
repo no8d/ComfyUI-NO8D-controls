@@ -765,16 +765,6 @@
             3124,
             3195
           ]
-        },
-        {
-          "name": "latent",
-          "type": "LATENT",
-          "links": null
-        },
-        {
-          "name": "mask",
-          "type": "MASK",
-          "links": null
         }
       ],
       "properties": {
@@ -851,16 +841,6 @@
           "links": [
             3184
           ]
-        },
-        {
-          "name": "latent",
-          "type": "LATENT",
-          "links": []
-        },
-        {
-          "name": "mask",
-          "type": "MASK",
-          "links": null
         }
       ],
       "properties": {

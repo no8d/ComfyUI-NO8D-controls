@@ -42,6 +42,10 @@ function ensureStyleSheet() {
     border: 2px solid #111;
     border-radius: 999px;
 }
+.no8d-image-loader-preview:focus {
+    border-color: #3b82f6 !important;
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35);
+}
 .dom-widget.no8d-image-loader-widget {
     box-sizing: border-box;
     overflow: hidden;
@@ -83,6 +87,10 @@ function thumbSize(node) {
 
 function imageKey(ref) {
     return [ref?.type || "input", ref?.subfolder || "", ref?.name || ""].join("/");
+}
+
+function imageEnabled(ref) {
+    return ref?.enabled !== false;
 }
 
 function parseRefs(node) {
@@ -185,79 +193,6 @@ function updateSelectionUi(node) {
     }
 }
 
-function collectDownstreamNodeIds(node) {
-    const graph = node?.graph || app?.graph;
-    const result = new Set();
-    const pending = [];
-    const linkParts = [];
-    for (const output of node.outputs || []) {
-        for (const linkId of output.links || []) {
-            const link = graph?.links?.[linkId];
-            if (!link || link.target_id == null) continue;
-            pending.push(link.target_id);
-            linkParts.push(`${link.id}:${link.origin_id}:${link.origin_slot}:${link.target_id}:${link.target_slot}`);
-        }
-    }
-    while (pending.length) {
-        const id = pending.shift();
-        if (id == null || result.has(String(id))) continue;
-        result.add(String(id));
-        const next = graph?.getNodeById?.(id);
-        for (const output of next?.outputs || []) {
-            for (const linkId of output.links || []) {
-                const link = graph?.links?.[linkId];
-                if (!link || link.target_id == null) continue;
-                pending.push(link.target_id);
-                linkParts.push(`${link.id}:${link.origin_id}:${link.origin_slot}:${link.target_id}:${link.target_slot}`);
-            }
-        }
-    }
-    if (!result.size && node?.id != null) result.add(String(node.id));
-    const signature = linkParts.sort().join("|");
-    if (node?._no8dImageLoaderDownstreamCache?.signature === signature) {
-        return [...node._no8dImageLoaderDownstreamCache.ids];
-    }
-    const ids = [...result];
-    if (node) node._no8dImageLoaderDownstreamCache = { signature, ids };
-    return ids;
-}
-
-async function queueSingleImageRun(node, outputRefs) {
-    try {
-        if (typeof app.graphToPrompt !== "function" || typeof app.api?.queuePrompt !== "function") {
-            throw new Error("ComfyUI queue API is unavailable");
-        }
-        const prompt = await app.graphToPrompt();
-        const queuedNode = prompt?.output?.[String(node.id)];
-        if (!queuedNode?.inputs) throw new Error("NO8D-Load-images is not present in the queued prompt");
-        queuedNode.inputs.output_files = JSON.stringify(outputRefs);
-        await app.api.queuePrompt(0, prompt, { partialExecutionTargets: collectDownstreamNodeIds(node) });
-    } catch (error) {
-        app.extensionManager?.toast?.add?.({
-            severity: "warn",
-            summary: t("imageLoaderTitle"),
-            detail: error?.message || String(error),
-            life: 3000,
-        });
-    }
-}
-
-function runSingleImage(node, index, ref) {
-    const key = imageKey(ref);
-    const now = performance.now();
-    if (node._no8dImageLoaderLastRun?.key === key && now - node._no8dImageLoaderLastRun.time < 600) return;
-    node._no8dImageLoaderLastRun = { key, time: now };
-    node._no8dImageLoaderAnchor = index;
-    node._no8dImageLoaderSelected = new Set([index]);
-    clearStoredOutputRefs(node);
-    updateSelectionUi(node);
-    ensureIndexVisible(node, index);
-    node.graph?.change?.();
-    node.graph?.setDirtyCanvas?.(true, true);
-    app?.canvas?.setDirty?.(true, true);
-    queueSingleImageRun(node, [ref]);
-}
-
 function selectedSet(node) {
     if (!node._no8dImageLoaderSelected) node._no8dImageLoaderSelected = new Set();
     return node._no8dImageLoaderSelected;
@@ -344,6 +279,20 @@ function thumbUrl(ref, size) {
     return api.apiURL(`/no8d-control/api/load-images/thumbnail?${params.toString()}`);
 }
 
+function originalImageUrl(ref) {
+    if (!ref?.name) return "";
+    const params = new URLSearchParams();
+    params.set("filename", ref.name);
+    params.set("type", ref.type || "input");
+    if (ref.subfolder) params.set("subfolder", ref.subfolder);
+    return api.apiURL(`/view?${params.toString()}`);
+}
+
+function openOriginalImage(ref) {
+    const url = originalImageUrl(ref);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+}
+
 async function imageFileMeta(file) {
     const meta = { size: file?.size || 0 };
     if (!file) return meta;
@@ -400,6 +349,15 @@ function reorderRefs(node, fromIndex, toIndex) {
     setImageAndOutputRefs(node, refs, []);
 }
 
+function toggleImageEnabled(node, index) {
+    const refs = parseRefs(node);
+    const ref = refs[index];
+    if (!ref || typeof ref !== "object") return;
+    refs[index] = { ...ref, enabled: !imageEnabled(ref) };
+    requestScrollToIndex(node, index);
+    setImageAndOutputRefs(node, refs, []);
+}
+
 function dropIndexFromPoint(preview, event) {
     const direct = event.target?.closest?.("[data-no8d-loader-item]");
     if (direct?.dataset?.index != null) return Number(direct.dataset.index);
@@ -422,6 +380,15 @@ function dropIndexFromPoint(preview, event) {
 
 function imageFilesFromList(files) {
     return Array.from(files || []).filter((file) => file?.type?.startsWith("image/"));
+}
+
+function clipboardImageFiles(event) {
+    const itemFiles = Array.from(event?.clipboardData?.items || [])
+        .filter((item) => item?.kind === "file")
+        .map((item) => item.getAsFile?.())
+        .filter(Boolean);
+    const itemImages = imageFilesFromList(itemFiles);
+    return itemImages.length ? itemImages : imageFilesFromList(event?.clipboardData?.files);
 }
 
 function showLoadingPreview(node, text) {
@@ -469,6 +436,7 @@ function uploadImages(node, files, { append = false } = {}) {
                     name: data.name,
                     subfolder: data.subfolder || "",
                     type: data.type || "input",
+                    enabled: true,
                     width: meta.width || 0,
                     height: meta.height || 0,
                     size: meta.size || 0,
@@ -509,6 +477,16 @@ function installDropUpload(node, element) {
     });
 }
 
+function installPasteUpload(node, element) {
+    element.addEventListener("paste", async (event) => {
+        const imageFiles = clipboardImageFiles(event);
+        if (!imageFiles.length) return;
+        event.preventDefault();
+        event.stopPropagation();
+        await uploadImages(node, imageFiles, { append: true });
+    });
+}
+
 function previewPoint(preview, event) {
     const rect = preview.getBoundingClientRect();
     const scaleX = rect.width / Math.max(preview.offsetWidth, 1);
@@ -519,8 +497,15 @@ function previewPoint(preview, event) {
     };
 }
 
+function eyeIcon(enabled) {
+    return enabled
+        ? '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></svg>'
+        : '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 6.2A11.2 11.2 0 0 1 12 6c6.5 0 10 6 10 6a17.8 17.8 0 0 1-2.1 2.8"/><path d="M6.6 6.6C3.7 8.3 2 12 2 12s3.5 6 10 6a10.7 10.7 0 0 0 4.1-.8"/></svg>';
+}
+
 function makeThumbItem(node, ref, index, size, selected) {
     const isSelected = selected.has(index);
+    const isEnabled = imageEnabled(ref);
     const item = document.createElement("div");
     item.style.cssText = [
         "display:flex",
@@ -562,10 +547,7 @@ function makeThumbItem(node, ref, index, size, selected) {
     item.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (event.detail >= 2) {
-            runSingleImage(node, index, ref);
-            return;
-        }
+        if (event.detail > 1) return;
         const refs = parseRefs(node);
         const current = selectedSet(node);
         let next = new Set();
@@ -589,8 +571,16 @@ function makeThumbItem(node, ref, index, size, selected) {
     item.addEventListener("dblclick", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        runSingleImage(node, index, ref);
+        openOriginalImage(ref);
     });
+
+    const thumbFrame = document.createElement("div");
+    thumbFrame.style.cssText = [
+        "position:relative",
+        `width:${size}px`,
+        `height:${size}px`,
+        "flex:0 0 auto",
+    ].join(";");
 
     const img = document.createElement("img");
     img.loading = "lazy";
@@ -617,7 +607,7 @@ function makeThumbItem(node, ref, index, size, selected) {
         ].join(";");
         img.replaceWith(failed);
     };
-    img.title = ref.name || "";
+    img.title = [ref.name || "", t("imageLoaderOpenOriginal")].filter(Boolean).join("\n");
     img.dataset.no8dLoaderThumb = "1";
     img.dataset.index = String(index);
     img.style.cssText = [
@@ -627,11 +617,51 @@ function makeThumbItem(node, ref, index, size, selected) {
         `border:${isSelected ? 3 : 1}px solid ${isSelected ? "#3b82f6" : "#4b5563"}`,
         "border-radius:4px",
         "background:#050505",
-        "flex:0 0 auto",
         "display:block",
         "box-sizing:border-box",
+        `opacity:${isEnabled ? 1 : 0.3}`,
+        `filter:${isEnabled ? "none" : "grayscale(1)"}`,
     ].join(";");
-    item.appendChild(img);
+
+    const enabledToggle = document.createElement("button");
+    enabledToggle.type = "button";
+    enabledToggle.draggable = false;
+    enabledToggle.innerHTML = eyeIcon(isEnabled);
+    enabledToggle.title = t(isEnabled ? "imageLoaderDisableImage" : "imageLoaderEnableImage");
+    enabledToggle.setAttribute("aria-label", enabledToggle.title);
+    enabledToggle.style.cssText = [
+        "position:absolute",
+        "top:5px",
+        "right:5px",
+        "z-index:1",
+        "width:26px",
+        "height:26px",
+        "padding:0",
+        "display:flex",
+        "align-items:center",
+        "justify-content:center",
+        "border:1px solid rgba(255,255,255,0.55)",
+        "border-radius:6px",
+        `background:${isEnabled ? "rgba(15,23,42,0.78)" : "rgba(127,29,29,0.88)"}`,
+        `color:${isEnabled ? "#e0f2fe" : "#fecaca"}`,
+        "cursor:pointer",
+        "box-shadow:0 1px 4px rgba(0,0,0,0.55)",
+    ].join(";");
+    enabledToggle.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+        node._no8dImageLoaderEls?.preview?.focus?.({ preventScroll: true });
+    });
+    enabledToggle.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleImageEnabled(node, index);
+    });
+    enabledToggle.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+    thumbFrame.append(img, enabledToggle);
+    item.appendChild(thumbFrame);
 
     const name = document.createElement("div");
     name.textContent = ref.name || "";
@@ -640,7 +670,7 @@ function makeThumbItem(node, ref, index, size, selected) {
         "width:100%",
         "font-size:10px",
         "line-height:12px",
-        "color:#9ca3af",
+        `color:${isEnabled ? "#9ca3af" : "#6b7280"}`,
         "overflow:hidden",
         "white-space:nowrap",
         "text-overflow:ellipsis",
@@ -809,6 +839,7 @@ function makeUi(node) {
     const preview = document.createElement("div");
     preview.className = "no8d-image-loader-preview";
     preview.tabIndex = 0;
+    preview.title = t("imageLoaderPasteHint");
     preview.style.cssText = [
         "display:flex",
         "gap:10px",
@@ -832,6 +863,7 @@ function makeUi(node) {
         "outline:none",
     ].join(";");
     installDropUpload(node, preview);
+    installPasteUpload(node, preview);
 
     const selectionBox = document.createElement("div");
     selectionBox.style.cssText = [
@@ -1021,6 +1053,7 @@ function renderLoader(node) {
     els.load.setAttribute("aria-label", t("imageLoaderLoad"));
     els.maxSize.title = t("imageLoaderMaxThumbSize");
     els.maxSize.setAttribute("aria-label", t("imageLoaderMaxThumbSize"));
+    els.preview.title = t("imageLoaderPasteHint");
     els.sizeLabel.textContent = t("imageLoaderThumbSize");
     if (Number(els.sizeRange.value) !== size) {
         els.sizeRange.value = String(size);
@@ -1043,7 +1076,7 @@ function renderLoader(node) {
     els.preview.style.justifyContent = "flex-start";
     if (!refs.length) {
         const empty = document.createElement("div");
-        empty.textContent = t("imageLoaderEmpty");
+        empty.textContent = `${t("imageLoaderEmpty")} · ${t("imageLoaderPasteHint")}`;
         empty.style.cssText = "color:#6b7280; font-size:12px;";
         els.preview.appendChild(empty);
         return;

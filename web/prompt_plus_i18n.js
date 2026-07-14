@@ -35,15 +35,10 @@ const PROMPT_RULE_DISPLAY = {
 };
 const STYLE_DISPLAY = {
     "自行判断": "Auto",
-    "业余摄影": "Amateur photography",
-    "专业摄影": "Professional photography",
-    "影视摄影": "Cinematic photography",
-    "日式动漫": "Japanese anime",
-    "美式动漫": "American animation",
-    "插画艺术": "Illustration art",
-    "油画艺术": "Oil painting",
-    "3d写实": "3D realism",
-    "3d卡通": "3D cartoon",
+    "写实摄影": "Realistic photography",
+    "动漫插图": "Anime illustration",
+    "手绘艺术": "Hand-drawn art",
+    "数字艺术": "Digital art",
 };
 const COMPOSITION_DISPLAY = {
     "自行判断": "Auto",
@@ -73,6 +68,30 @@ const COMPOSITION_VALUE_ALIASES = {
     "中远景": "全景",
     "远景": "全景",
 };
+const STYLE_VALUE_ALIASES = {
+    "业余摄影": "写实摄影",
+    "专业摄影": "写实摄影",
+    "影视摄影": "写实摄影",
+    "Amateur photography": "写实摄影",
+    "Professional photography": "写实摄影",
+    "Cinematic photography": "写实摄影",
+    "日式动漫": "动漫插图",
+    "美式动漫": "动漫插图",
+    "3d卡通": "动漫插图",
+    "Japanese anime": "动漫插图",
+    "American animation": "动漫插图",
+    "3D cartoon": "动漫插图",
+    "艺术手绘": "手绘艺术",
+    "数字绘画": "数字艺术",
+    "Traditional hand-drawn art": "手绘艺术",
+    "Digital painting": "数字艺术",
+    "油画艺术": "手绘艺术",
+    "Oil painting": "手绘艺术",
+    "插画艺术": "数字艺术",
+    "3d写实": "数字艺术",
+    "Illustration art": "数字艺术",
+    "3D realism": "数字艺术",
+};
 let activeLocale = "";
 
 function nodeClass(node) {
@@ -93,6 +112,11 @@ function removeStalePromptPlusWidgets(node) {
     if (composition) {
         const value = String(composition.value || "").trim();
         if (COMPOSITION_VALUE_ALIASES[value]) composition.value = COMPOSITION_VALUE_ALIASES[value];
+    }
+    const style = node.widgets.find((widget) => widget.name === "style_preset");
+    if (style) {
+        const value = String(style.value || "").trim();
+        if (STYLE_VALUE_ALIASES[value]) style.value = STYLE_VALUE_ALIASES[value];
     }
     for (const widget of node.widgets) {
         if (typeof widget.name === "string" && /control_after_generate/i.test(widget.name)) {
