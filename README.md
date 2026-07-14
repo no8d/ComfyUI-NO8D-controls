@@ -5,7 +5,7 @@
 
 English | [简体中文](./README.zh-CN.md)
 
-A ComfyUI custom node pack for LoRA control, prompt expansion, image loading, generation and inpainting, image comparison, latent creation, and image-text dataset saving.
+This custom node pack provides an end-to-end optimization solution covering the entire workflow from image loading to image generation. It redesigns key nodes for image generation, LoRA stacking, prompt generation, and more to simplify ComfyUI workflow construction, improve generation efficiency across nodes, and significantly lower the barrier to building and using workflows.
 
 ![ComfyUI-NO8D-controls](docs/images/no8d-control-banner-readme.jpg)
 
