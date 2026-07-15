@@ -67,19 +67,6 @@ def _parse_image_refs(image_files):
     return refs
 
 
-def _candidate_image_refs(image_files, output_files):
-    output_refs = _parse_image_refs(output_files)
-    return output_refs if output_refs else _parse_image_refs(image_files)
-
-
-def _resolve_image_refs(image_files, output_files):
-    return [
-        ref
-        for ref in _candidate_image_refs(image_files, output_files)
-        if not isinstance(ref, dict) or ref.get("enabled", True) is not False
-    ]
-
-
 def _ref_to_path(ref):
     if isinstance(ref, str):
         text = ref.strip()
@@ -202,16 +189,13 @@ class NO8DLoadImages:
 
     @classmethod
     def IS_CHANGED(cls, image_files="[]", output_files="[]"):
-        refs = _resolve_image_refs(image_files, output_files)
+        refs = _parse_image_refs(output_files)
         paths = [_ref_to_path(ref) for ref in refs]
         return _fingerprint(paths, f"{image_files}\n{output_files}")
 
     def load(self, image_files="[]", output_files="[]"):
-        candidates = _candidate_image_refs(image_files, output_files)
-        refs = _resolve_image_refs(image_files, output_files)
+        refs = _parse_image_refs(output_files)
         paths = [_ref_to_path(ref) for ref in refs]
-        if not candidates:
-            raise ValueError("NO8D-Load-images: no images selected.")
         if not paths:
             return ([],)
 

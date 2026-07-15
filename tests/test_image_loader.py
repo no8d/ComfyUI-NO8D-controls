@@ -1,36 +1,39 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import image_loader
+from PIL import Image
 
 
-class ImageLoaderEnabledStateTests(unittest.TestCase):
-    def test_missing_enabled_field_defaults_to_enabled(self):
-        refs = image_loader._resolve_image_refs(
-            '[{"name":"old.png"},{"name":"on.png","enabled":true}]',
-            "[]",
-        )
-        self.assertEqual([ref["name"] for ref in refs], ["old.png", "on.png"])
-
-    def test_disabled_images_are_removed_after_candidate_selection(self):
-        refs = image_loader._resolve_image_refs(
-            '[{"name":"fallback.png","enabled":true}]',
-            '[{"name":"off.png","enabled":false}]',
-        )
-        self.assertEqual(refs, [])
-
-    def test_disabled_only_selection_returns_an_empty_output_list(self):
+class ImageLoaderSelectionTests(unittest.TestCase):
+    def test_no_selection_returns_an_empty_output_list(self):
         result = image_loader.NO8DLoadImages().load(
-            '[{"name":"fallback.png","enabled":true}]',
-            '[{"name":"off.png","enabled":false}]',
+            '[{"name":"available.png"}]',
+            "[]",
         )
         self.assertEqual(result, ([],))
 
-    def test_selected_enabled_images_do_not_fall_back_to_full_list(self):
-        refs = image_loader._resolve_image_refs(
-            '[{"name":"all.png","enabled":true}]',
-            '[{"name":"selected.png","enabled":true}]',
+    def test_execution_loads_only_explicit_output_refs(self):
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            Image.new("RGB", (2, 2), "red").save(base / "selected-a.png")
+            Image.new("RGB", (2, 2), "blue").save(base / "selected-b.png")
+            with patch.object(image_loader, "_base_directory", return_value=base):
+                images, = image_loader.NO8DLoadImages().load(
+                    '[{"name":"unselected-and-missing.png"}]',
+                    '[{"name":"selected-a.png"},{"name":"selected-b.png"}]',
+                )
+        self.assertEqual(len(images), 2)
+        self.assertEqual(images[0].no8d_source_name, "selected-a.png")
+        self.assertEqual(images[1].no8d_source_name, "selected-b.png")
+
+    def test_legacy_enabled_fields_do_not_filter_selected_refs(self):
+        output_refs = image_loader._parse_image_refs(
+            '[{"name":"selected.png","enabled":false}]',
         )
-        self.assertEqual([ref["name"] for ref in refs], ["selected.png"])
+        self.assertEqual([ref["name"] for ref in output_refs], ["selected.png"])
 
 
 if __name__ == "__main__":
