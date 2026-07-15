@@ -6,6 +6,12 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-07-15
+
+### Fixed
+
+- Removed the A/B preview's intermediate composite canvas so full-resolution images draw directly onto the node canvas, preventing black previews with large source images.
+
 ## [1.0.8] - 2026-07-15
 
 ### Changed

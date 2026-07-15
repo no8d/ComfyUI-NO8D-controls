@@ -121,12 +121,6 @@ function releaseDecodedImage(img) {
     } catch (_) {}
 }
 
-function releasePreviewCanvas(canvas) {
-    if (!canvas?.getContext) return;
-    canvas.width = 0;
-    canvas.height = 0;
-}
-
 function imageUsedOutsideSlot(node, slot, img) {
     const images = node?._no8dABImages || {};
     return Object.entries(images).some(([key, entry]) => key !== slot && entry?.img === img);
@@ -385,7 +379,6 @@ class NO8DCompareWidget {
         this.dragging = false;
         this.rect = [0, 0, MIN_WIDTH, MIN_HEIGHT];
         this.imageRect = null;
-        this.renderCache = null;
     }
 
     computeSize(width) {
@@ -396,75 +389,41 @@ class NO8DCompareWidget {
         const rect = this.imageRect || this.rect;
         if (!rect?.[2]) return false;
         this.node._no8dSplit = ((pos[0] - rect[0]) / rect[2]) * 100;
-        this.renderCache = null;
         app.graph?.setDirtyCanvas?.(true, false);
         return true;
     }
 
-    renderCacheKey(rect, baseRect, aEntry, bEntry, splitX) {
-        return [
-            Math.round(rect[2]), Math.round(rect[3]),
-            Math.round(baseRect[0] - rect[0]), Math.round(baseRect[1] - rect[1]),
-            Math.round(baseRect[2]), Math.round(baseRect[3]),
-            Math.round(splitX * 10) / 10,
-            aEntry?.key || "", bEntry?.key || "",
-            aEntry?.img?.naturalWidth || 0,
-            bEntry?.img?.naturalWidth || 0,
-        ].join("|");
-    }
-
-    getRenderedPreview(rect, baseRect, splitX, aEntry, bEntry, a, b, hasA, hasB) {
-        const key = this.renderCacheKey(rect, baseRect, aEntry, bEntry, splitX);
-        if (this.renderCache?.key === key) return this.renderCache.canvas;
-
-        if (this.renderCache?.canvas) releasePreviewCanvas(this.renderCache.canvas);
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.round(rect[2]));
-        canvas.height = Math.max(1, Math.round(rect[3]));
-        const cacheCtx = canvas.getContext("2d");
-        cacheCtx.fillStyle = "#101010";
-        cacheCtx.fillRect(0, 0, canvas.width, canvas.height);
-
-        const localBaseRect = [
-            baseRect[0] - rect[0],
-            baseRect[1] - rect[1],
-            baseRect[2],
-            baseRect[3],
-        ];
-        const localSplitX = splitX - rect[0];
-        const imageLeft = localBaseRect[0];
-        const imageRight = localBaseRect[0] + localBaseRect[2];
-        const clippedSplitX = clamp(localSplitX, imageLeft, imageRight);
+    drawComparison(ctx, baseRect, splitX, a, b, hasA, hasB) {
+        const imageLeft = baseRect[0];
+        const imageRight = baseRect[0] + baseRect[2];
+        const clippedSplitX = clamp(splitX, imageLeft, imageRight);
 
         if (hasB) {
-            cacheCtx.save();
+            ctx.save();
             if (!hasA) {
-                cacheCtx.beginPath();
-                cacheCtx.rect(clippedSplitX, localBaseRect[1], imageRight - clippedSplitX, localBaseRect[3]);
-                cacheCtx.clip();
+                ctx.beginPath();
+                ctx.rect(clippedSplitX, baseRect[1], imageRight - clippedSplitX, baseRect[3]);
+                ctx.clip();
             }
-            drawContainedImage(cacheCtx, b, localBaseRect);
-            cacheCtx.restore();
+            drawContainedImage(ctx, b, baseRect);
+            ctx.restore();
         }
         if (hasA && clippedSplitX > imageLeft) {
-            cacheCtx.save();
-            cacheCtx.beginPath();
-            cacheCtx.rect(imageLeft, localBaseRect[1], clippedSplitX - imageLeft, localBaseRect[3]);
-            cacheCtx.clip();
-            drawContainedImage(cacheCtx, a, localBaseRect);
-            cacheCtx.restore();
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(imageLeft, baseRect[1], clippedSplitX - imageLeft, baseRect[3]);
+            ctx.clip();
+            drawContainedImage(ctx, a, baseRect);
+            ctx.restore();
         }
-        if (localSplitX >= imageLeft && localSplitX <= imageRight) {
-            cacheCtx.strokeStyle = "rgba(255,255,255,0.6)";
-            cacheCtx.lineWidth = 2;
-            cacheCtx.beginPath();
-            cacheCtx.moveTo(localSplitX, localBaseRect[1]);
-            cacheCtx.lineTo(localSplitX, localBaseRect[1] + localBaseRect[3]);
-            cacheCtx.stroke();
+        if (splitX >= imageLeft && splitX <= imageRight) {
+            ctx.strokeStyle = "rgba(255,255,255,0.6)";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(splitX, baseRect[1]);
+            ctx.lineTo(splitX, baseRect[1] + baseRect[3]);
+            ctx.stroke();
         }
-
-        this.renderCache = { key, canvas };
-        return canvas;
     }
 
     nodePosFromEventPos(pos) {
@@ -483,7 +442,6 @@ class NO8DCompareWidget {
             const total = listLength(this.node);
             if (total > 1) {
                 applyListIndex(this.node, ((Number(this.node._no8dABListIndex) || 0) + 1) % total);
-                this.renderCache = null;
                 persistPreviewRefs(this.node);
                 app.graph?.setDirtyCanvas?.(true, true);
                 return true;
@@ -530,8 +488,6 @@ class NO8DCompareWidget {
         const hasB = Boolean(bEntry?.img?.naturalWidth);
 
         if (!hasA && !hasB) {
-            if (this.renderCache?.canvas) releasePreviewCanvas(this.renderCache.canvas);
-            this.renderCache = null;
             ctx.fillStyle = "#ddd";
             ctx.font = "12px sans-serif";
             ctx.textAlign = "center";
@@ -547,8 +503,7 @@ class NO8DCompareWidget {
         const baseRect = fitRect(a || b, imageAreaRect) || imageAreaRect;
         this.imageRect = baseRect;
         const splitX = baseRect[0] + baseRect[2] * (node._no8dSplit ?? 50) / 100;
-        const preview = this.getRenderedPreview(rect, baseRect, splitX, aEntry, bEntry, a, b, hasA, hasB);
-        ctx.drawImage(preview, rect[0], rect[1], rect[2], rect[3]);
+        this.drawComparison(ctx, baseRect, splitX, a, b, hasA, hasB);
         ctx.strokeStyle = "rgba(255,255,255,0.12)";
         ctx.beginPath();
         ctx.moveTo(footerRect[0], footerRect[1] + 0.5);
@@ -647,10 +602,6 @@ function disposeNode(node) {
     const images = node._no8dABImages || {};
     for (const entry of new Set([images.a, images.b].filter(Boolean))) {
         releaseUniqueEntry(entry);
-    }
-    if (node._no8dCompareWidget?.renderCache?.canvas) {
-        releasePreviewCanvas(node._no8dCompareWidget.renderCache.canvas);
-        node._no8dCompareWidget.renderCache = null;
     }
     removeLegacyDomWidgets(node);
     clearNativeImageState(node);
