@@ -6,6 +6,16 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-07-15
+
+### Changed
+
+- Changed `NO8D-Load-images` to output only explicitly selected thumbnails: selecting all outputs all images, while selecting none returns an empty list; removed the per-image eye enable/disable control.
+
+### Fixed
+
+- Removed the A/B preview's 1024-pixel source downsampling so the comparison canvas always renders from the full-resolution images returned by ComfyUI.
+
 ## [1.0.7] - 2026-07-14
 
 ### Added

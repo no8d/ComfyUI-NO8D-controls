@@ -8,7 +8,6 @@ const MIN_HEIGHT = 320;
 const EDGE_PAD = 10;
 const NATIVE_PREVIEW_WIDGET = "$$canvas-image-preview";
 const EMPTY_IMAGE_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-const MAX_PREVIEW_EDGE = 1024;
 const BADGE_HEIGHT = 22;
 const BADGE_INSET = 8;
 const BADGE_GAP = 6;
@@ -128,40 +127,18 @@ function releasePreviewCanvas(canvas) {
     canvas.height = 0;
 }
 
-function makePreviewCanvas(img) {
-    if (!img?.naturalWidth || !img?.naturalHeight) return null;
-    const scale = Math.min(1, MAX_PREVIEW_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
-    if (scale >= 1) return null;
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
-    const ctx = canvas.getContext("2d");
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return canvas;
-}
-
 function imageUsedOutsideSlot(node, slot, img) {
     const images = node?._no8dABImages || {};
     return Object.entries(images).some(([key, entry]) => key !== slot && entry?.img === img);
 }
 
-function entryUsedOutsideSlot(node, slot, candidate) {
-    const images = node?._no8dABImages || {};
-    return Object.entries(images).some(([key, entry]) => key !== slot && entry === candidate);
-}
-
 function releasePreviewEntry(node, slot, entry) {
     if (!entry) return;
-    const shared = entryUsedOutsideSlot(node, slot, entry);
-    if (entry.preview && !shared) releasePreviewCanvas(entry.preview);
     if (entry.img && !imageUsedOutsideSlot(node, slot, entry.img)) releaseDecodedImage(entry.img);
 }
 
 function releaseUniqueEntry(entry) {
     if (!entry) return;
-    if (entry.preview) releasePreviewCanvas(entry.preview);
     if (entry.img) releaseDecodedImage(entry.img);
 }
 
@@ -188,7 +165,7 @@ function loadPreviewImage(node, slot, ref) {
     const img = new Image();
     img.onload = () => {
         const entry = node._no8dABImages?.[slot];
-        if (entry?.key === key) entry.preview = makePreviewCanvas(img);
+        if (entry?.key !== key) return;
         syncNativeImageState(node);
         app.graph?.setDirtyCanvas?.(true, true);
     };
@@ -431,8 +408,8 @@ class NO8DCompareWidget {
             Math.round(baseRect[2]), Math.round(baseRect[3]),
             Math.round(splitX * 10) / 10,
             aEntry?.key || "", bEntry?.key || "",
-            aEntry?.preview?.width || aEntry?.img?.naturalWidth || 0,
-            bEntry?.preview?.width || bEntry?.img?.naturalWidth || 0,
+            aEntry?.img?.naturalWidth || 0,
+            bEntry?.img?.naturalWidth || 0,
         ].join("|");
     }
 
@@ -547,8 +524,8 @@ class NO8DCompareWidget {
         const images = node._no8dABImages || {};
         const aEntry = images.a;
         const bEntry = images.b;
-        const a = aEntry?.preview || aEntry?.img;
-        const b = bEntry?.preview || bEntry?.img;
+        const a = aEntry?.img;
+        const b = bEntry?.img;
         const hasA = Boolean(aEntry?.img?.naturalWidth);
         const hasB = Boolean(bEntry?.img?.naturalWidth);
 
