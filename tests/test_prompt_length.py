@@ -6,6 +6,26 @@ from test_prompt_camera_geometry import prompt_plus
 
 
 class PromptLengthTests(unittest.TestCase):
+    def test_backend_accepts_bilingual_length_values_for_comfy_validation(self):
+        inputs = prompt_plus.NO8DBatchPromptPlus.INPUT_TYPES()["required"]
+        self.assertEqual(inputs["length_preset"][0], ("标准", "详细", "Standard", "Detailed"))
+        self.assertEqual(prompt_plus._normalize_length_preset("Standard"), "标准")
+        self.assertEqual(prompt_plus._normalize_length_preset("Detailed"), "详细")
+
+    def test_backend_accepts_bilingual_language_values_for_comfy_validation(self):
+        inputs = prompt_plus.NO8DBatchPromptPlus.INPUT_TYPES()["required"]
+        self.assertEqual(inputs["output_language"][0], ("英文", "中文", "English", "Chinese"))
+        self.assertEqual(prompt_plus._normalize_output_language("English"), "英文")
+        self.assertEqual(prompt_plus._normalize_output_language("Chinese"), "中文")
+
+    def test_backend_accepts_english_prompt_rule_alias_for_comfy_validation(self):
+        options = prompt_plus.NO8DBatchPromptPlus.INPUT_TYPES()["required"]["prompt_rules"][0]
+        self.assertIn("Natural language", options)
+        self.assertEqual(
+            prompt_plus.prompt_config_manager.normalize_prompt_rule_name("Natural language"),
+            prompt_plus._RULE_NATURAL,
+        )
+
     def test_standard_mode_uses_256_token_limit(self):
         self.assertEqual(prompt_plus._max_tokens_for_length("标准"), 256)
         self.assertEqual(prompt_plus._max_tokens_for_length("Standard"), 256)

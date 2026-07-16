@@ -24,11 +24,6 @@ function setWidget(widget, value) {
 
 function hideInternalWidgets(node) {
     let changed = false;
-    if (Array.isArray(node.widgets)) {
-        const before = node.widgets.length;
-        node.widgets = node.widgets.filter((widget) => widget.name !== "fixed_text");
-        if (node.widgets.length !== before) changed = true;
-    }
     for (const widget of node.widgets || []) {
         if (widget.name !== "send_seq") continue;
         if (widget.value !== "0") {
@@ -71,6 +66,18 @@ function readEditorText(node) {
     if (!edited) return "";
     if (typeof edited.inputEl?.value === "string") return edited.inputEl.value;
     return String(edited.value || "");
+}
+
+function composeVisibleText(node, text) {
+    const rawFixed = String(findWidget(node, "fixed_text")?.value || "").trim();
+    const body = String(text || "").trim();
+    if (!rawFixed) return body;
+    const fixed = /[。！？；：、，,.!?:;…]["'”’）\])}】》]*$/.test(rawFixed) ? rawFixed : `${rawFixed}.`;
+    if (!body) return fixed;
+    if (body === fixed || body === rawFixed || body.startsWith(`${fixed}\n`) || body.startsWith(`${rawFixed}\n`)) {
+        return body;
+    }
+    return `${fixed}\n${body}`;
 }
 
 function captureEditorDraft(node) {
@@ -123,6 +130,16 @@ function syncNativeLabels(node) {
         edited.serializeValue = function () {
             return serializedEditorText(node);
         };
+    }
+    const fixed = findWidget(node, "fixed_text");
+    if (fixed) {
+        const label = t("promptFixedText");
+        if (fixed.label !== label || fixed.options?.label !== label) changed = true;
+        fixed.label = label;
+        fixed.options = fixed.options || {};
+        fixed.options.label = label;
+        fixed.options.placeholder = label;
+        if (fixed.inputEl) fixed.inputEl.placeholder = label;
     }
     const auto = findWidget(node, "auto_output");
     if (auto) {
@@ -245,7 +262,7 @@ function activate(node) {
     let changed = hideInternalWidgets(node);
     changed = ensureSendWidget(node) || changed;
     changed = syncNativeLabels(node) || changed;
-    registerWidgetBypassElements(node, ["edited_text", "auto_output"]);
+    registerWidgetBypassElements(node, ["fixed_text", "edited_text", "auto_output"]);
     refreshBypassElements(node);
     if (changed) {
         node.graph?.setDirtyCanvas?.(true, true);
@@ -294,7 +311,10 @@ app.registerExtension({
             if (onExecuted) onExecuted.apply(this, arguments);
             activate(this);
             const incoming = readIncomingFromMessage(message);
-            if (incoming) setIncomingText(this, incoming);
+            const auto = Boolean(findWidget(this, "auto_output")?.value);
+            if (!auto && !hasActiveTextLink(this)) {
+                restoreEditorDraft(this, composeVisibleText(this, draftBeforeExecution));
+            } else if (incoming) setIncomingText(this, incoming);
             else restoreEditorDraft(this, draftBeforeExecution);
         };
     },

@@ -5,7 +5,7 @@ import { refreshBypassElements, registerWidgetBypassElements, wrapBypassRefresh 
 const PROMPT_NODE = "NO8DBatchPromptPlus";
 const PROMPT_VIEW = "NO8DPromptView";
 const PROMPT_NODE_CLASSES = new Set([PROMPT_NODE]);
-const STALE_PROMPT_WIDGETS = new Set(["user_prompt", "token_range", "auto_run", "seed_control"]);
+const STALE_PROMPT_WIDGETS = new Set(["user_prompt", "token_range", "auto_run", "seed_control", "fixed_text"]);
 const SEED_CONTROL_VALUES = new Set(["fixed", "randomize", "increment", "decrement"]);
 
 const WIDGET_LABELS = {
@@ -59,7 +59,7 @@ const LANGUAGE_DISPLAY = {
 };
 const LENGTH_VALUES = new Set([...Object.keys(LENGTH_DISPLAY), ...Object.values(LENGTH_DISPLAY)]);
 const LANGUAGE_VALUES = new Set([...Object.keys(LANGUAGE_DISPLAY), ...Object.values(LANGUAGE_DISPLAY)]);
-const PROMPT_WIDGET_ORDER = ["prompt_rules", "style_preset", "composition_preset", "length_preset", "output_language", "fixed_text", "extra_rules", "seed"];
+const PROMPT_WIDGET_ORDER = ["prompt_rules", "style_preset", "composition_preset", "length_preset", "output_language", "extra_rules", "seed"];
 const COMPOSITION_VALUE_ALIASES = {
     "Close shot": "Medium close-up",
     "Medium wide shot": "Full shot",
@@ -93,6 +93,50 @@ const STYLE_VALUE_ALIASES = {
     "3D realism": "数字艺术",
 };
 let activeLocale = "";
+
+function migrateLegacyWidgetValues(node, nodeName, info) {
+    const values = info?.widgets_values;
+    if (!Array.isArray(values)) return;
+    if (nodeName === PROMPT_NODE) {
+        const hasLegacyFixedText = values.length >= 9
+            && Number.isFinite(Number(values[7]))
+            && SEED_CONTROL_VALUES.has(String(values[8] || "").trim());
+        if (!hasLegacyFixedText) return;
+        node._no8dLegacyFixedText = String(values[5] ?? "");
+        values.splice(5, 1);
+        return;
+    }
+    if (nodeName === PROMPT_VIEW) {
+        const oldSendIndex = values.length >= 3 && values.length <= 4
+            && /^\d+$/.test(String(values[2] ?? ""));
+        if (oldSendIndex) values.splice(1, 0, "");
+    }
+}
+
+function migrateLegacyFixedTextToPreview(node) {
+    const legacy = String(node?._no8dLegacyFixedText || "");
+    if (!legacy) return;
+    const graph = node?.graph || app?.graph;
+    let transferred = false;
+    for (const output of node?.outputs || []) {
+        for (const linkId of output?.links || []) {
+            const link = graph?.links?.[linkId];
+            const target = graph?.getNodeById?.(link?.target_id);
+            if (nodeClass(target) !== PROMPT_VIEW) continue;
+            const fixed = (target.widgets || []).find((widget) => widget.name === "fixed_text");
+            if (!fixed) continue;
+            if (!String(fixed.value || "").trim()) {
+                fixed.value = legacy;
+                if (typeof fixed.inputEl?.value === "string") fixed.inputEl.value = legacy;
+            }
+            transferred = true;
+        }
+    }
+    if (transferred) {
+        delete node._no8dLegacyFixedText;
+        graph?.setDirtyCanvas?.(true, true);
+    }
+}
 
 function nodeClass(node) {
     return node?.comfyClass || node?.type || "";
@@ -179,7 +223,17 @@ function localizeComboOptions(widget, displayMap) {
     widget.value = localizeOptionValue(widget.value, displayMap);
     const values = widget.options?.values;
     if (Array.isArray(values)) {
-        widget.options.values = [...new Set(values.map((value) => localizeOptionValue(value, displayMap)))];
+        const localized = [...new Set(values.map((value) => localizeOptionValue(value, displayMap)))];
+        values.splice(0, values.length, ...localized);
+        widget.options.values = values;
+    } else if (typeof values === "function" && !widget._no8dLocalizedValues) {
+        const original = values;
+        widget._no8dLocalizedValues = true;
+        widget.options.values = function () {
+            const available = original.apply(this, arguments);
+            if (!Array.isArray(available)) return available;
+            return [...new Set(available.map((value) => localizeOptionValue(value, displayMap)))];
+        };
     }
 }
 
@@ -231,13 +285,16 @@ function applyWidgetLabels(node) {
     }
     changed = applySlotLabels(node.inputs) || changed;
     changed = applySlotLabels(node.outputs) || changed;
-    registerWidgetBypassElements(node, [
+    registerWidgetBypassElements(node, cls === PROMPT_VIEW ? [
+        "fixed_text",
+        "edited_text",
+        "auto_output",
+    ] : [
         "prompt_rules",
         "style_preset",
         "composition_preset",
         "length_preset",
         "output_language",
-        "fixed_text",
         "extra_rules",
         "seed",
     ]);
@@ -280,8 +337,15 @@ app.registerExtension({
         };
         const onConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function () {
+            migrateLegacyWidgetValues(this, nodeData.name, arguments[0]);
             if (onConfigure) onConfigure.apply(this, arguments);
-            setTimeout(() => applyWidgetLabels(this), 0);
+            setTimeout(() => {
+                applyWidgetLabels(this);
+                if (nodeData.name === PROMPT_NODE) migrateLegacyFixedTextToPreview(this);
+            }, 0);
+            if (nodeData.name === PROMPT_NODE) {
+                setTimeout(() => migrateLegacyFixedTextToPreview(this), 500);
+            }
         };
     },
 });
