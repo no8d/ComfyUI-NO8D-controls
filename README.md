@@ -43,7 +43,7 @@ Expand text, analyze a reference image, or combine both into a complete positive
 ![NO8D-Prompt](docs/images/prompt-plus-node.png)
 
 - Supports text-only, image-only, and text-plus-image input.
-- Provides style, shot-scale, prompt-length, and fixed-prefix controls.
+- Provides style, shot-scale, and prompt-length controls.
 - Allows separate text and vision model selection.
 
 ### NO8D-Prompt-view
@@ -53,6 +53,7 @@ Display and edit prompt text before sending it downstream.
 ![NO8D-Prompt-view](docs/images/prompt-view-node.png)
 
 - Automatically displays incoming prompt text.
+- Supports a fixed prompt that is prepended whenever the node emits text.
 - Supports manual editing and one-click downstream sending.
 - Can temporarily stop automatic text output without losing the editor content.
 

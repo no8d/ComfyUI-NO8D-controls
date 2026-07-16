@@ -928,7 +928,6 @@
         "Standard",
         "English",
         "",
-        "",
         9,
         "fixed"
       ]
@@ -973,6 +972,7 @@
       },
       "widgets_values": [
         true,
+        "",
         "",
         "0",
         null

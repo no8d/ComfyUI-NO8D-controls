@@ -48,7 +48,7 @@ git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 ![NO8D-提示词](docs/images/prompt-plus-node.png)
 
 - 支持纯文本、纯图像和文本加图像三种输入。
-- 提供风格、景别、提示词长度和固定前缀控制。
+- 提供风格、景别和提示词长度控制。
 - 可分别选择文本模型和图像模型。
 
 ### NO8D-提示词预览
@@ -58,6 +58,7 @@ git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 ![NO8D-提示词预览](docs/images/prompt-view-node.png)
 
 - 自动显示上游提示词。
+- 可填写固定提示词，并在实际输出时作为固定前缀拼接。
 - 支持手动编辑并一键发送到下游。
 - 可暂停自动文本输出，同时保留编辑内容。
 

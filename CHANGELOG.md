@@ -6,6 +6,18 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-07-17
+
+### Changed
+
+- Moved the fixed-prompt field from `NO8D-Prompt` to `NO8D-Prompt-view`, where it is prepended whenever text is emitted; connected legacy workflows migrate the saved value automatically.
+- Expanded the default weight range for new `NO8D-LoRA stack` entries from `-1..1` to `-2..2`.
+
+### Fixed
+
+- Prevented `NO8D-Prompt-view` from duplicating a fixed prefix across auto, edit, and Send flows while keeping cache signatures and visible editor text consistent.
+- Kept localized Prompt combo options compatible with mutable and function-backed ComfyUI option sources, including bilingual rule, length, and output-language values.
+
 ## [1.0.9] - 2026-07-15
 
 ### Fixed

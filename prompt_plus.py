@@ -1063,6 +1063,14 @@ def _limit_prompt_to_approx_tokens(text, target_tokens):
 def _join_prompt_parts(fixed_text="", prompt_text=""):
     fixed = _finish_fixed_prompt(fixed_text)
     prompt = str(prompt_text or "").strip()
+    if not fixed:
+        return prompt
+    if not prompt:
+        return fixed
+    raw_fixed = str(fixed_text or "").strip()
+    for prefix in dict.fromkeys(part for part in (fixed, raw_fixed) if part):
+        if prompt == prefix or prompt.startswith(prefix + "\n"):
+            return prompt
     return "\n".join(part for part in (fixed, prompt) if part)
 
 
@@ -1825,7 +1833,6 @@ class NO8DBatchPromptPlus:
                 "composition_preset": (_COMPOSITION_PRESET_INPUTS, {"default": "自行判断"}),
                 "length_preset": (_LENGTH_PRESET_INPUTS, {"default": "标准"}),
                 "output_language": (_OUTPUT_LANGUAGE_INPUTS, {"default": "英文"}),
-                "fixed_text": ("STRING", {"default": ""}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFFFFFFFFFF, "control_after_generate": True}),
                 "extra_rules": ("STRING", {"default": "", "multiline": True}),
             },
@@ -1845,7 +1852,7 @@ class NO8DBatchPromptPlus:
     CATEGORY = "NO8D-control"
 
     @classmethod
-    def IS_CHANGED(cls, prompt_rules, style_preset="自行判断", composition_preset="自行判断", length_preset="标准", output_language="英文", fixed_text="", seed=0, extra_rules="", images=None, prompt=None, unique_id=None):
+    def IS_CHANGED(cls, prompt_rules, style_preset="自行判断", composition_preset="自行判断", length_preset="标准", output_language="英文", seed=0, extra_rules="", images=None, prompt=None, unique_id=None):
         service, model_cfg = prompt_config_manager.current_service()
         image_hashes = _images_to_hashes(images)
         prompt_text = str(extra_rules or "").strip()
@@ -1867,7 +1874,6 @@ class NO8DBatchPromptPlus:
             "length_preset": length_preset,
             "length_preset_rule": _LENGTH_PRESET_RULES.get(length_preset, _LENGTH_PRESET_RULES["标准"]),
             "output_language": output_language,
-            "fixed_text": fixed_text,
             "service_id": service.get("id"),
             "service_type": service.get("type", "openai_compatible"),
             "api_base_url": service.get("base_url", ""),
@@ -2005,12 +2011,11 @@ class NO8DBatchPromptPlus:
             self._cache_put(cache_key, result)
         return result
 
-    def run(self, prompt_rules, style_preset="自行判断", composition_preset="自行判断", length_preset="标准", output_language="英文", fixed_text="", seed=0, extra_rules="", images=None, prompt=None, unique_id=None):
+    def run(self, prompt_rules, style_preset="自行判断", composition_preset="自行判断", length_preset="标准", output_language="英文", seed=0, extra_rules="", images=None, prompt=None, unique_id=None):
         encoded = _images_to_data_urls(images)
         prompt = str(extra_rules or "").strip()
-        fixed_text = str(fixed_text or "").strip()
         if not encoded and not prompt:
-            return ([fixed_text],) if fixed_text else ([],)
+            return ([],)
 
         service, model_cfg = prompt_config_manager.current_service()
         api_base_url = service.get("base_url", "")
@@ -2064,7 +2069,7 @@ class NO8DBatchPromptPlus:
                 }
                 for future in concurrent.futures.as_completed(future_map):
                     prompts[future_map[future]] = future.result()
-            return ([_join_prompt_parts(fixed_text, item) for item in prompts],)
+            return (prompts,)
 
         prompts = [
             self._generate_prompt_item(
@@ -2075,7 +2080,7 @@ class NO8DBatchPromptPlus:
             )
             for index, (image_data_url, image_hash) in enumerate(items)
         ]
-        return ([_join_prompt_parts(fixed_text, item) for item in prompts],)
+        return (prompts,)
 
 
 class NO8DPromptView:
@@ -2084,6 +2089,7 @@ class NO8DPromptView:
         return {
             "required": {
                 "auto_output": ("BOOLEAN", {"default": True, "label_on": "auto", "label_off": "edit"}),
+                "fixed_text": ("STRING", {"default": ""}),
                 "edited_text": ("STRING", {"default": "", "multiline": True}),
                 "send_seq": ("STRING", {"default": "0"}),
             },
@@ -2103,14 +2109,16 @@ class NO8DPromptView:
     CATEGORY = "NO8D-control"
 
     @classmethod
-    def IS_CHANGED(cls, auto_output, edited_text="", send_seq=0, text="", prompt=None, unique_id=None):
+    def IS_CHANGED(cls, auto_output, fixed_text="", edited_text="", send_seq=0, text="", prompt=None, unique_id=None):
         auto = _safe_bool(auto_output, True)
+        fixed = _prompt_view_text(fixed_text)
         incoming = _prompt_view_text(text)
         edited = _prompt_view_text(edited_text)
         sequence = _safe_int(send_seq, 0)
         if sequence > 0:
             payload = {
                 "mode": "send",
+                "fixed_text": fixed,
                 "edited_text": edited,
                 "send_seq": sequence,
                 "unique_id": unique_id,
@@ -2118,6 +2126,7 @@ class NO8DPromptView:
         elif auto:
             payload = {
                 "mode": "auto",
+                "fixed_text": fixed,
                 "text": incoming,
                 "unique_id": unique_id,
                 "linked_inputs": _linked_inputs_signature(prompt, unique_id, ("text",)),
@@ -2127,6 +2136,7 @@ class NO8DPromptView:
         else:
             payload = {
                 "mode": "edit",
+                "fixed_text": fixed,
                 "text": incoming,
                 "edited_text": edited,
                 "unique_id": unique_id,
@@ -2134,21 +2144,22 @@ class NO8DPromptView:
             }
         return hashlib.sha1(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
-    def view(self, auto_output=True, edited_text="", send_seq=0, text="", prompt=None, unique_id=None):
+    def view(self, auto_output=True, fixed_text="", edited_text="", send_seq=0, text="", prompt=None, unique_id=None):
+        fixed = _prompt_view_text(fixed_text)
         incoming = _prompt_view_text(text)
         edited = _prompt_view_text(edited_text)
         incoming_output = incoming if incoming.strip() else ""
         edited_output = edited if edited.strip() else ""
         is_send = _safe_int(send_seq, 0) > 0
         if is_send:
-            output = edited_output
-            display_text = edited
+            output = _join_prompt_parts(fixed, edited_output)
+            display_text = output
         elif _safe_bool(auto_output, True):
-            output = incoming_output or edited_output
+            output = _join_prompt_parts(fixed, incoming_output or edited_output)
             display_text = output
         else:
             output = ""
-            display_text = incoming_output or edited
+            display_text = _join_prompt_parts(fixed, incoming_output or edited)
         return {
             "ui": {
                 "edited_text": [display_text],

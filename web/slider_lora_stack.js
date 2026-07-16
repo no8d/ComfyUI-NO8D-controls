@@ -7,8 +7,8 @@ import { refreshBypassElements, registerBypassElement, wrapBypassRefresh } from 
 const NODE_NAME = "NO8DLoraStack";
 const STACK_MIN_WIDTH = 620;
 const STACK_BOTTOM_GAP = 16;
-const DEFAULT_WEIGHT_MIN = -1;
-const DEFAULT_WEIGHT_MAX = 1;
+const DEFAULT_WEIGHT_MIN = -2;
+const DEFAULT_WEIGHT_MAX = 2;
 const WEIGHT_STEP = 0.01;
 const WEIGHT_DIGITS = 2;
 const STACK_WRITE_DELAY = 120;
