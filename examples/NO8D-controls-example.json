@@ -1,51 +1,9 @@
 {
   "id": "2fa2ba21-58fb-4aca-a0c6-6c61f5d588ab",
   "revision": 0,
-  "last_node_id": 1406,
-  "last_link_id": 3303,
+  "last_node_id": 1407,
+  "last_link_id": 3314,
   "nodes": [
-    {
-      "id": 1344,
-      "type": "RTXVideoSuperResolution",
-      "pos": [
-        -20910,
-        930
-      ],
-      "size": [
-        310,
-        110
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 17,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 3185
-        }
-      ],
-      "outputs": [
-        {
-          "name": "upscaled_images",
-          "type": "IMAGE",
-          "links": [
-            3201,
-            3297
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "RTXVideoSuperResolution"
-      },
-      "widgets_values": [
-        "scale by multiplier",
-        2,
-        "ULTRA"
-      ]
-    },
     {
       "id": 1362,
       "type": "VAELoader",
@@ -69,7 +27,6 @@
           "type": "VAE",
           "links": [
             3218,
-            3271,
             3287
           ]
         }
@@ -80,96 +37,6 @@
       "widgets_values": [
         "qwen_image_vae.safetensors"
       ]
-    },
-    {
-      "id": 1340,
-      "type": "ImageAddNoise",
-      "pos": [
-        -21200,
-        930
-      ],
-      "size": [
-        280,
-        110
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 16,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "image",
-          "type": "IMAGE",
-          "link": 3302
-        }
-      ],
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": [
-            3185
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "ImageAddNoise"
-      },
-      "widgets_values": [
-        9,
-        "fixed",
-        0.03
-      ]
-    },
-    {
-      "id": 1351,
-      "type": "NO8DSaveImageTextDataset",
-      "pos": [
-        -21200,
-        1110
-      ],
-      "size": [
-        600,
-        690
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 18,
-      "mode": 4,
-      "inputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 3201
-        },
-        {
-          "name": "caption",
-          "shape": 7,
-          "type": "STRING",
-          "link": null
-        },
-        {
-          "name": "metadata",
-          "shape": 7,
-          "type": "STRING",
-          "link": null
-        }
-      ],
-      "outputs": [],
-      "properties": {
-        "Node name for S&R": "NO8DSaveImageTextDataset"
-      },
-      "widgets_values": [
-        "",
-        "[{\"variable\":\"none\",\"text\":\"test\"}]",
-        "png",
-        100,
-        false
-      ],
-      "color": "#232",
-      "bgcolor": "#353"
     },
     {
       "id": 1301,
@@ -198,14 +65,14 @@
         {
           "name": "model",
           "type": "MODEL",
-          "links": [
-            3269
-          ]
+          "links": []
         },
         {
           "name": "trigger_words",
           "type": "STRING",
-          "links": []
+          "links": [
+            3307
+          ]
         }
       ],
       "properties": {
@@ -333,7 +200,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 13,
+      "order": 15,
       "mode": 0,
       "inputs": [
         {
@@ -351,9 +218,7 @@
         {
           "name": "LATENT",
           "type": "LATENT",
-          "links": [
-            3272
-          ]
+          "links": []
         }
       ],
       "properties": {
@@ -466,177 +331,9 @@
         0,
         0,
         1
-      ]
-    },
-    {
-      "id": 1390,
-      "type": "NO8DGenerate",
-      "pos": [
-        -23000,
-        -270
-      ],
-      "size": [
-        870,
-        1040
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 14,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 3269
-        },
-        {
-          "name": "positive",
-          "type": "CONDITIONING",
-          "link": 3270
-        },
-        {
-          "name": "vae",
-          "type": "VAE",
-          "link": 3271
-        },
-        {
-          "name": "latent",
-          "type": "LATENT",
-          "link": 3272
-        },
-        {
-          "name": "negative",
-          "shape": 7,
-          "type": "CONDITIONING",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "name": "image",
-          "type": "IMAGE",
-          "links": [
-            3300
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "NO8DGenerate",
-        "no8d_generate_preview": {
-          "filename": "ComfyUI_temp_hoivu_00004_.png",
-          "subfolder": "",
-          "type": "temp"
-        }
-      },
-      "widgets_values": [
-        9,
-        1,
-        "euler",
-        "kl_optimal",
-        9,
-        "fixed",
-        0.75,
-        50,
-        "",
-        "{\"base_image_file\":\"\",\"mask_image_file\":\"\",\"mask_active\":false,\"mask_tool\":null,\"mask_base_width\":0,\"mask_base_height\":0,\"brush_size\":80,\"eraser_size\":80,\"mask_opacity\":0.4,\"mask_color\":\"#66ccff\",\"invert\":false,\"strokes\":[]}"
       ],
       "color": "#232",
       "bgcolor": "#353"
-    },
-    {
-      "id": 1373,
-      "type": "PreviewImage",
-      "pos": [
-        -21280,
-        -270
-      ],
-      "size": [
-        780,
-        1040
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 19,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 3297
-        }
-      ],
-      "outputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "links": null
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "PreviewImage"
-      },
-      "widgets_values": []
-    },
-    {
-      "id": 1405,
-      "type": "NO8DABPreview",
-      "pos": [
-        -22110,
-        -270
-      ],
-      "size": [
-        810,
-        1040
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 15,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "image_a",
-          "shape": 7,
-          "type": "IMAGE",
-          "link": 3300
-        },
-        {
-          "name": "image_b",
-          "shape": 7,
-          "type": "IMAGE",
-          "link": 3301
-        }
-      ],
-      "outputs": [
-        {
-          "name": "image_a",
-          "type": "IMAGE",
-          "links": [
-            3302
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "NO8DABPreview",
-        "no8d_ab_preview": {
-          "a": {
-            "filename": "NO8DABPreview_A_temp_ebafk_00001_.png",
-            "subfolder": "",
-            "type": "temp"
-          },
-          "b": {
-            "filename": "NO8DABPreview_B_temp_ebafk_00001_.png",
-            "subfolder": "",
-            "type": "temp"
-          }
-        }
-      },
-      "widgets_values": [
-        true,
-        ""
-      ]
     },
     {
       "id": 1348,
@@ -662,98 +359,25 @@
           "shape": 6,
           "type": "IMAGE",
           "links": [
-            3280
+            3308
           ]
         }
       ],
       "properties": {
         "Node name for S&R": "NO8DLoadImages",
         "no8d_image_loader_source": "temp",
-        "no8d_image_loader_output_keys": [],
+        "no8d_image_loader_output_keys": [
+          "input//test_000008.png"
+        ],
         "no8d_image_loader_thumb_size": 400,
         "no8d_image_loader_prev_thumb_size": 380
       },
       "widgets_values": [
-        "[]",
-        "[]"
+        "[{\"name\":\"test_000008.png\",\"subfolder\":\"\",\"type\":\"input\",\"width\":3840,\"height\":2176,\"size\":25077973}]",
+        "[{\"name\":\"test_000008.png\",\"subfolder\":\"\",\"type\":\"input\",\"width\":3840,\"height\":2176,\"size\":25077973}]"
       ],
       "color": "#232",
       "bgcolor": "#353"
-    },
-    {
-      "id": 1400,
-      "type": "NO8DGenerate",
-      "pos": [
-        -23900,
-        -270
-      ],
-      "size": [
-        880,
-        1040
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 11,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 3291
-        },
-        {
-          "name": "positive",
-          "type": "CONDITIONING",
-          "link": 3286
-        },
-        {
-          "name": "vae",
-          "type": "VAE",
-          "link": 3287
-        },
-        {
-          "name": "latent",
-          "type": "LATENT",
-          "link": 3288
-        },
-        {
-          "name": "negative",
-          "shape": 7,
-          "type": "CONDITIONING",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "name": "image",
-          "type": "IMAGE",
-          "links": [
-            3289,
-            3301
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "NO8DGenerate",
-        "no8d_generate_preview": {
-          "filename": "ComfyUI_temp_tcepq_00004_.png",
-          "subfolder": "",
-          "type": "temp"
-        }
-      },
-      "widgets_values": [
-        6,
-        1,
-        "res_multistep",
-        "sgm_uniform",
-        636127152439150,
-        "randomize",
-        1,
-        60,
-        "",
-        "{\"base_image_file\":\"\",\"mask_image_file\":\"\",\"mask_active\":false,\"mask_tool\":null,\"mask_base_width\":0,\"mask_base_height\":0,\"brush_size\":80,\"eraser_size\":80,\"mask_opacity\":0.4,\"mask_color\":\"#66ccff\",\"invert\":false,\"strokes\":[]}"
-      ]
     },
     {
       "id": 989,
@@ -794,7 +418,6 @@
           "type": "CONDITIONING",
           "slot_index": 0,
           "links": [
-            3270,
             3286
           ]
         }
@@ -822,11 +445,126 @@
       ]
     },
     {
+      "id": 1399,
+      "type": "NO8DPromptView",
+      "pos": [
+        -23150,
+        1270
+      ],
+      "size": [
+        450,
+        530
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "Text",
+          "name": "text",
+          "shape": 7,
+          "type": "STRING",
+          "link": 3309
+        },
+        {
+          "name": "fixed_text",
+          "type": "STRING",
+          "widget": {
+            "name": "fixed_text"
+          },
+          "link": 3307
+        }
+      ],
+      "outputs": [
+        {
+          "label": "Positive",
+          "name": "positive",
+          "type": "STRING",
+          "links": [
+            3303
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DPromptView"
+      },
+      "widgets_values": [
+        true,
+        "",
+        "atmospheric photography.\nphotorealistic 3D rendered character illustration. medium shot; the camera is at subject eye level, front three-quarter view, subject angled slightly left relative to anthropomorphic teddy bear mascot; subject axis: upper center to lower center vertical; occupying about 32% of the frame. a standard lens keeps relatively natural spatial proportions. Seated on a jet ski; one furry hand grips the handlebar while the other arm is raised high in a waving gesture. Body faces slightly toward the viewer's left. Light tan fluffy fur; wears a brown visor cap with a small bear emblem, a white cropped t-shirt with red collar trim and two chest patches, and white shorts with thin red vertical stripes. Open tropical ocean with turquoise water stretching to the horizon; pale blue sky dotted with scattered fluffy white clouds. Bright natural daylight with soft, even illumination; warm sunny color palette of turquoise, blue, and cream.",
+        "0",
+        null
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1405,
+      "type": "NO8DABPreview",
+      "pos": [
+        -22590,
+        -270
+      ],
+      "size": [
+        1290,
+        1030
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image_a",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 3314
+        },
+        {
+          "name": "image_b",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image_a",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DABPreview",
+        "no8d_ab_preview": {
+          "a": {
+            "filename": "NO8DABPreview_A_temp_aeaoo_00001_.png",
+            "subfolder": "",
+            "type": "temp"
+          },
+          "b": {
+            "filename": "NO8DABPreview_B_temp_aeaoo_00001_.png",
+            "subfolder": "",
+            "type": "temp"
+          }
+        }
+      },
+      "widgets_values": [
+        true,
+        ""
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
       "id": 1154,
       "type": "Label (rgthree)",
       "pos": [
-        -23490,
-        -720
+        -23830,
+        -730
       ],
       "size": [
         2432.8125,
@@ -860,30 +598,7 @@
       "bgcolor": "#fff0"
     },
     {
-      "id": 1201,
-      "type": "MarkdownNote",
-      "pos": [
-        -21000,
-        -620
-      ],
-      "size": [
-        500,
-        120
-      ],
-      "flags": {},
-      "order": 6,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [],
-      "properties": {},
-      "widgets_values": [
-        "## [If you want to know more, you're welcome to join my community](https://patreon.com/no8d?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink)"
-      ],
-      "color": "#232",
-      "bgcolor": "#353"
-    },
-    {
-      "id": 1398,
+      "id": 1407,
       "type": "NO8DBatchPromptPlus",
       "pos": [
         -23150,
@@ -891,7 +606,7 @@
       ],
       "size": [
         450,
-        280
+        270
       ],
       "flags": {
         "pinned": true
@@ -904,7 +619,7 @@
           "name": "images",
           "shape": 7,
           "type": "IMAGE",
-          "link": 3280
+          "link": 3308
         }
       ],
       "outputs": [
@@ -914,7 +629,7 @@
           "shape": 6,
           "type": "STRING",
           "links": [
-            3283
+            3309
           ]
         }
       ],
@@ -928,55 +643,159 @@
         "Standard",
         "English",
         "",
-        9,
-        "fixed"
-      ]
+        0,
+        "randomize"
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
     },
     {
-      "id": 1399,
-      "type": "NO8DPromptView",
+      "id": 1351,
+      "type": "NO8DSaveImageTextDataset",
       "pos": [
-        -23150,
-        1270
+        -21280,
+        830
       ],
       "size": [
-        450,
-        530
+        580,
+        1070
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 3312
+        },
+        {
+          "name": "caption",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        },
+        {
+          "name": "metadata",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "NO8DSaveImageTextDataset"
+      },
+      "widgets_values": [
+        "",
+        "[{\"variable\":\"none\",\"text\":\"test\"}]",
+        "png",
+        100,
+        false
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1201,
+      "type": "MarkdownNote",
+      "pos": [
+        -21280,
+        510
+      ],
+      "size": [
+        580,
+        250
       ],
       "flags": {
         "pinned": true
       },
-      "order": 9,
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "## [If you want to know more, you're welcome to join my community](https://patreon.com/no8d?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink)"
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1400,
+      "type": "NO8DGenerate",
+      "pos": [
+        -23900,
+        -270
+      ],
+      "size": [
+        1300,
+        1030
+      ],
+      "flags": {},
+      "order": 11,
       "mode": 0,
       "inputs": [
         {
-          "label": "Text",
-          "name": "text",
+          "name": "model",
+          "type": "MODEL",
+          "link": 3291
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 3286
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 3287
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "link": 3288
+        },
+        {
+          "name": "negative",
           "shape": 7,
-          "type": "STRING",
-          "link": 3283
+          "type": "CONDITIONING",
+          "link": null
         }
       ],
       "outputs": [
         {
-          "label": "Positive",
-          "name": "positive",
-          "type": "STRING",
+          "name": "image",
+          "type": "IMAGE",
           "links": [
-            3303
+            3289,
+            3312,
+            3314
           ]
         }
       ],
       "properties": {
-        "Node name for S&R": "NO8DPromptView"
+        "Node name for S&R": "NO8DGenerate",
+        "no8d_generate_preview": {
+          "filename": "ComfyUI_temp_ilikl_00001_.png",
+          "subfolder": "",
+          "type": "temp"
+        }
       },
       "widgets_values": [
-        true,
+        9,
+        1,
+        "res_multistep",
+        "sgm_uniform",
+        544167400818282,
+        "randomize",
+        1,
+        60,
         "",
-        "",
-        "0",
-        null
-      ]
+        "{\"base_image_file\":\"\",\"mask_image_file\":\"\",\"mask_active\":false,\"mask_tool\":null,\"mask_base_width\":0,\"mask_base_height\":0,\"brush_size\":80,\"eraser_size\":80,\"mask_opacity\":0.4,\"mask_color\":\"#66ccff\",\"invert\":false,\"strokes\":[]}"
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
     }
   ],
   "links": [
@@ -1005,76 +824,12 @@
       "MODEL"
     ],
     [
-      3185,
-      1340,
-      0,
-      1344,
-      0,
-      "IMAGE"
-    ],
-    [
-      3201,
-      1344,
-      0,
-      1351,
-      0,
-      "IMAGE"
-    ],
-    [
       3218,
       1362,
       0,
       1268,
       1,
       "VAE"
-    ],
-    [
-      3269,
-      1301,
-      0,
-      1390,
-      0,
-      "MODEL"
-    ],
-    [
-      3270,
-      989,
-      0,
-      1390,
-      1,
-      "CONDITIONING"
-    ],
-    [
-      3271,
-      1362,
-      0,
-      1390,
-      2,
-      "VAE"
-    ],
-    [
-      3272,
-      1268,
-      0,
-      1390,
-      3,
-      "LATENT"
-    ],
-    [
-      3280,
-      1348,
-      0,
-      1398,
-      0,
-      "IMAGE"
-    ],
-    [
-      3283,
-      1398,
-      0,
-      1399,
-      0,
-      "STRING"
     ],
     [
       3286,
@@ -1117,44 +872,52 @@
       "MODEL"
     ],
     [
-      3297,
-      1344,
-      0,
-      1373,
-      0,
-      "IMAGE"
-    ],
-    [
-      3300,
-      1390,
-      0,
-      1405,
-      0,
-      "IMAGE"
-    ],
-    [
-      3301,
-      1400,
-      0,
-      1405,
-      1,
-      "IMAGE"
-    ],
-    [
-      3302,
-      1405,
-      0,
-      1340,
-      0,
-      "IMAGE"
-    ],
-    [
       3303,
       1399,
       0,
       989,
       1,
       "STRING"
+    ],
+    [
+      3307,
+      1301,
+      1,
+      1399,
+      1,
+      "STRING"
+    ],
+    [
+      3308,
+      1348,
+      0,
+      1407,
+      0,
+      "IMAGE"
+    ],
+    [
+      3309,
+      1407,
+      0,
+      1399,
+      0,
+      "STRING"
+    ],
+    [
+      3312,
+      1400,
+      0,
+      1351,
+      0,
+      "IMAGE"
+    ],
+    [
+      3314,
+      1400,
+      0,
+      1405,
+      0,
+      "IMAGE"
     ]
   ],
   "groups": [
@@ -1187,20 +950,6 @@
       }
     },
     {
-      "id": 5,
-      "title": "output",
-      "bounding": [
-        -21300,
-        800,
-        800,
-        1100
-      ],
-      "color": "#3f789e",
-      "flags": {
-        "pinned": true
-      }
-    },
-    {
       "id": 6,
       "title": "prompt",
       "bounding": [
@@ -1218,13 +967,13 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.3719008264462825,
+      "scale": 0.495000000000002,
       "offset": [
-        24574.923521270925,
-        772.7671808606332
+        24473.108749447754,
+        415.5573888268997
       ]
     },
-    "frontendVersion": "1.45.20",
+    "frontendVersion": "1.45.21",
     "workflowRendererVersion": "LG",
     "groupNodes": {},
     "ue_links": [],

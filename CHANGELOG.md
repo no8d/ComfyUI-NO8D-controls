@@ -6,6 +6,12 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.11] - 2026-07-17
+
+### Changed
+
+- Replaced the bundled example with the latest default NO8D-controls workflow while removing local save paths and private LoRA references from the public file.
+
 ## [1.0.10] - 2026-07-17
 
 ### Changed
