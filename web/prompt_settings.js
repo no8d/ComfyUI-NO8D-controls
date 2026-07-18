@@ -130,7 +130,7 @@ function searchableSelect(options, value, placeholder = "") {
             item.type = "button";
             item.textContent = name;
             item.title = name;
-            item.style.cssText = `display:block; width:100%; min-height:32px; border:0; border-radius:4px; background:${name === selected ? "#3b82f6" : "transparent"}; color:${name === selected ? "#fff" : "var(--input-text,#eee)"}; text-align:left; padding:6px 8px; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;`;
+            item.style.cssText = `display:block; width:100%; min-height:32px; border:0; border-radius:4px; background:${name === selected ? "#2563eb" : "transparent"}; color:${name === selected ? "#fff" : "var(--input-text,#eee)"}; text-align:left; padding:6px 8px; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;`;
             item.addEventListener("pointerdown", (event) => event.preventDefault());
             item.addEventListener("click", () => choose(name));
             list.appendChild(item);
@@ -262,6 +262,7 @@ function makeModal(titleText, width = "900px") {
     const overlay = document.createElement("div");
     overlay.style.cssText = "position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.55);";
     const dialog = document.createElement("div");
+    dialog.classList.add("no8d-ui", "no8d-panel");
     dialog.style.cssText = `width:min(${width}, calc(100vw - 48px)); max-height:calc(100vh - 64px); display:grid; grid-template-rows:auto 1fr auto; background:var(--comfy-menu-bg,#181818); color:var(--fg-color,#ddd); border:1px solid var(--border-color,#444); border-radius:8px; box-shadow:0 18px 48px rgba(0,0,0,0.45); overflow:hidden;`;
     const header = document.createElement("div");
     header.style.cssText = "display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border-color,#444);";
@@ -327,7 +328,7 @@ function showRuleManager(initialConfig, onSaved) {
                 "padding:0 38px 0 14px",
                 "border:1px solid var(--border-color,#444)",
                 "border-radius:6px",
-                `background:${rule.value === active ? "#3b82f6" : "var(--comfy-input-bg,#222)"}`,
+                `background:${rule.value === active ? "#2563eb" : "var(--comfy-input-bg,#222)"}`,
                 "color:var(--fg-color,#ddd)",
                 "font-weight:700",
                 "cursor:pointer",
@@ -498,7 +499,7 @@ function showApiManager(initialConfig, onSaved) {
             item.style.textAlign = "left";
             item.style.position = "relative";
             item.style.paddingRight = "38px";
-            item.style.background = service.id === state.selectedId ? "#3b82f6" : "var(--comfy-input-bg,#222)";
+            item.style.background = service.id === state.selectedId ? "#2563eb" : "var(--comfy-input-bg,#222)";
             item.title = serviceTypeLabel(service.type || "openai_compatible");
             item.onclick = (event) => {
                 if (event.detail > 1) return;
@@ -728,6 +729,7 @@ function showApiManager(initialConfig, onSaved) {
 
 function makeSettingsPanel() {
     const root = document.createElement("div");
+    root.classList.add("no8d-ui");
     root.style.cssText = "width:min(860px, 100%); display:flex; flex-direction:column; gap:16px; padding:12px 0; box-sizing:border-box;";
     const state = { config: { version: 1, current_service: "", prompt_rules: {}, services: [] } };
     const status = document.createElement("div");

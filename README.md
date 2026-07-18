@@ -88,6 +88,38 @@ Compare two image streams with an interactive split preview.
 - Supports list-page switching and single-stream history comparison.
 - Can pass image A downstream or disable that output branch.
 
+### NO8D-Krea2 Style Selector
+
+Browse Krea 2 styles visually and output the complete prompt for the selected style.
+
+![NO8D-Krea2 Style Selector](docs/images/krea2-style-selector-node.png)
+
+- Groups 285 styles into Photography, Anime & Illustration, Hand-Drawn Art, and Digital Art.
+- Shows nine responsive previews per page with mouse and keyboard navigation.
+- Displays localized style names while preserving the original English prompt output.
+
+![NO8D Image Title and Image Grid](docs/images/image-title-grid-nodes.png)
+
+### NO8D Image Grid
+
+Combine multiple image inputs or image batches into one image.
+
+- Arrange images horizontally, vertically, or in an automatic grid using the first image as the size reference.
+- Standard, left, center, and right crop modes keep the combined image content at the first image dimensions.
+- Crop modes expand the canvas for outer margins and center spacing, preserving image content and filling added areas with the background color.
+- Cropped images follow the layout direction: horizontal splits left/right, while vertical and one-column grids split top/bottom.
+- Use one value for the outer margin and image spacing; grid padding uses a darkened background color.
+
+### NO8D Image Title
+
+Add title bars outside the top or bottom edge, or overlay a title across the middle.
+
+- Set independent batch titles with one line per image; an entirely blank title list returns the source unchanged.
+- Control the title background, opacity, position, height, font size, padding, text color, and alignment.
+- Top and bottom bars increase output height; middle titles preserve the source dimensions.
+- Inner top and inner bottom positions overlay the image edges without changing output dimensions.
+- Title-bar opacity and height use percentages; bar height is relative to the source image height.
+
 ### NO8D save
 
 Save images and matching captions for image-text datasets.

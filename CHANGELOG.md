@@ -6,6 +6,18 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-19
+
+### Added
+
+- Added `NO8D-Krea2 Style Selector` with 285 visual style presets grouped into four categories, localized display names, keyboard and mouse paging, and canonical English prompt output.
+- Added `NO8D Image Grid` with autogrow image inputs, horizontal, vertical, and grid layouts, crop alignment, spacing, and background controls.
+- Added `NO8D Image Title` with per-image batch titles, outside, inside, and center positions, bar opacity and height, typography, color, and alignment controls.
+
+### Changed
+
+- Unified NO8D custom-node controls around a shared blue-accent UI theme and expanded English and Chinese node-title and widget localization.
+
 ## [1.0.11] - 2026-07-17
 
 ### Changed

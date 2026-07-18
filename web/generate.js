@@ -72,6 +72,7 @@ function selectNumberOnFocus(element) {
 function createSamplerPanel(node) {
     if (node._no8dGenerateSamplerPanel || typeof node.addDOMWidget !== "function") return;
     const root = document.createElement("div");
+    root.classList.add("no8d-ui");
     root.style.cssText = [
         "display:grid", "grid-template-rows:repeat(2,36px)", "gap:6px",
         "box-sizing:border-box", "width:100%", "height:96px", "padding:9px 8px",
@@ -165,8 +166,8 @@ function createSamplerPanel(node) {
         seed.value = String(findWidget(node, "seed")?.value ?? 0);
         const locked = String(control?.value || "randomize") === "fixed";
         lock.textContent = locked ? "🔒" : "🔓";
-        lock.style.background = locked ? "#102b4f" : "#303030";
-        lock.style.borderColor = locked ? "#3b82f6" : "#666";
+        lock.style.background = locked ? "#24272d" : "#303030";
+        lock.style.borderColor = locked ? "#2563eb" : "#666";
     };
     node._no8dGenerateSyncSampler = sync;
 
@@ -1546,6 +1547,7 @@ class NO8DGenerateCanvasWidget {
     openColorPicker(event, _buttonRect, nodePos) {
         this.valueEditorClose?.();
         const editor = document.createElement("div");
+        editor.classList.add("no8d-ui", "no8d-panel");
         const { presetGroup, valueGroup } = this.createEditorGroups(editor);
         this.activeEditor = { element: editor, height: EDITOR_HEIGHT };
         this.activeEditorAction = "mask_color";
@@ -1557,6 +1559,7 @@ class NO8DGenerateCanvasWidget {
         const presetButtons = [];
         for (const color of presets) {
             const preset = document.createElement("button");
+            preset.classList.add("no8d-color-swatch");
             preset.type = "button";
             preset.style.cssText = `width:32px;height:32px;border:1px solid #777;border-radius:3px;background:${color};cursor:pointer;`;
             preset.addEventListener("click", () => update(color));
@@ -1592,7 +1595,7 @@ class NO8DGenerateCanvasWidget {
             hexInput.value = this.maskColor.toUpperCase();
             for (const preset of presetButtons) {
                 const selected = preset.dataset.value === this.maskColor;
-                preset.style.outline = selected ? "2px solid #3b82f6" : "none";
+                preset.style.outline = selected ? "2px solid #2563eb" : "none";
                 preset.style.outlineOffset = selected ? "1px" : "0";
             }
             this.clearMaskOverlay();
@@ -1636,7 +1639,7 @@ class NO8DGenerateCanvasWidget {
         const min = action === "brush_size" ? 1 : action === "mask_feather" ? 0 : 5;
         const max = action === "brush_size" ? 512 : 100;
         const editor = document.createElement("div");
-        editor.className = "no8d-generate-value-editor";
+        editor.className = "no8d-generate-value-editor no8d-ui no8d-panel";
         const { presetGroup, valueGroup } = this.createEditorGroups(editor);
         this.activeEditor = { element: editor, height: EDITOR_HEIGHT };
         this.activeEditorAction = action;
@@ -1666,7 +1669,7 @@ class NO8DGenerateCanvasWidget {
         slider.max = String(max);
         slider.step = "1";
         slider.value = String(this.propertyValue(action));
-        slider.style.cssText = "flex:1 1 auto; min-width:0; accent-color:#3b82f6;";
+        slider.style.cssText = "flex:1 1 auto; min-width:0; accent-color:#2563eb;";
 
         const input = document.createElement("input");
         input.type = "number";
@@ -1690,7 +1693,7 @@ class NO8DGenerateCanvasWidget {
             for (const preset of presetButtons) {
                 const selected = Number(preset.dataset.value) === numeric;
                 preset.style.background = selected ? "#2563eb" : "#292929";
-                preset.style.borderColor = selected ? "#60a5fa" : "#555";
+                preset.style.borderColor = selected ? "#2563eb" : "#555";
             }
         };
         update(this.propertyValue(action));
