@@ -6,6 +6,12 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-07-19
+
+### Changed
+
+- Moved the `NO8D-Krea2 Style Selector` section to the beginning of the node overview in both English and Chinese documentation.
+
 ## [1.1.0] - 2026-07-19
 
 ### Added
