@@ -140,7 +140,7 @@ function makeButton(label, title, onClick) {
     button.type = "button";
     button.textContent = label;
     button.title = title || label;
-    button.style.cssText = "height:28px; min-width:34px; padding:0 10px; border:1px solid #3b82f6; border-radius:5px; background:#1f2937; color:#dbeafe; font-weight:700; cursor:pointer;";
+    button.style.cssText = "height:28px; min-width:34px; padding:0 10px; border:1px solid #2563eb; border-radius:5px; background:#24272d; color:#fff; font-weight:700; cursor:pointer;";
     button.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -195,7 +195,7 @@ function renderSaveUi(node) {
         handle.addEventListener("dragstart", (e) => {
             e.stopPropagation();
             row.style.opacity = "0.55";
-            row.style.outline = "1px solid #60a5fa";
+            row.style.outline = "1px solid #2563eb";
             e.dataTransfer.effectAllowed = "move";
             e.dataTransfer.setData("application/x-no8d-save-part-index", String(index));
         });
@@ -213,8 +213,8 @@ function renderSaveUi(node) {
             const rect = row.getBoundingClientRect();
             const after = e.clientY > rect.top + rect.height / 2;
             row.dataset.dropPosition = after ? "after" : "before";
-            row.style.background = "rgba(59,130,246,0.18)";
-            row.style.boxShadow = after ? "inset 0 -3px 0 #60a5fa" : "inset 0 3px 0 #60a5fa";
+            row.style.background = "rgba(37,99,235,0.18)";
+            row.style.boxShadow = after ? "inset 0 -3px 0 #2563eb" : "inset 0 3px 0 #2563eb";
         });
         row.addEventListener("dragleave", () => {
             row.style.background = "";
@@ -258,6 +258,7 @@ function renderSaveUi(node) {
 
 function makeSaveUi(node) {
     const root = document.createElement("div");
+    root.classList.add("no8d-ui");
     root.style.cssText = "display:flex; flex-direction:column; gap:8px; width:100%; height:100%; box-sizing:border-box; padding:0 8px 8px 8px; overflow:hidden;";
     registerBypassElement(node, root);
     const title = document.createElement("div");

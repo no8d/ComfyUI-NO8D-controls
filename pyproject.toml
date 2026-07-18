@@ -1,7 +1,7 @@
 [project]
 name = "no8d-controls"
-description = "NO8D custom nodes for LoRA stacking, image generation and mask editing, A/B preview, prompt captioning, image loading, and dataset saving in ComfyUI."
-version = "1.0.11"
+description = "NO8D custom nodes for LoRA stacking, prompt generation, image loading, generation and masking, style selection, image comparison and composition, and dataset saving in ComfyUI."
+version = "1.1.0"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 dependencies = ["json-repair>=0.61,<1"]

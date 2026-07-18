@@ -25,8 +25,8 @@ stackPassThroughStyle.textContent = `
     .no8d-stack-control { pointer-events: auto; }
     .no8d-stack-reordering .no8d-stack-row { pointer-events: auto; }
     .no8d-stack-dragging .no8d-stack-row { transition: transform 0.12s ease, background 0.12s ease, box-shadow 0.12s ease; }
-    .no8d-stack-drop-before { box-shadow: inset 0 3px 0 #60a5fa; background:#102b4f !important; }
-    .no8d-stack-drop-after { box-shadow: inset 0 -3px 0 #60a5fa; background:#102b4f !important; }
+    .no8d-stack-drop-before { box-shadow: inset 0 3px 0 #2563eb; background:#24272d !important; }
+    .no8d-stack-drop-after { box-shadow: inset 0 -3px 0 #2563eb; background:#24272d !important; }
 `;
 document.head.appendChild(stackPassThroughStyle);
 
@@ -268,7 +268,7 @@ function showLoraMenu(input, menu, options, entry, node) {
         item.textContent = opt;
         const selected = opt === entry.name;
         const active = idx === input._activeIndex;
-        item.style.cssText = `padding:6px 10px; cursor:pointer; color:#dbeafe; background:${active || selected ? "rgba(59,130,246,0.28)" : "#151b24"}; border-bottom:1px solid #263244; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px;`;
+        item.style.cssText = `padding:6px 10px; cursor:pointer; color:#fff; background:${active || selected ? "rgba(37,99,235,0.28)" : "#1b1e23"}; border-bottom:1px solid #34373e; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px;`;
         item.dataset.index = String(idx);
         item.addEventListener("pointerdown", (e) => {
             e.preventDefault();
@@ -294,7 +294,7 @@ function showLoraMenu(input, menu, options, entry, node) {
 function refreshMenuActive(input, menu) {
     const children = Array.from(menu.children);
     children.forEach((child, idx) => {
-        child.style.background = idx === input._activeIndex ? "rgba(59,130,246,0.32)" : "#151b24";
+        child.style.background = idx === input._activeIndex ? "rgba(37,99,235,0.32)" : "#1b1e23";
     });
     const active = children[input._activeIndex];
     if (active) active.scrollIntoView({ block: "nearest" });
@@ -394,8 +394,8 @@ function render(node) {
             e.dataTransfer.effectAllowed = "move";
             e.dataTransfer.dropEffect = "move";
             row.style.opacity = "0.45";
-            row.style.outline = "2px solid #60a5fa";
-            row.style.background = "#102b4f";
+            row.style.outline = "2px solid #2563eb";
+            row.style.background = "#24272d";
         });
         handle.addEventListener("dragend", () => {
             node._stackContainer?.classList.remove("no8d-stack-reordering", "no8d-stack-dragging");
@@ -412,7 +412,7 @@ function render(node) {
             writeStack(node);
             render(node);
         });
-        toggle.style.borderColor = entry.enabled ? "#3b82f6" : "#4b5563";
+        toggle.style.borderColor = entry.enabled ? "#2563eb" : "#4b5563";
         toggle.style.color = entry.enabled ? "#bfdbfe" : "#8aa0bd";
         setToggleIcon(toggle, entry.enabled);
         row.appendChild(toggle);
@@ -422,9 +422,9 @@ function render(node) {
         const sel = document.createElement("input");
         stopGraphEvents(sel);
         sel.value = shortLoraName(entry.name || "None");
-        sel.style.cssText = "height:28px; box-sizing:border-box; width:100%; min-width:0; background:#111827; color:#dbeafe; border:1px solid #2563eb; border-radius:4px; padding:3px 8px;";
+        sel.style.cssText = "height:28px; box-sizing:border-box; width:100%; min-width:0; background:#111318; color:#fff; border:1px solid #2563eb; border-radius:4px; padding:3px 8px;";
         const menu = document.createElement("div");
-        menu.style.cssText = "display:none; position:fixed; z-index:100000; max-height:260px; overflow:auto; border:1px solid #2563eb; border-radius:4px; background:#151b24; box-shadow:0 10px 24px rgba(0,0,0,0.45);";
+        menu.style.cssText = "display:none; position:fixed; z-index:100000; max-height:260px; overflow:auto; border:1px solid #2563eb; border-radius:4px; background:#1b1e23; box-shadow:0 10px 24px rgba(0,0,0,0.45);";
         menu.className = "no8d-stack-menu";
         document.body.appendChild(menu);
         node._stackMenus = node._stackMenus || [];
@@ -491,7 +491,7 @@ function render(node) {
         slider.step = String(WEIGHT_STEP);
         slider.value = String(clamp(Number(entry.weight || 0), Number(entry.min), Number(entry.max)));
         slider.disabled = !entry.enabled;
-        slider.style.cssText = "width:100%; accent-color:#5aa7ff;";
+        slider.style.cssText = "width:100%; accent-color:#2563eb;";
         stopGraphEvents(slider);
         slider.addEventListener("click", (e) => e.stopPropagation());
         slider.addEventListener("pointerdown", () => num.blur());
@@ -512,7 +512,7 @@ function render(node) {
         num.max = String(entry.max);
         num.value = formatWeight(entry.weight);
         num.disabled = !entry.enabled;
-        num.style.cssText = "height:28px; width:76px; background:#111827; color:#dbeafe; border:1px solid #2563eb; border-radius:4px; padding:3px 6px;";
+        num.style.cssText = "height:28px; width:76px; background:#111318; color:#fff; border:1px solid #2563eb; border-radius:4px; padding:3px 6px;";
         stopGraphEvents(num);
         num.addEventListener("click", (e) => e.stopPropagation());
         num.addEventListener("focus", () => num.select());
@@ -563,7 +563,7 @@ function render(node) {
 
         if (entry._editingRange) {
             const rangeRow = document.createElement("div");
-            rangeRow.style.cssText = "display:flex; align-items:center; gap:10px; padding:8px; border-bottom:1px solid #1e3a8a; background:#111d32; min-width:0; box-sizing:border-box; overflow:hidden;";
+            rangeRow.style.cssText = "display:flex; align-items:center; gap:10px; padding:8px; border-bottom:1px solid #2563eb; background:#1b1e23; min-width:0; box-sizing:border-box; overflow:hidden;";
             const rangeLeft = document.createElement("span");
             rangeLeft.style.cssText = "display:inline-flex; align-items:center; gap:12px; justify-content:flex-start; flex:1 1 auto; min-width:0; overflow:hidden;";
             const rangeRight = document.createElement("span");
@@ -581,7 +581,7 @@ function render(node) {
             minInput.type = "number";
             minInput.step = String(WEIGHT_STEP);
             minInput.value = formatWeight(entry.min);
-            minInput.style.cssText = "height:26px; width:78px; min-width:0; background:#111827; color:#dbeafe; border:1px solid #2563eb; border-radius:4px; padding:3px 6px;";
+            minInput.style.cssText = "height:26px; width:78px; min-width:0; background:#111318; color:#fff; border:1px solid #2563eb; border-radius:4px; padding:3px 6px;";
             stopGraphEvents(minInput);
             minInput.addEventListener("focus", () => minInput.select());
             bindWeightNumberKeys(minInput, () => minInput.value, (value) => {
@@ -594,7 +594,7 @@ function render(node) {
             maxInput.type = "number";
             maxInput.step = String(WEIGHT_STEP);
             maxInput.value = formatWeight(entry.max);
-            maxInput.style.cssText = "height:26px; width:78px; min-width:0; background:#111827; color:#dbeafe; border:1px solid #2563eb; border-radius:4px; padding:3px 6px;";
+            maxInput.style.cssText = "height:26px; width:78px; min-width:0; background:#111318; color:#fff; border:1px solid #2563eb; border-radius:4px; padding:3px 6px;";
             stopGraphEvents(maxInput);
             maxInput.addEventListener("focus", () => maxInput.select());
             bindWeightNumberKeys(maxInput, () => maxInput.value, (value) => {
@@ -609,7 +609,7 @@ function render(node) {
             triggerInput.type = "text";
             triggerInput.value = entry.trigger || "";
             triggerInput.placeholder = t("triggerWordsPlaceholder");
-            triggerInput.style.cssText = "height:26px; width:100%; min-width:0; background:#111827; color:#dbeafe; border:1px solid #2563eb; border-radius:4px; padding:3px 6px;";
+            triggerInput.style.cssText = "height:26px; width:100%; min-width:0; background:#111318; color:#fff; border:1px solid #2563eb; border-radius:4px; padding:3px 6px;";
             stopGraphEvents(triggerInput);
             triggerInput.addEventListener("focus", () => triggerInput.select());
             triggerInput.addEventListener("input", () => {
@@ -660,10 +660,12 @@ function attach(node) {
     node._stackEntries = readStack(node);
 
     const container = document.createElement("div");
+    container.classList.add("no8d-ui");
     container.style.cssText = "width:100%; max-width:100%; box-sizing:border-box; overflow:hidden; pointer-events:none;";
     registerBypassElement(node, container);
 
     const panel = document.createElement("div");
+    panel.classList.add("no8d-panel");
     panel.style.cssText = "width:100%; max-width:100%; box-sizing:border-box; background:#1f1f1f; border:1px solid #333; border-radius:6px; overflow:hidden; overscroll-behavior:contain; pointer-events:none;";
     node._stackContainer = panel;
 
@@ -675,7 +677,7 @@ function attach(node) {
         render(node);
     });
     add.style.width = "72px";
-    add.style.borderColor = "#3b82f6";
+    add.style.borderColor = "#2563eb";
     add.style.color = "#bfdbfe";
     const invert = makeButton(t("invertEnabled"), t("invertEnabledTitle"), () => {
         for (const entry of node._stackEntries || []) {
@@ -685,7 +687,7 @@ function attach(node) {
         render(node);
     });
     invert.style.width = "72px";
-    invert.style.borderColor = "#3b82f6";
+    invert.style.borderColor = "#2563eb";
     invert.style.color = "#bfdbfe";
     header.append(add, invert);
     panel.appendChild(header);

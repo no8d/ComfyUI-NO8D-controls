@@ -43,8 +43,8 @@ function ensureStyleSheet() {
     border-radius: 999px;
 }
 .no8d-image-loader-preview:focus {
-    border-color: #3b82f6 !important;
-    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35);
+    border-color: #2563eb !important;
+    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.35);
 }
 .dom-widget.no8d-image-loader-widget {
     box-sizing: border-box;
@@ -185,7 +185,7 @@ function updateSelectionUi(node) {
     for (const img of els.preview.querySelectorAll("[data-no8d-loader-thumb]")) {
         const index = Number(img.dataset.index);
         const isSelected = selected.has(index);
-        img.style.border = `${isSelected ? 3 : 1}px solid ${isSelected ? "#3b82f6" : "#4b5563"}`;
+        img.style.border = `${isSelected ? 3 : 1}px solid ${isSelected ? "#2563eb" : "#4b5563"}`;
     }
 }
 
@@ -585,7 +585,7 @@ function makeThumbItem(node, ref, index, size, selected) {
         `width:${size}px`,
         `height:${size}px`,
         "object-fit:contain",
-        `border:${isSelected ? 3 : 1}px solid ${isSelected ? "#3b82f6" : "#4b5563"}`,
+        `border:${isSelected ? 3 : 1}px solid ${isSelected ? "#2563eb" : "#4b5563"}`,
         "border-radius:4px",
         "background:#050505",
         "flex:0 0 auto",
@@ -666,7 +666,7 @@ function makeIconButton(label, icon, onClick) {
 function makeUi(node) {
     ensureStyleSheet();
     const root = document.createElement("div");
-    root.className = "no8d-image-loader";
+    root.className = "no8d-image-loader no8d-ui";
     root.style.cssText = [
         "position:relative",
         "width:100%",
@@ -681,6 +681,7 @@ function makeUi(node) {
     installDropUpload(node, root);
 
     const panel = document.createElement("div");
+    panel.classList.add("no8d-panel");
     panel.style.cssText = [
         "position:absolute",
         "inset:0",
@@ -719,10 +720,10 @@ function makeUi(node) {
     const maxIcon = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H3v5"/><path d="M3 3l7 7"/><path d="M16 3h5v5"/><path d="M21 3l-7 7"/><path d="M8 21H3v-5"/><path d="M3 21l7-7"/><path d="M16 21h5v-5"/><path d="M21 21l-7-7"/></svg>';
 
     const load = makeIconButton(t("imageLoaderLoad"), folderIcon, () => input.click());
-    load.style.borderColor = "#3b82f6";
+    load.style.borderColor = "#2563eb";
 
     const maxSize = makeIconButton(t("imageLoaderMaxThumbSize"), maxIcon, () => toggleMaxThumbSize(node));
-    maxSize.style.borderColor = "#3b82f6";
+    maxSize.style.borderColor = "#2563eb";
 
     const sizeLabel = document.createElement("div");
     sizeLabel.style.cssText = "color:#cbd5e1; white-space:nowrap; font-weight:600; flex:0 0 auto;";
