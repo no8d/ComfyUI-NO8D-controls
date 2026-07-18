@@ -26,6 +26,16 @@ An example workflow is included at [examples/NO8D-controls-example.json](example
 
 All nodes are available under the `NO8D-control` or `NO8D-controls` category.
 
+### NO8D-Krea2 Style Selector
+
+Browse Krea 2 styles visually and output the complete prompt for the selected style.
+
+![NO8D-Krea2 Style Selector](docs/images/krea2-style-selector-node.png)
+
+- Groups 285 styles into Photography, Anime & Illustration, Hand-Drawn Art, and Digital Art.
+- Shows nine responsive previews per page with mouse and keyboard navigation.
+- Displays localized style names while preserving the original English prompt output.
+
 ### NO8D-LoRA stack
 
 Manage multiple LoRAs in one node and apply them to a model without a CLIP input.
@@ -87,16 +97,6 @@ Compare two image streams with an interactive split preview.
 - Displays image A and image B with their original dimensions.
 - Supports list-page switching and single-stream history comparison.
 - Can pass image A downstream or disable that output branch.
-
-### NO8D-Krea2 Style Selector
-
-Browse Krea 2 styles visually and output the complete prompt for the selected style.
-
-![NO8D-Krea2 Style Selector](docs/images/krea2-style-selector-node.png)
-
-- Groups 285 styles into Photography, Anime & Illustration, Hand-Drawn Art, and Digital Art.
-- Shows nine responsive previews per page with mouse and keyboard navigation.
-- Displays localized style names while preserving the original English prompt output.
 
 ![NO8D Image Title and Image Grid](docs/images/image-title-grid-nodes.png)
 

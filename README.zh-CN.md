@@ -31,6 +31,16 @@ git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 
 所有节点位于 `NO8D-control` 或 `NO8D-controls` 分类。
 
+### NO8D-Krea2风格选择
+
+通过示意图浏览 Krea 2 风格，并输出当前选中风格的完整提示词。
+
+![NO8D-Krea2风格选择](docs/images/krea2-style-selector-node.png)
+
+- 将 285 种风格归入写实摄影、动漫插图、手绘艺术和数字艺术四个大类。
+- 每页显示九宫格示意图，支持鼠标和键盘操作。
+- 中文环境显示中文风格名称，同时保持原始英文提示词输出。
+
 ### NO8D-LoRA 堆栈
 
 在一个节点中管理多个 LoRA，并在不接入 CLIP 的情况下应用到模型。
@@ -92,16 +102,6 @@ git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 - 显示图像 A、图像 B 及其原始尺寸。
 - 支持列表翻页和单路图像历史对比。
 - 可把图像 A 传递到下游，也可关闭该输出分支。
-
-### NO8D-Krea2风格选择
-
-通过示意图浏览 Krea 2 风格，并输出当前选中风格的完整提示词。
-
-![NO8D-Krea2风格选择](docs/images/krea2-style-selector-node.png)
-
-- 将 285 种风格归入写实摄影、动漫插图、手绘艺术和数字艺术四个大类。
-- 每页显示九宫格示意图，支持鼠标和键盘操作。
-- 中文环境显示中文风格名称，同时保持原始英文提示词输出。
 
 ![NO8D-图片标题与多图拼接](docs/images/image-title-grid-nodes.png)
 
