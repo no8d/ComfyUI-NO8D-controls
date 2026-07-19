@@ -74,6 +74,7 @@ Load and organize one or more local images as a ComfyUI list output.
 ![NO8D-Load-images](docs/images/load-images-node.png)
 
 - Add images by file picker, drag-and-drop, or clipboard paste.
+- Automatically selects the first image in each newly imported batch.
 - Select, reorder, and preview individual images.
 - Sends only selected images downstream; selecting all outputs all images, while selecting none produces no output.
 

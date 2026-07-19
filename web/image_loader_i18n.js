@@ -428,8 +428,9 @@ function uploadImages(node, files, { append = false } = {}) {
                     size: meta.size || 0,
                 });
             }
-            node._no8dImageLoaderSelected = new Set();
-            requestScrollToIndex(node, append ? firstAddedIndex : 0);
+            node._no8dImageLoaderSelected = new Set([firstAddedIndex]);
+            node._no8dImageLoaderAnchor = firstAddedIndex;
+            requestScrollToIndex(node, firstAddedIndex);
             setImageAndOutputRefs(node, refs, []);
         } catch (error) {
             console.error("[NO8D-Load-images]", error);

@@ -79,6 +79,7 @@ git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 ![NO8D-图像载入](docs/images/load-images-node.png)
 
 - 支持文件选择、拖拽和剪贴板粘贴。
+- 每次导入后自动选中本批次的第一张图像。
 - 可选择、排序和预览单张图像。
 - 仅输出选中的图像；选中全部才输出全部，未选中任何图像时不输出。
 
