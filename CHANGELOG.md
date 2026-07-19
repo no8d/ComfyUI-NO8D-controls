@@ -6,6 +6,12 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-07-19
+
+### Changed
+
+- Made `NO8D-Load-images` automatically select the first image in each newly imported file-picker, drag-and-drop, or clipboard batch.
+
 ## [1.1.1] - 2026-07-19
 
 ### Changed
