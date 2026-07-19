@@ -6,6 +6,12 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-07-19
+
+### Changed
+
+- Documented the `NO8D-Krea2 Style Selector` arrow, page, home, and end keyboard shortcuts in both English and Chinese README files.
+
 ## [1.1.3] - 2026-07-19
 
 ### Changed
