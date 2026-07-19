@@ -36,6 +36,8 @@ Browse Krea 2 styles visually and output the complete prompt for the selected st
 
 - Groups 285 styles into Photography, Anime & Illustration, Hand-Drawn Art, and Digital Art.
 - Shows nine responsive previews per page with mouse and keyboard navigation.
+- When the gallery is focused, use the arrow keys to move through the 3×3 grid, including across page boundaries.
+- Use `PageUp` / `PageDown` to switch pages while keeping the same grid position, and `Home` / `End` to select the first or last style in the current category.
 - Displays localized style names while preserving the original English prompt output.
 
 ### NO8D-LoRA stack
