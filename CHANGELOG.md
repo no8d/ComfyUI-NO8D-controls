@@ -6,6 +6,12 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-07-19
+
+### Changed
+
+- Added light and full Patreon project-support links before and after the node overview in both English and Chinese documentation.
+
 ## [1.1.2] - 2026-07-19
 
 ### Changed

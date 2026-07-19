@@ -22,6 +22,8 @@ Restart ComfyUI and hard-refresh the browser page. No frontend build step is req
 
 An example workflow is included at [examples/NO8D-controls-example.json](examples/NO8D-controls-example.json).
 
+You can also follow NO8D on [Patreon](https://patreon.com/no8d) for project updates.
+
 ## Nodes
 
 All nodes are available under the `NO8D-control` or `NO8D-controls` category.
@@ -140,6 +142,10 @@ Create empty latents using common model-family and aspect-ratio presets.
 - Supports SD/SDXL, SD3/Flux/Krea2, and Flux2 presets.
 - Provides portrait and landscape aspect ratios.
 - Outputs the latent together with its calculated width and height.
+
+## Support the project
+
+If you find these nodes useful, follow the project on [Patreon](https://patreon.com/no8d) and support its continued development. Your support helps maintain the nodes and make future improvements possible.
 
 ## Prompt API configuration
 
