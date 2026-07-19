@@ -27,6 +27,8 @@ git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 
 项目内置示例工作流：[examples/NO8D-controls-example.json](examples/NO8D-controls-example.json)。
 
+也可以在 [Patreon](https://patreon.com/no8d) 关注 NO8D 的项目动态。
+
 ## 节点说明
 
 所有节点位于 `NO8D-control` 或 `NO8D-controls` 分类。
@@ -145,6 +147,10 @@ git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 - 支持 SD/SDXL、SD3/Flux/Krea2 和 Flux2 预设。
 - 提供常用竖图和横图比例。
 - 输出 latent 及计算后的宽度和高度。
+
+## 支持项目
+
+如果这个节点组对你有帮助，欢迎在 [Patreon](https://patreon.com/no8d) 关注项目动态并支持后续开发。你的支持将帮助节点持续维护和改进。
 
 ## 提示词 API
 
