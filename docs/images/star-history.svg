@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" role="img" aria-labelledby="title desc">
+  <title id="title">ComfyUI-NO8D-controls Star History</title>
+  <desc id="desc">Cumulative GitHub stars from 2026-06-20 to 2026-07-21, ending at 76 stars.</desc>
+  <defs>
+    <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2563eb" stop-opacity="0.36" />
+      <stop offset="100%" stop-color="#2563eb" stop-opacity="0.03" />
+    </linearGradient>
+  </defs>
+  <style>
+    .bg { fill: #ffffff; }
+    .title { fill: #1f2328; font: 700 26px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    .subtitle,.label,.axis-title { fill: #59636e; font: 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    .grid { stroke: #d8dee4; stroke-width: 1; }
+    .axis { stroke: #8c959f; stroke-width: 1.4; }
+    .line { fill: none; stroke: #2563eb; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+    .point { fill: #2563eb; stroke: #ffffff; stroke-width: 3; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .title { fill: #f0f6fc; }
+      .subtitle,.label,.axis-title { fill: #8b949e; }
+      .grid { stroke: #30363d; }
+      .axis { stroke: #6e7681; }
+      .point { stroke: #0d1117; }
+    }
+  </style>
+  <rect class="bg" width="1200" height="600" rx="14" />
+  <text class="title" x="90" y="48">no8d/ComfyUI-NO8D-controls</text>
+  <text class="subtitle" x="90" y="76">76 stars · Updated 2026-07-21</text>
+  <line class="grid" x1="90" y1="520.0" x2="1140" y2="520.0" />
+  <text class="label" x="74" y="525.0" text-anchor="end">0</text>
+  <line class="grid" x1="90" y1="415.0" x2="1140" y2="415.0" />
+  <text class="label" x="74" y="420.0" text-anchor="end">20</text>
+  <line class="grid" x1="90" y1="310.0" x2="1140" y2="310.0" />
+  <text class="label" x="74" y="315.0" text-anchor="end">40</text>
+  <line class="grid" x1="90" y1="205.0" x2="1140" y2="205.0" />
+  <text class="label" x="74" y="210.0" text-anchor="end">60</text>
+  <line class="grid" x1="90" y1="100.0" x2="1140" y2="100.0" />
+  <text class="label" x="74" y="105.0" text-anchor="end">80</text>
+  <line class="axis" x1="90" y1="100" x2="90" y2="520" />
+  <line class="axis" x1="90" y1="520" x2="1140" y2="520" />
+  <path d="M90.0 514.8 L123.9 514.8 L157.7 514.8 L191.6 514.8 L225.5 514.8 L259.4 509.5 L293.2 509.5 L327.1 509.5 L361.0 509.5 L394.8 504.3 L428.7 493.8 L462.6 493.8 L496.5 493.8 L530.3 488.5 L564.2 483.3 L598.1 483.3 L631.9 483.3 L665.8 483.3 L699.7 483.3 L733.5 478.0 L767.4 478.0 L801.3 478.0 L835.2 478.0 L869.0 478.0 L902.9 478.0 L936.8 478.0 L970.6 478.0 L1004.5 478.0 L1038.4 373.0 L1072.3 273.3 L1106.1 184.0 L1140.0 121.0 L 1140.0 520.0 L 90 520.0 Z" fill="url(#area)" />
+  <path class="line" d="M90.0 514.8 L123.9 514.8 L157.7 514.8 L191.6 514.8 L225.5 514.8 L259.4 509.5 L293.2 509.5 L327.1 509.5 L361.0 509.5 L394.8 504.3 L428.7 493.8 L462.6 493.8 L496.5 493.8 L530.3 488.5 L564.2 483.3 L598.1 483.3 L631.9 483.3 L665.8 483.3 L699.7 483.3 L733.5 478.0 L767.4 478.0 L801.3 478.0 L835.2 478.0 L869.0 478.0 L902.9 478.0 L936.8 478.0 L970.6 478.0 L1004.5 478.0 L1038.4 373.0 L1072.3 273.3 L1106.1 184.0 L1140.0 121.0" />
+  <circle class="point" cx="1140.0" cy="121.0" r="7" />
+  <text class="label" x="90.0" y="554" text-anchor="middle">2026-06-20</text>
+  <text class="label" x="361.0" y="554" text-anchor="middle">2026-06-28</text>
+  <text class="label" x="631.9" y="554" text-anchor="middle">2026-07-06</text>
+  <text class="label" x="869.0" y="554" text-anchor="middle">2026-07-13</text>
+  <text class="label" x="1140.0" y="554" text-anchor="middle">2026-07-21</text>
+  <text class="axis-title" x="24" y="310" text-anchor="middle" transform="rotate(-90 24 310)">GitHub stars</text>
+</svg>

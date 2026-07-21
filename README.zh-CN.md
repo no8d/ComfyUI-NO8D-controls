@@ -197,10 +197,4 @@ MIT。详见 [LICENSE](./LICENSE)。
 
 ## 项目增长记录
 
-<a href="https://www.star-history.com/?repos=no8d%2FComfyUI-NO8D-controls&type=date&legend=top-left">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=no8d/ComfyUI-NO8D-controls&type=Date&theme=dark">
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=no8d/ComfyUI-NO8D-controls&type=Date">
-    <img alt="NO8D 节点组 Star History 增长曲线" src="https://api.star-history.com/svg?repos=no8d/ComfyUI-NO8D-controls&type=Date">
-  </picture>
-</a>
+[![NO8D 节点组 Star History 增长曲线](docs/images/star-history.svg)](https://www.star-history.com/?repos=no8d%2FComfyUI-NO8D-controls&type=date&legend=top-left)
