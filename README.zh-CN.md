@@ -6,6 +6,10 @@
 
 ![ComfyUI-NO8D-controls](docs/images/no8d-control-banner-readme.jpg)
 
+## 快速导航
+
+[QQ 交流群](#qq-交流群) · [安装](#安装) · [节点说明](#节点说明) · [API 与 LLM 配置](#提示词-api-与-llm-配置) · [更多技巧](#更多使用技巧与实验性节点) · [许可证](#许可证) · [增长记录](#项目增长记录)
+
 ## QQ 交流群
 
 欢迎加入 **iAi互助会**，群号：`482570609`。
@@ -153,10 +157,6 @@ git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 - 提供常用竖图和横图比例。
 - 输出 latent 及计算后的宽度和高度。
 
-## 支持项目
-
-如果这个节点组对你有帮助，欢迎在 [Patreon](https://patreon.com/no8d) 关注项目动态并支持后续开发。你的支持将帮助节点持续维护和改进。
-
 ## 提示词 API 与 LLM 配置
 
 `NO8D-提示词` 会把文本或参考图发送给已配置的大语言模型（LLM），再返回生成后的提示词。节点支持连接 OpenAI 兼容 API，也支持本机运行的 Ollama 服务。
@@ -187,6 +187,20 @@ git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 
 API key 仅保存在本地 ComfyUI 环境中，请勿提交到仓库。
 
+## 更多使用技巧与实验性节点
+
+想了解更多使用技巧、工作流思路和实验性 NO8D 节点，欢迎前往 [Patreon](https://patreon.com/no8d)。你也可以在那里关注后续动态并支持项目持续开发。
+
 ## 许可证
 
 MIT。详见 [LICENSE](./LICENSE)。
+
+## 项目增长记录
+
+<a href="https://www.star-history.com/?repos=no8d%2FComfyUI-NO8D-controls&type=date&legend=top-left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=no8d/ComfyUI-NO8D-controls&type=Date&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=no8d/ComfyUI-NO8D-controls&type=Date">
+    <img alt="NO8D 节点组 Star History 增长曲线" src="https://api.star-history.com/svg?repos=no8d/ComfyUI-NO8D-controls&type=Date">
+  </picture>
+</a>
