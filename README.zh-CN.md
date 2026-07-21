@@ -59,11 +59,14 @@ git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 
 通过配置好的 API 扩写文本、反推参考图，或结合文本与图像生成完整正向提示词。
 
+> **首次使用前必须配置：** 该节点只是 API 客户端，本身不包含 LLM。请先连接 OpenAI 兼容 API 或本地 Ollama 服务，具体步骤见[提示词 API 与 LLM 配置](#提示词-api-与-llm-配置)。
+
 ![NO8D-提示词](docs/images/prompt-plus-node.png)
 
 - 支持纯文本、纯图像和文本加图像三种输入。
 - 提供风格、景别和提示词长度控制。
 - 可分别选择文本模型和图像模型。
+- 纯文本提示词需要文本 LLM；参考图反推需要支持图像输入的视觉/多模态模型。
 
 ### NO8D-提示词预览
 
@@ -154,9 +157,35 @@ git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 
 如果这个节点组对你有帮助，欢迎在 [Patreon](https://patreon.com/no8d) 关注项目动态并支持后续开发。你的支持将帮助节点持续维护和改进。
 
-## 提示词 API
+## 提示词 API 与 LLM 配置
 
-可在 NO8D 提示词设置面板中配置 API 服务、模型和提示词规则，支持 OpenAI 兼容接口和本地兼容接口。API key 仅保存在本地 ComfyUI 环境中，请勿提交到仓库。
+`NO8D-提示词` 会把文本或参考图发送给已配置的大语言模型（LLM），再返回生成后的提示词。节点支持连接 OpenAI 兼容 API，也支持本机运行的 Ollama 服务。
+
+### 1. 打开 API 管理器
+
+打开 **ComfyUI 设置**，在左侧选择 **NO8D-control**，然后在 Prompt 面板的 **Prompt API configuration（提示词 API 配置）**一栏点击 **API Manager**。
+
+![从 ComfyUI 设置打开 NO8D 提示词 API 管理器](docs/images/prompt-api-settings-entry.png)
+
+### 2. 添加并验证服务
+
+1. 在左侧选择已有服务，或点击 **+ Add service（添加服务）**。
+2. 服务类型选择 **OpenAI-compatible API（OpenAI 兼容 API）**或 **Local LLM (Ollama)（本地 LLM）**。
+3. 填写服务商提供的 **Base URL**，并按需填写 **API key**；本地 Ollama 不需要 API key。
+4. 点击 **Validate API（验证 API）**。验证成功后，从模型列表中选择文本模型和视觉模型。
+5. 点击 **Save（保存）**。
+
+![配置并验证 LLM 服务](docs/images/prompt-api-manager.png)
+
+### 3. 选择正确的模型
+
+- **文本模型：**用于扩写文本和生成纯文本提示词。
+- **视觉模型：**用于纯图像或文本加图像的提示词生成，必须支持图像输入。
+- 如果一个多模态模型同时支持文本和图像输入，也可以同时用于两种任务。
+
+保存后回到 Prompt 设置页，在 **Default prompt API（默认提示词 API）**中选中刚才配置的服务。如果没有显示模型，请检查 Base URL 和 API key，然后重新验证；使用 Ollama 时，还需确认 Ollama 已启动并已在本地安装所需模型。
+
+API key 仅保存在本地 ComfyUI 环境中，请勿提交到仓库。
 
 ## 许可证
 
