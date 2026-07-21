@@ -153,10 +153,6 @@ git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 - 提供常用竖图和横图比例。
 - 输出 latent 及计算后的宽度和高度。
 
-## 支持项目
-
-如果这个节点组对你有帮助，欢迎在 [Patreon](https://patreon.com/no8d) 关注项目动态并支持后续开发。你的支持将帮助节点持续维护和改进。
-
 ## 提示词 API 与 LLM 配置
 
 `NO8D-提示词` 会把文本或参考图发送给已配置的大语言模型（LLM），再返回生成后的提示词。节点支持连接 OpenAI 兼容 API，也支持本机运行的 Ollama 服务。
@@ -186,6 +182,10 @@ git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 保存后回到 Prompt 设置页，在 **Default prompt API（默认提示词 API）**中选中刚才配置的服务。如果没有显示模型，请检查 Base URL 和 API key，然后重新验证；使用 Ollama 时，还需确认 Ollama 已启动并已在本地安装所需模型。
 
 API key 仅保存在本地 ComfyUI 环境中，请勿提交到仓库。
+
+## 更多使用技巧与实验性节点
+
+想了解更多使用技巧、工作流思路和实验性 NO8D 节点，欢迎前往 [Patreon](https://patreon.com/no8d)。你也可以在那里关注后续动态并支持项目持续开发。
 
 ## 许可证
 

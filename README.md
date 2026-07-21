@@ -148,10 +148,6 @@ Create empty latents using common model-family and aspect-ratio presets.
 - Provides portrait and landscape aspect ratios.
 - Outputs the latent together with its calculated width and height.
 
-## Support the project
-
-If you find these nodes useful, follow the project on [Patreon](https://patreon.com/no8d) and support its continued development. Your support helps maintain the nodes and make future improvements possible.
-
 ## Prompt API and LLM configuration
 
 `NO8D-Prompt` sends your text or reference image to a configured large language model (LLM), then returns the generated prompt. It can connect to an OpenAI-compatible API or a locally running Ollama service.
@@ -181,6 +177,10 @@ Open **ComfyUI Settings**, select **NO8D-control** in the left sidebar, then cli
 After saving, return to the Prompt settings page and select the service under **Default prompt API**. If no models appear, check the Base URL and API key, then validate the service again. For Ollama, make sure Ollama is running and the required model is already installed locally.
 
 API keys remain in the local ComfyUI environment and should never be committed to the repository.
+
+## More tips and experimental nodes
+
+For more usage tips, workflow ideas, and experimental NO8D nodes, visit [Patreon](https://patreon.com/no8d). You can also follow ongoing updates and support the project's continued development there.
 
 ## License
 
