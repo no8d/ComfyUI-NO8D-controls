@@ -54,11 +54,14 @@ Manage multiple LoRAs in one node and apply them to a model without a CLIP input
 
 Expand text, analyze a reference image, or combine both into a complete positive prompt through a configured API.
 
+> **Before first use:** This node is an API client and does not include an LLM. Configure an OpenAI-compatible API or a local Ollama service first. See [Prompt API and LLM configuration](#prompt-api-and-llm-configuration).
+
 ![NO8D-Prompt](docs/images/prompt-plus-node.png)
 
 - Supports text-only, image-only, and text-plus-image input.
 - Provides style, shot-scale, and prompt-length controls.
 - Allows separate text and vision model selection.
+- Text-only prompting requires a text-capable LLM; reference-image analysis requires a vision-capable multimodal model.
 
 ### NO8D-Prompt-view
 
@@ -149,9 +152,35 @@ Create empty latents using common model-family and aspect-ratio presets.
 
 If you find these nodes useful, follow the project on [Patreon](https://patreon.com/no8d) and support its continued development. Your support helps maintain the nodes and make future improvements possible.
 
-## Prompt API configuration
+## Prompt API and LLM configuration
 
-Configure API services, models, and prompt rules from the NO8D prompt settings panel. OpenAI-compatible and local compatible APIs are supported. API keys remain in the local ComfyUI environment and should not be committed.
+`NO8D-Prompt` sends your text or reference image to a configured large language model (LLM), then returns the generated prompt. It can connect to an OpenAI-compatible API or a locally running Ollama service.
+
+### 1. Open the API Manager
+
+Open **ComfyUI Settings**, select **NO8D-control** in the left sidebar, then click **API Manager** under **Prompt API configuration** in the Prompt panel.
+
+![Open NO8D Prompt API Manager from ComfyUI settings](docs/images/prompt-api-settings-entry.png)
+
+### 2. Add and validate a service
+
+1. Select an existing service on the left, or click **+ Add service**.
+2. Choose **OpenAI-compatible API** or **Local LLM (Ollama)** as the service type.
+3. Enter the provider's **Base URL** and **API key** if required. A local Ollama service does not require an API key.
+4. Click **Validate API**. After validation succeeds, choose the available text and vision models.
+5. Click **Save**.
+
+![Configure and validate an LLM service](docs/images/prompt-api-manager.png)
+
+### 3. Choose the right model
+
+- **Text model:** used for text expansion and text-only prompt generation.
+- **Vision model:** used for image-only and text-plus-image prompting; it must support image input.
+- A multimodal model may be selected for both roles if it supports text and image input.
+
+After saving, return to the Prompt settings page and select the service under **Default prompt API**. If no models appear, check the Base URL and API key, then validate the service again. For Ollama, make sure Ollama is running and the required model is already installed locally.
+
+API keys remain in the local ComfyUI environment and should never be committed to the repository.
 
 ## License
 
