@@ -9,6 +9,10 @@ This custom node pack provides an end-to-end optimization solution covering the 
 
 ![ComfyUI-NO8D-controls](docs/images/no8d-control-banner-readme.jpg)
 
+## Quick navigation
+
+[Installation](#installation) · [Nodes](#nodes) · [Prompt API & LLM](#prompt-api-and-llm-configuration) · [More tips](#more-tips-and-experimental-nodes) · [License](#license) · [Star History](#star-history)
+
 ## Installation
 
 Clone the repository into `ComfyUI/custom_nodes`:
@@ -185,3 +189,13 @@ For more usage tips, workflow ideas, and experimental NO8D nodes, visit [Patreon
 ## License
 
 MIT. See [LICENSE](./LICENSE).
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=no8d%2FComfyUI-NO8D-controls&type=date&legend=top-left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=no8d/ComfyUI-NO8D-controls&type=Date&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=no8d/ComfyUI-NO8D-controls&type=Date">
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=no8d/ComfyUI-NO8D-controls&type=Date">
+  </picture>
+</a>
