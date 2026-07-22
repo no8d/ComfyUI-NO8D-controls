@@ -1,10 +1,10 @@
 [project]
 name = "no8d-controls"
 description = "NO8D custom nodes for LoRA stacking, prompt generation, image loading, generation and masking, style selection, image comparison and composition, and dataset saving in ComfyUI."
-version = "1.1.4"
+version = "1.2.0"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
-dependencies = ["json-repair>=0.61,<1"]
+dependencies = ["json-repair>=0.61,<1", "openpyxl>=3.1,<4"]
 classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",

@@ -26,23 +26,28 @@ Restart ComfyUI and hard-refresh the browser page. No frontend build step is req
 
 An example workflow is included at [examples/NO8D-controls-example.json](examples/NO8D-controls-example.json).
 
+The Prompt Libraries example is available at [examples/NO8D-Prompt-libraries.json](examples/NO8D-Prompt-libraries.json).
+
 You can also follow NO8D on [Patreon](https://patreon.com/no8d) for project updates.
 
 ## Nodes
 
 All nodes are available under the `NO8D-control` or `NO8D-controls` category.
 
-### NO8D-Krea2 Style Selector
+### NO8D-Prompt-libraries
 
-Browse Krea 2 styles visually and output the complete prompt for the selected style.
+Browse, manage, and combine reusable prompt libraries visually.
 
-![NO8D-Krea2 Style Selector](docs/images/krea2-style-selector-node.png)
+![NO8D-Prompt-libraries](docs/images/krea2-style-selector-node.png)
 
-- Groups 285 styles into Photography, Anime & Illustration, Hand-Drawn Art, and Digital Art.
-- Shows nine responsive previews per page with mouse and keyboard navigation.
-- When the gallery is focused, use the arrow keys to move through the 3×3 grid, including across page boundaries.
-- Use `PageUp` / `PageDown` to switch pages while keeping the same grid position, and `Home` / `End` to select the first or last style in the current category.
-- Displays localized style names while preserving the original English prompt output.
+- Starts empty; four optional XLSX libraries are bundled in `data/krea_style_libraries/` for manual import.
+- Imports TXT, CSV, XLSX, and public Google Sheets, with search, favorites, history, editing, and portable export.
+- Supports single, multiple, all, or random card output and preserves prompts exactly as stored.
+- Supports mouse navigation and `Arrow`, `PageUp`, `PageDown`, `Home`, and `End` shortcuts.
+
+### NO8D-Prompt Merge
+
+Merge outputs from multiple Prompt Libraries or other text nodes into one prompt, following the visible input-port order.
 
 ### NO8D-LoRA stack
 
