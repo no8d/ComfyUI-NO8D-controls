@@ -9,6 +9,7 @@ node.zip
 # this explicit so local and CI packaging stay aligned.
 .ruff_cache/
 __pycache__/
+user_data/
 *.py[cod]
 *.log
 *.tmp

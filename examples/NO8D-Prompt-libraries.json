@@ -1,0 +1,752 @@
+{
+  "id": "9f57f238-9e02-48d1-a14a-bea29d62a04c",
+  "revision": 0,
+  "last_node_id": 1442,
+  "last_link_id": 3377,
+  "nodes": [
+    {
+      "id": 1154,
+      "type": "Label (rgthree)",
+      "pos": [
+        -23790,
+        -720
+      ],
+      "size": [
+        3080,
+        240
+      ],
+      "flags": {
+        "pinned": true,
+        "allow_interaction": false
+      },
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "🥸NO8D-Controls Krea 2✨",
+      "properties": {
+        "fontSize": 240,
+        "fontFamily": "Arial",
+        "fontColor": "orange",
+        "textAlign": "left",
+        "backgroundColor": "transparent",
+        "padding": 0,
+        "borderRadius": 0,
+        "angle": 0,
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "color": "#fff0",
+      "bgcolor": "#fff0"
+    },
+    {
+      "id": 1433,
+      "type": "NO8DPromptView",
+      "pos": [
+        -24300,
+        930
+      ],
+      "size": [
+        550,
+        270
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "Text",
+          "name": "text",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "Positive",
+          "name": "positive",
+          "type": "STRING",
+          "links": [
+            3364
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DPromptView"
+      },
+      "widgets_values": [
+        true,
+        "",
+        "A portrait of a young white female model with red hair, twin ponytails, some bangs with platinum highlights, wearing pink round glasses. red background.",
+        "0",
+        null
+      ]
+    },
+    {
+      "id": 1387,
+      "type": "VAELoader",
+      "pos": [
+        -22800,
+        2540
+      ],
+      "size": [
+        500,
+        60
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            3376
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "Wan2.1_VAE_upscale2x_imageonly_real_v1.safetensors"
+      ]
+    },
+    {
+      "id": 989,
+      "type": "CLIPTextEncode",
+      "pos": [
+        -22800,
+        2390
+      ],
+      "size": [
+        500,
+        90
+      ],
+      "flags": {
+        "collapsed": false,
+        "pinned": true
+      },
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 2270
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": 3369
+        }
+      ],
+      "outputs": [
+        {
+          "label": "条件",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "slot_index": 0,
+          "links": [
+            3375
+          ]
+        }
+      ],
+      "title": "CLIP Text Encode (Positive Prompt)",
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode",
+        "cnr_id": "comfy-core",
+        "ver": "0.8.2",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65,
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        ""
+      ]
+    },
+    {
+      "id": 913,
+      "type": "CLIPLoader",
+      "pos": [
+        -22800,
+        2220
+      ],
+      "size": [
+        500,
+        110
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            2270
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader",
+        "cnr_id": "comfy-core",
+        "ver": "0.8.2",
+        "models": [
+          {
+            "name": "qwen_3_8b_fp8mixed.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/flux2-klein-9B/resolve/main/split_files/text_encoders/qwen_3_8b_fp8mixed.safetensors",
+            "directory": "text_encoders"
+          }
+        ],
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65,
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "qwen3vl_4b_fp8_scaled.safetensors",
+        "krea2",
+        "default"
+      ]
+    },
+    {
+      "id": 1438,
+      "type": "NO8DPromptMerge",
+      "pos": [
+        -23610,
+        1130
+      ],
+      "size": [
+        300,
+        110
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "prompt_0",
+          "name": "prompts.prompt_0",
+          "type": "STRING",
+          "link": 3364
+        },
+        {
+          "label": "prompt_1",
+          "name": "prompts.prompt_1",
+          "type": "STRING",
+          "link": 3365
+        },
+        {
+          "label": "prompt_2",
+          "name": "prompts.prompt_2",
+          "shape": 7,
+          "type": "STRING",
+          "link": 3371
+        },
+        {
+          "label": "prompt_3",
+          "name": "prompts.prompt_3",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "links": [
+            3368
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DPromptMerge"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 1439,
+      "type": "NO8DPromptView",
+      "pos": [
+        -23610,
+        1330
+      ],
+      "size": [
+        610,
+        970
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "Text",
+          "name": "text",
+          "shape": 7,
+          "type": "STRING",
+          "link": 3368
+        }
+      ],
+      "outputs": [
+        {
+          "label": "Positive",
+          "name": "positive",
+          "type": "STRING",
+          "links": [
+            3369
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DPromptView"
+      },
+      "widgets_values": [
+        true,
+        "",
+        "A portrait of a young white female model with red hair, twin ponytails, some bangs with platinum highlights, wearing pink round glasses. red background.\naggression_hostility: A fierce animal-like snarl. Her upper lip curls high to bare the canine teeth and upper gums, the nose wrinkles into deep folds, the nostrils flare, and the mouth corners pull sharply backward. Her jaw thrusts forward so both rows of teeth are visible, while her eyes narrow into a hard threatening stare beneath lowered brows.\ndigital_art: cinematic worldbuilding aesthetics emphasizing expansive visual depth, seamless environmental integration, refined lighting gradients, realistic atmospheric perspective, meticulously crafted detail distribution, and a strong sense of scale, creating immersive and believable imagery through polished rendering, subtle mood construction, and production-quality visual storytelling, reminiscent of Dylan Cole and Craig Mullins, inspired by The Lord of the Rings film matte paintings and Avatar.",
+        "0",
+        null
+      ]
+    },
+    {
+      "id": 1246,
+      "type": "UNETLoader",
+      "pos": [
+        -22800,
+        2070
+      ],
+      "size": [
+        500,
+        90
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            3372
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader",
+        "cnr_id": "comfy-core",
+        "ver": "0.25.0",
+        "models": [
+          {
+            "name": "krea2_turbo_fp8_scaled.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/diffusion_models/krea2_turbo_fp8_scaled.safetensors",
+            "directory": "diffusion_models"
+          }
+        ]
+      },
+      "widgets_values": [
+        "krea2_turbo_int8_convrot-b19a4f0be264.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 1441,
+      "type": "NO8DLoraStack",
+      "pos": [
+        -22800,
+        1630
+      ],
+      "size": [
+        500,
+        380
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 3372
+        }
+      ],
+      "outputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "links": [
+            3374
+          ]
+        },
+        {
+          "name": "trigger_words",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DLoraStack"
+      },
+      "widgets_values": [
+        "None",
+        "[{\"id\":\"1784731145077_95470a3cc7c51\",\"name\":\"Krea2-CivitAI\\\\Krea2_TextFusion_Refusal_Reduction.safetensors\",\"weight\":1,\"min\":-2,\"max\":2,\"enabled\":true,\"trigger\":\"\"}]",
+        ""
+      ]
+    },
+    {
+      "id": 1442,
+      "type": "NO8DGenerate",
+      "pos": [
+        -22900,
+        830
+      ],
+      "size": [
+        700,
+        670
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 3374
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 3375
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 3376
+        },
+        {
+          "name": "image",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "negative",
+          "shape": 7,
+          "type": "CONDITIONING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DGenerate",
+        "no8d_generate_preview": {
+          "filename": "ComfyUI_temp_ycojk_00002_.png",
+          "subfolder": "",
+          "type": "temp"
+        }
+      },
+      "widgets_values": [
+        6,
+        1,
+        "euler",
+        "simple",
+        333318706060617,
+        "randomize",
+        1,
+        50,
+        "",
+        "{\"base_image_file\":\"\",\"source_image_file\":\"\",\"mask_image_file\":\"\",\"mask_active\":false,\"outpaint_active\":false,\"mask_tool\":null,\"mask_base_width\":1536,\"mask_base_height\":1024,\"brush_size\":80,\"eraser_size\":80,\"mask_opacity\":0.4,\"mask_color\":\"#66ccff\",\"mask_render_version\":2,\"aspect_ratio\":\"2:3\",\"short_side\":1024,\"swap_dimensions\":true,\"canvas_width\":1536,\"canvas_height\":1024,\"transform_active\":false,\"image_transform\":{\"x\":0,\"y\":0,\"width\":1024,\"height\":1024},\"invert\":false,\"strokes\":[]}"
+      ]
+    },
+    {
+      "id": 1436,
+      "type": "NO8DKreaStyleSelector",
+      "pos": [
+        -24300,
+        1270
+      ],
+      "size": [
+        550,
+        600
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "shape": 6,
+          "type": "STRING",
+          "links": [
+            3365
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DKreaStyleSelector"
+      },
+      "widgets_values": [
+        "",
+        "",
+        true,
+        "[\"Expression 001\"]",
+        false,
+        false,
+        ""
+      ]
+    },
+    {
+      "id": 1440,
+      "type": "NO8DKreaStyleSelector",
+      "pos": [
+        -24300,
+        1950
+      ],
+      "size": [
+        550,
+        600
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "shape": 6,
+          "type": "STRING",
+          "links": [
+            3371
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DKreaStyleSelector"
+      },
+      "widgets_values": [
+        "",
+        "",
+        true,
+        "[\"Atmospheric Matte Painting\"]",
+        false,
+        false,
+        ""
+      ]
+    }
+  ],
+  "links": [
+    [
+      2270,
+      913,
+      0,
+      989,
+      0,
+      "CLIP"
+    ],
+    [
+      3364,
+      1433,
+      0,
+      1438,
+      0,
+      "STRING"
+    ],
+    [
+      3365,
+      1436,
+      0,
+      1438,
+      1,
+      "STRING"
+    ],
+    [
+      3368,
+      1438,
+      0,
+      1439,
+      0,
+      "STRING"
+    ],
+    [
+      3369,
+      1439,
+      0,
+      989,
+      1,
+      "STRING"
+    ],
+    [
+      3371,
+      1440,
+      0,
+      1438,
+      2,
+      "STRING"
+    ],
+    [
+      3372,
+      1246,
+      0,
+      1441,
+      0,
+      "MODEL"
+    ],
+    [
+      3374,
+      1441,
+      0,
+      1442,
+      0,
+      "MODEL"
+    ],
+    [
+      3375,
+      989,
+      0,
+      1442,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      3376,
+      1387,
+      0,
+      1442,
+      2,
+      "VAE"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "2k",
+      "bounding": [
+        1310,
+        -1950,
+        1200,
+        900
+      ],
+      "color": "#3f789e",
+      "flags": {
+        "pinned": true
+      }
+    },
+    {
+      "id": 3,
+      "title": "krea2",
+      "bounding": [
+        -22900,
+        1500,
+        700,
+        1200
+      ],
+      "color": "#3f789e",
+      "flags": {
+        "pinned": true
+      }
+    },
+    {
+      "id": 6,
+      "title": "prompt",
+      "bounding": [
+        -24400,
+        800,
+        1500,
+        1900
+      ],
+      "color": "#3f789e",
+      "flags": {
+        "pinned": true
+      }
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.48225308641975323,
+      "offset": [
+        25056.38539828456,
+        -554.3591077334534
+      ]
+    },
+    "frontendVersion": "1.45.21",
+    "workflowRendererVersion": "LG",
+    "groupNodes": {},
+    "ue_links": [],
+    "node_versions": {
+      "comfy-core": "0.3.14",
+      "ComfyUI-DepthAnythingV2": "003d7b44bafd3a8a4c3693a9ca3ddcd72f4883ab",
+      "ComfyUI-AutomaticCFG": "2e395317b65c05a97a0ef566c4a8c7969305dafa",
+      "teacache": "1.2.2",
+      "ComfyUI-Custom-Scripts": "bc8922deff73f59311c05cef27b9d4caaf43e87b",
+      "ComfyUI_Comfyroll_CustomNodes": "d78b780ae43fcf8c6b7c6505e6ffb4584281ceca",
+      "ComfyUI-post-processing-nodes": "c49a05254795403648f2c1774b6f5ea39f96e7d5",
+      "was-node-suite-comfyui": "056badacda52e88d29d6a65f9509cd3115ace0f2",
+      "ComfyUI_UltimateSDUpscale": "ff3fdfeee03de46d4462211cffd165d27155e858",
+      "comfyui-dynamicprompts": "3f2fff32358cf39e21b8b440ca87eac9a8e2bade"
+    },
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true,
+    "links_added_by_ue": []
+  },
+  "version": 0.4
+}

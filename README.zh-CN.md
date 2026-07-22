@@ -31,23 +31,28 @@ git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 
 项目内置示例工作流：[examples/NO8D-controls-example.json](examples/NO8D-controls-example.json)。
 
+Prompt Libraries 专属工作流：[examples/NO8D-Prompt-libraries.json](examples/NO8D-Prompt-libraries.json)。
+
 也可以在 [Patreon](https://patreon.com/no8d) 关注 NO8D 的项目动态。
 
 ## 节点说明
 
 所有节点位于 `NO8D-control` 或 `NO8D-controls` 分类。
 
-### NO8D-Krea2风格选择
+### NO8D-Prompt-libraries
 
-通过示意图浏览 Krea 2 风格，并输出当前选中风格的完整提示词。
+通过可视化界面浏览、管理和组合可复用提示词库。
 
-![NO8D-Krea2风格选择](docs/images/krea2-style-selector-node.png)
+![NO8D-Prompt-libraries](docs/images/krea2-style-selector-node.png)
 
-- 将 285 种风格归入写实摄影、动漫插图、手绘艺术和数字艺术四个大类。
-- 每页显示九宫格示意图，支持鼠标和键盘操作。
-- 画廊获得焦点后，可使用方向键在 3×3 网格中移动，并可连续切换到相邻页面。
-- 使用 `PageUp` / `PageDown` 保持当前宫格位置切换页面；使用 `Home` / `End` 选择当前分类的第一个或最后一个风格。
-- 中文环境显示中文风格名称，同时保持原始英文提示词输出。
+- 初次启动时词库为空；`data/krea_style_libraries/` 提供 4 个可手动导入的 XLSX 词库。
+- 支持 TXT、CSV、XLSX 和公开 Google Sheets 导入，以及搜索、收藏、历史、编辑和便携导出。
+- 支持单选、多选、全部输出和随机输出，提示词按词卡原文输出。
+- 支持鼠标及方向键、`PageUp`、`PageDown`、`Home`、`End` 快捷键。
+
+### NO8D-Prompt Merge
+
+按照可见输入端口顺序，把多个 Prompt Libraries 或其他文本节点的输出合并为一条提示词。
 
 ### NO8D-LoRA 堆栈
 
