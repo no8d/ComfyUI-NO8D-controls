@@ -45,6 +45,8 @@ Browse, manage, and combine reusable prompt libraries visually.
 - Supports single, multiple, all, or random card output and preserves prompts exactly as stored.
 - Supports mouse navigation and `Arrow`, `PageUp`, `PageDown`, `Home`, and `End` shortcuts.
 
+📖 [Read the NO8D-Prompt-libraries tutorial on Patreon](https://www.patreon.com/no8d/posts/no8d-prompt-164632304?utm_medium=clipboard_copy&utm_source=copyLink&utm_campaign=postshare_creator&utm_content=join_link).
+
 ### NO8D-Prompt Merge
 
 Merge outputs from multiple Prompt Libraries or other text nodes into one prompt, following the visible input-port order.
