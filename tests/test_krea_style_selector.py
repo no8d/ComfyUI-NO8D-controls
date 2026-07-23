@@ -12,6 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "krea_style_selector.py"
+WEB_MODULE_PATH = ROOT / "web" / "krea_style_gallery.js"
 
 server_stub = types.ModuleType("server")
 server_stub.PromptServer = None
@@ -42,6 +43,13 @@ SAMPLE_PREVIEW = base64.b64decode(
 
 
 class KreaStyleSelectorTests(unittest.TestCase):
+    def test_library_manager_links_to_the_prompt_libraries_tutorial(self):
+        source = WEB_MODULE_PATH.read_text(encoding="utf-8")
+        self.assertIn("no8d-prompt-164632304", source)
+        self.assertIn('userGuide: ["使用指南", "User guide"]', source)
+        self.assertIn('guideLink.target = "_blank"', source)
+        self.assertIn('guideLink.rel = "noopener noreferrer"', source)
+
     def test_no_library_is_loaded_at_import_time(self):
         self.assertEqual(module._STYLES, ())
 
