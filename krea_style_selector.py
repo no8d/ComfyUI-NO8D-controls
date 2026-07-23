@@ -31,7 +31,6 @@ except ImportError:
 
 _ROOT = Path(__file__).resolve().parent
 _BUILTIN_LIBRARY_DIR = _ROOT / "data" / "krea_style_libraries"
-_PREVIEW_DIR = _ROOT / "krea_style_previews"
 _API_PREFIX = "/no8d/krea-style-selector"
 _CATEGORIES = ("写实摄影", "动漫插图", "手绘艺术", "数字艺术")
 _DEFAULT_USER_CATEGORY = "全部"
@@ -377,17 +376,9 @@ def _style_by_name() -> dict[str, dict]:
 
 
 def _preview_path(item: dict) -> Path:
-    if item.get("override_preview"):
-        root = _user_root() / "previews"
-        path = (root / str(item["override_preview"])).resolve()
-        if path.parent != root.resolve():
-            raise ValueError("Invalid preview path")
-        return path
-    if item.get("source") == "user" or item.get("id"):
-        root = _user_root() / "previews"
-    else:
-        root = _PREVIEW_DIR
-    path = (root / str(item.get("preview", ""))).resolve()
+    root = _user_root() / "previews"
+    filename = item.get("override_preview") or item.get("preview", "")
+    path = (root / str(filename)).resolve()
     if path.parent != root.resolve():
         raise ValueError("Invalid preview path")
     return path
