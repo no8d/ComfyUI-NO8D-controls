@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 import sys
 import types
@@ -35,8 +36,9 @@ def sample_styles(count=3, library="test_library"):
     ]
 
 
-def sample_preview():
-    return next(module._PREVIEW_DIR.glob("*.webp"))
+SAMPLE_PREVIEW = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
 
 
 class KreaStyleSelectorTests(unittest.TestCase):
@@ -280,8 +282,7 @@ class KreaStyleSelectorTests(unittest.TestCase):
             os.environ["NO8D_KREA_USER_DIR"] = directory
             try:
                 style = sample_styles(1, "portable")[0]
-                preview_bytes = sample_preview().read_bytes()
-                style["preview"] = module._save_preview(style["id"], preview_bytes, "image/webp")
+                style["preview"] = module._save_preview(style["id"], SAMPLE_PREVIEW, "image/png")
                 module._write_user_payload({"version": 3, "styles": [style]})
                 state = module._read_state()
                 state["favorites"] = [style["name"]]
@@ -364,8 +365,7 @@ class KreaStyleSelectorTests(unittest.TestCase):
             os.environ["NO8D_KREA_USER_DIR"] = directory
             try:
                 style = sample_styles(1, "single_card")[0]
-                preview_bytes = sample_preview().read_bytes()
-                style["preview"] = module._save_preview(style["id"], preview_bytes, "image/webp")
+                style["preview"] = module._save_preview(style["id"], SAMPLE_PREVIEW, "image/png")
                 module._write_user_payload({"version": 3, "styles": [style]})
 
                 content = module._export_items_xlsx([module._user_styles()[0]], "single_card")
