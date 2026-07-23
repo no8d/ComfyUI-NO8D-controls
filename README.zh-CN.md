@@ -50,6 +50,8 @@ Prompt Libraries 专属工作流：[examples/NO8D-Prompt-libraries.json](example
 - 支持单选、多选、全部输出和随机输出，提示词按词卡原文输出。
 - 支持鼠标及方向键、`PageUp`、`PageDown`、`Home`、`End` 快捷键。
 
+📖 [查看 NO8D-Prompt-libraries Patreon 使用教程](https://www.patreon.com/no8d/posts/no8d-prompt-164632304?utm_medium=clipboard_copy&utm_source=copyLink&utm_campaign=postshare_creator&utm_content=join_link)。
+
 ### NO8D-Prompt Merge
 
 按照可见输入端口顺序，把多个 Prompt Libraries 或其他文本节点的输出合并为一条提示词。
