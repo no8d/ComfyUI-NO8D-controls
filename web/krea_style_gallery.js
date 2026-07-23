@@ -4,6 +4,7 @@ import { no8dLocale } from "./no8d_i18n.js";
 
 const NODE_NAME = "NO8DKreaStyleSelector";
 const API_PREFIX = "/no8d/krea-style-selector";
+const TUTORIAL_URL = "https://www.patreon.com/no8d/posts/no8d-prompt-164632304?utm_medium=clipboard_copy&utm_source=copyLink&utm_campaign=postshare_creator&utm_content=join_link";
 const MIN_WIDTH = 440;
 const MIN_HEIGHT = 560;
 const DEFAULT_WIDTH = 850;
@@ -63,6 +64,7 @@ const UI_TEXT = {
     saved: ["自定义风格已保存", "Custom style saved"],
     deleted: ["自定义风格已删除", "Custom style deleted"],
     importWildcards: ["导入词库", "Import library"],
+    userGuide: ["使用指南", "User guide"],
     exportWildcards: ["导出当前词库", "Export current library"],
     batchExport: ["导出词库", "Export libraries"],
     importFavorites: ["导入收藏记录", "Import favorites"],
@@ -140,6 +142,7 @@ function ensureStyleSheet() {
 .no8d-krea-style-card.multi-selected { border-color:#2563eb !important; box-shadow:0 0 0 2px #2563eb inset !important; }
 .no8d-krea-style-card:hover .no8d-krea-style-name { background:#30343c !important; color:#fff !important; }
 .no8d-krea-style-card.selected .no8d-krea-style-name { background:#2563eb !important; color:#fff !important; }
+.no8d-krea-guide-link:hover { color:#93c5fd !important; text-decoration:underline !important; }
 .no8d-ui button:not(.no8d-krea-style-card):not(:disabled):hover { background:#2563eb !important; border-color:#2563eb !important; color:#fff !important; }
 .no8d-krea-style-tab:not(:disabled):hover { background:#2563eb !important; border-color:#2563eb !important; color:#fff !important; }
 .no8d-krea-style-tab.selected { color:#fff !important; border-color:#2563eb !important; background:#2563eb !important; }
@@ -1022,7 +1025,16 @@ function openStyleManager(node) {
     const renderManager = () => {
         body.replaceChildren();
         const toolbar = document.createElement("div");
-        toolbar.style.cssText = "display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px;";
+        toolbar.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;";
+        const guideLink = document.createElement("a");
+        guideLink.href = TUTORIAL_URL;
+        guideLink.target = "_blank";
+        guideLink.rel = "noopener noreferrer";
+        guideLink.textContent = tr("userGuide");
+        guideLink.className = "no8d-krea-guide-link";
+        guideLink.style.cssText = "color:#60a5fa;font:600 13px sans-serif;text-decoration:none;";
+        const toolbarActions = document.createElement("div");
+        toolbarActions.style.cssText = "display:flex;gap:8px;";
         const importButton = document.createElement("button");
         importButton.type = "button";
         importButton.textContent = tr("importWildcards");
@@ -1040,7 +1052,8 @@ function openStyleManager(node) {
                 await download(await api.fetchApi(`${API_PREFIX}/libraries/export`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ libraries: Array.from(selectedLibraries) }) }), "no8d-libraries.zip");
             } catch (error) { notify("error", tr("saveFailed"), error.message || String(error)); }
         };
-        toolbar.append(importButton, batchExport);
+        toolbarActions.append(importButton, batchExport);
+        toolbar.append(guideLink, toolbarActions);
         body.append(toolbar);
 
         const list = document.createElement("div");
