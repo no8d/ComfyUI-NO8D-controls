@@ -60,7 +60,7 @@ Prompt Libraries 专属工作流：[examples/NO8D-Prompt-libraries.json](example
 
 ![NO8D-Prompt-libraries](docs/images/krea2-style-selector-node.png)
 
-- 初次启动时词库为空；`data/krea_style_libraries/` 提供 4 个可手动导入的 XLSX 词库。
+- 初次启动时词库为空；`data/krea_style_libraries/` 提供 8 个可手动导入的 XLSX 词库。
 - 支持 TXT、CSV、XLSX 和公开 Google Sheets 导入，以及搜索、收藏、历史、编辑和便携导出。
 - 支持单选、多选、全部输出和随机输出，提示词按词卡原文输出。
 - 支持鼠标及方向键、`PageUp`、`PageDown`、`Home`、`End` 快捷键。
