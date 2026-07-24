@@ -22,6 +22,21 @@ cd ComfyUI/custom_nodes
 git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 ```
 
+ComfyUI Manager installs the dependencies from `requirements.txt` automatically. If you clone or update the node manually, install them with **ComfyUI's Python environment**:
+
+```bash
+cd ComfyUI/custom_nodes/ComfyUI-NO8D-controls
+python -m pip install -r requirements.txt
+```
+
+For Windows Portable, run this from the portable root instead:
+
+```bat
+python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-NO8D-controls\requirements.txt
+```
+
+`openpyxl` is required for importing and exporting XLSX prompt libraries. Do not install it into an unrelated system Python environment.
+
 Restart ComfyUI and hard-refresh the browser page. No frontend build step is required.
 
 An example workflow is included at [examples/NO8D-controls-example.json](examples/NO8D-controls-example.json).
