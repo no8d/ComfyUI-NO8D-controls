@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import csv
 import io
+import importlib
 import asyncio
 import os
 import re
@@ -37,6 +38,17 @@ _DEFAULT_USER_CATEGORY = "全部"
 _ALLOWED_IMAGE_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
 _MAX_PREVIEW_BYTES = 15 * 1024 * 1024
 _VIRTUAL_LIBRARIES = ("收藏夹", "历史记录")
+_OPENPYXL_REQUIRED_MESSAGE = (
+    "XLSX import and export require openpyxl, but it is not installed in ComfyUI's Python environment. "
+    "Install this node's requirements.txt with ComfyUI Manager or ComfyUI's Python, then restart ComfyUI."
+)
+
+
+def _require_openpyxl():
+    try:
+        return importlib.import_module("openpyxl")
+    except ImportError as error:
+        raise RuntimeError(_OPENPYXL_REQUIRED_MESSAGE) from error
 
 
 def _user_root() -> Path:
@@ -617,11 +629,8 @@ def _parse_import(content: bytes, filename: str) -> list[dict]:
         values = [[line] for line in text.splitlines()] if suffix == ".txt" else list(csv.reader(io.StringIO(text)))
         return _rows_from_values(values)
     if suffix == ".xlsx":
-        try:
-            from openpyxl import load_workbook
-        except ImportError as error:
-            raise ValueError("XLSX import requires openpyxl") from error
-        workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        openpyxl = _require_openpyxl()
+        workbook = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         sheet = workbook.active
         return _rows_from_values([list(row) for row in sheet.iter_rows(values_only=True)])
     raise ValueError("Only TXT, CSV, and XLSX files are supported")
@@ -631,8 +640,8 @@ def _parse_import_bundle(content: bytes, filename: str) -> tuple[list[dict], dic
     rows = _parse_import(content, filename)
     if Path(filename).suffix.lower() != ".xlsx":
         return rows, {}, {}
-    from openpyxl import load_workbook
-    workbook = load_workbook(io.BytesIO(content), read_only=False, data_only=True)
+    openpyxl = _require_openpyxl()
+    workbook = openpyxl.load_workbook(io.BytesIO(content), read_only=False, data_only=True)
     sheet = next((candidate for candidate in workbook.worksheets if candidate.title != "_NO8D_DATA"), workbook.active)
     previews = {}
     for image in getattr(sheet, "_images", []):
@@ -665,7 +674,7 @@ def _parse_import_bundle(content: bytes, filename: str) -> tuple[list[dict], dic
 
 
 def _export_items_xlsx(items: list[dict], library: str) -> bytes:
-    from openpyxl import Workbook
+    openpyxl = _require_openpyxl()
     from openpyxl.drawing.image import Image as XLImage
     from openpyxl.styles import Alignment, Font, PatternFill
     from PIL import Image as PILImage
@@ -673,7 +682,7 @@ def _export_items_xlsx(items: list[dict], library: str) -> bytes:
     if not items:
         raise ValueError("No styles selected")
     state = _read_state()
-    workbook = Workbook()
+    workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = re.sub(r"[\\/*?:\[\]]", "_", library)[:31] or "Library"
     sheet.freeze_panes = "A2"

@@ -27,6 +27,21 @@ cd ComfyUI/custom_nodes
 git clone https://github.com/no8d/ComfyUI-NO8D-controls.git
 ```
 
+通过 ComfyUI Manager 安装时，会自动读取 `requirements.txt` 并安装依赖。如果通过 Git 手动安装或更新，请使用 **ComfyUI 自己的 Python 环境**执行：
+
+```bash
+cd ComfyUI/custom_nodes/ComfyUI-NO8D-controls
+python -m pip install -r requirements.txt
+```
+
+Windows 便携版请在便携版根目录执行：
+
+```bat
+python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-NO8D-controls\requirements.txt
+```
+
+导入和导出 XLSX 提示词库需要 `openpyxl`。请勿将它安装到与 ComfyUI 无关的系统 Python 环境中。
+
 安装后重启 ComfyUI，并在浏览器中强制刷新页面。不需要额外构建前端。
 
 项目内置示例工作流：[examples/NO8D-controls-example.json](examples/NO8D-controls-example.json)。

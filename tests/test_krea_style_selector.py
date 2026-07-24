@@ -8,6 +8,7 @@ import unittest
 import os
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +44,15 @@ SAMPLE_PREVIEW = base64.b64decode(
 
 
 class KreaStyleSelectorTests(unittest.TestCase):
+    def test_missing_openpyxl_reports_the_comfyui_dependency_install_path(self):
+        with mock.patch.object(module.importlib, "import_module", side_effect=ModuleNotFoundError("openpyxl")):
+            with self.assertRaisesRegex(RuntimeError, r"requirements\.txt.*ComfyUI"):
+                module._require_openpyxl()
+
+    def test_requirements_declares_the_xlsx_dependency(self):
+        requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
+        self.assertIn("openpyxl>=3.1,<4", requirements)
+
     def test_library_manager_links_to_the_prompt_libraries_tutorial(self):
         source = WEB_MODULE_PATH.read_text(encoding="utf-8")
         self.assertIn("no8d-prompt-164632304", source)
