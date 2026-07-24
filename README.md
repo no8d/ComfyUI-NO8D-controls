@@ -55,7 +55,7 @@ Browse, manage, and combine reusable prompt libraries visually.
 
 ![NO8D-Prompt-libraries](docs/images/krea2-style-selector-node.png)
 
-- Starts empty; four optional XLSX libraries are bundled in `data/krea_style_libraries/` for manual import.
+- Starts empty; eight optional XLSX libraries are bundled in `data/krea_style_libraries/` for manual import.
 - Imports TXT, CSV, XLSX, and public Google Sheets, with search, favorites, history, editing, and portable export.
 - Supports single, multiple, all, or random card output and preserves prompts exactly as stored.
 - Supports mouse navigation and `Arrow`, `PageUp`, `PageDown`, `Home`, and `End` shortcuts.

@@ -67,7 +67,16 @@ class KreaStyleSelectorTests(unittest.TestCase):
         files = sorted(module._BUILTIN_LIBRARY_DIR.rglob("*.xlsx"))
         self.assertEqual(
             {path.name for path in files},
-            {"photography.xlsx", "anime_illustration.xlsx", "hand_drawn_art.xlsx", "digital_art.xlsx"},
+            {
+                "anime_illustration.xlsx",
+                "cartoon_animation.xlsx",
+                "comics_graphic_novel.xlsx",
+                "design_3d_graphic.xlsx",
+                "digital_painting.xlsx",
+                "drawing_sketch.xlsx",
+                "painting_fine_art.xlsx",
+                "photography.xlsx",
+            },
         )
         self.assertFalse(any(module._BUILTIN_LIBRARY_DIR.glob("*.csv")))
 
