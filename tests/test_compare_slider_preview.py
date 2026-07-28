@@ -63,12 +63,12 @@ class CompareSliderPreviewTests(unittest.TestCase):
     def setUp(self):
         _PreviewImage.saved.clear()
 
-    def test_node_exposes_auto_switch_and_image_a_output(self):
+    def test_node_exposes_auto_switch_and_ab_outputs(self):
         inputs = COMPARE.NO8DABPreview.INPUT_TYPES()
 
         self.assertTrue(inputs["optional"]["auto_output"][1]["default"])
-        self.assertEqual(COMPARE.NO8DABPreview.RETURN_TYPES, ("IMAGE",))
-        self.assertEqual(COMPARE.NO8DABPreview.RETURN_NAMES, ("image_a",))
+        self.assertEqual(COMPARE.NO8DABPreview.RETURN_TYPES, ("IMAGE", "IMAGE"))
+        self.assertEqual(COMPARE.NO8DABPreview.RETURN_NAMES, ("image_a", "image_b"))
 
     def test_auto_output_on_passes_image_a_and_preserves_both_previews(self):
         image_a = object()
@@ -81,6 +81,7 @@ class CompareSliderPreviewTests(unittest.TestCase):
         )
 
         self.assertIs(result["result"][0], image_a)
+        self.assertIs(result["result"][1], image_b)
         self.assertEqual(len(result["ui"]["a_images"]), 1)
         self.assertEqual(len(result["ui"]["b_images"]), 1)
         self.assertEqual(
@@ -97,15 +98,22 @@ class CompareSliderPreviewTests(unittest.TestCase):
         result = COMPARE.NO8DABPreview().preview(image_a=image_a)
 
         self.assertIs(result["result"][0], image_a)
+        self.assertIsInstance(result["result"][1], _ExecutionBlocker)
 
     def test_auto_output_off_blocks_downstream_but_keeps_preview(self):
         image_a = object()
 
-        result = COMPARE.NO8DABPreview().preview(auto_output=False, image_a=image_a)
+        image_b = object()
+        result = COMPARE.NO8DABPreview().preview(
+            auto_output=False,
+            image_a=image_a,
+            image_b=image_b,
+        )
 
         output = result["result"][0]
         self.assertIsInstance(output, _ExecutionBlocker)
         self.assertIsNone(output.message)
+        self.assertIs(result["result"][1], image_b)
         self.assertEqual(len(result["ui"]["a_images"]), 1)
 
     def test_auto_output_on_without_image_a_blocks_downstream(self):
@@ -114,6 +122,7 @@ class CompareSliderPreviewTests(unittest.TestCase):
         result = COMPARE.NO8DABPreview().preview(auto_output=True, image_b=image_b)
 
         self.assertIsInstance(result["result"][0], _ExecutionBlocker)
+        self.assertIs(result["result"][1], image_b)
         self.assertEqual(len(result["ui"]["b_images"]), 1)
 
 

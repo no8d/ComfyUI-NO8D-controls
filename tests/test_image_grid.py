@@ -7,6 +7,7 @@ import types
 import unittest
 
 import torch
+import torch.nn.functional as functional
 
 
 class _NoopType:
@@ -18,6 +19,9 @@ class _NoopType:
 
 
 def _load_module():
+    def common_upscale(images, width, height, _method, _crop):
+        return functional.interpolate(images, size=(height, width), mode="bicubic")
+
     io = types.SimpleNamespace(
         ComfyNode=object,
         NodeOutput=lambda value: value,
@@ -32,8 +36,14 @@ def _load_module():
     comfy_api = types.ModuleType("comfy_api")
     versioned = types.ModuleType("comfy_api.v0_0_2")
     versioned.io = io
-    names = ("comfy_api", "comfy_api.v0_0_2")
+    comfy = types.ModuleType("comfy")
+    comfy_utils = types.ModuleType("comfy.utils")
+    comfy_utils.common_upscale = common_upscale
+    comfy.utils = comfy_utils
+    names = ("comfy", "comfy.utils", "comfy_api", "comfy_api.v0_0_2")
     previous = {name: sys.modules.get(name) for name in names}
+    sys.modules["comfy"] = comfy
+    sys.modules["comfy.utils"] = comfy_utils
     sys.modules["comfy_api"] = comfy_api
     sys.modules["comfy_api.v0_0_2"] = versioned
     try:
@@ -100,6 +110,7 @@ class ImageGridTests(unittest.TestCase):
             **(
                 TITLE_DEFAULTS
                 | {
+                    "output_size": "Original size",
                     "title_position": "Inside top",
                     "text_align": "Center",
                 }
@@ -123,6 +134,8 @@ class ImageGridTests(unittest.TestCase):
         title_inputs = {item.id: item for item in GRID.NO8DImageTitle.define_schema().inputs}
         self.assertEqual(grid_inputs["spacing"].default, 4)
         self.assertEqual(title_inputs["titles"].default, "image-01")
+        self.assertEqual(title_inputs["output_size"].default, "原始尺寸")
+        self.assertEqual(title_inputs["output_size"].options, ["原始尺寸", "1K", "2K", "4K"])
         self.assertEqual(title_inputs["title_bar_opacity"].default, 60)
         self.assertEqual(title_inputs["title_position"].default, "图内底部")
         self.assertEqual(title_inputs["title_bar_height"].default, 10)
@@ -130,6 +143,29 @@ class ImageGridTests(unittest.TestCase):
         self.assertEqual(title_inputs["text_padding"].default, 4)
         self.assertEqual(title_inputs["text_color"].default, "#FFFFFF")
         self.assertEqual(title_inputs["text_align"].default, "居中")
+
+    def test_title_node_resizes_long_edge_before_adding_title(self):
+        source = _image(200, 100, (0.25, 0.5, 0.75))
+        output = GRID.add_titles(
+            source,
+            titles="Title",
+            **(TITLE_DEFAULTS | {"output_size": "1K", "title_position": "图内底部"}),
+        )
+        self.assertEqual(tuple(output.shape), (1, 512, 1024, 3))
+
+    def test_blank_title_still_applies_requested_output_size(self):
+        source = _image(100, 200, (0.25, 0.5, 0.75))
+        output = GRID.add_titles(
+            source,
+            titles="",
+            **(TITLE_DEFAULTS | {"output_size": "2K"}),
+        )
+        self.assertEqual(tuple(output.shape), (1, 2048, 1024, 3))
+
+    def test_original_size_preserves_existing_workflow_dimensions(self):
+        source = _image(100, 200, (0.25, 0.5, 0.75))
+        output = GRID.add_titles(source, titles="", **TITLE_DEFAULTS)
+        self.assertIs(output, source)
 
     def test_title_position_options_use_the_expected_names_and_order(self):
         schema = GRID.NO8DImageTitle.define_schema()

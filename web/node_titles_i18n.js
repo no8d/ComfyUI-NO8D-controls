@@ -4,6 +4,7 @@ import { no8dLocale, t } from "./no8d_i18n.js";
 const NODE_TITLE_KEYS = {
     NO8DLoraStack: "sliderStackTitle",
     NO8DGenerate: "generateTitle",
+    NO8DRemoveKrea2ReferenceLatents: "removeKreaReferenceTitle",
     NO8DABPreview: "abPreviewTitle",
     NO8DBatchPromptPlus: "promptNodeTitle",
     NO8DPromptView: "promptViewTitle",
@@ -16,6 +17,7 @@ const NODE_TITLE_KEYS = {
 };
 
 const NODE_DESCRIPTION_KEYS = {
+    NO8DRemoveKrea2ReferenceLatents: "removeKreaReferenceDescription",
     NO8DImageGrid: "imageGridDescription",
     NO8DImageTitle: "imageTitleDescription",
     NO8DKreaStyleSelector: "kreaStyleDescription",
@@ -31,6 +33,7 @@ const WIDGET_LABELS = {
     },
     NO8DImageTitle: {
         titles: "imageTitleTitles",
+        output_size: "imageTitleOutputSize",
         title_bar_color: "imageTitleBarColor",
         title_bar_opacity: "imageTitleBarOpacity",
         title_position: "imageTitlePosition",
@@ -58,6 +61,12 @@ const COMBO_LABELS = {
         ],
     },
     NO8DImageTitle: {
+        output_size: [
+            ["imageTitleOriginalSize", "Original size", "原始尺寸"],
+            ["imageTitle1K", "1K", "1K"],
+            ["imageTitle2K", "2K", "2K"],
+            ["imageTitle4K", "4K", "4K"],
+        ],
         title_position: [
             ["imageTitleOutsideTop", "Outside top", "图外顶部"],
             ["imageTitleInsideTop", "Inside top", "图内顶部"],
@@ -78,7 +87,12 @@ const INPUT_LABELS = {
 };
 
 const PERCENT_WIDGETS = new Set(["title_bar_opacity", "title_bar_height"]);
+const COLOR_WIDGETS = {
+    NO8DImageGrid: new Set(["background_color"]),
+    NO8DImageTitle: new Set(["title_bar_color", "text_color"]),
+};
 const PERCENT_DISPLAY = Symbol("no8dPercentDisplay");
+const PENDING_REFRESH = new WeakSet();
 
 function applyPercentDisplay(widget) {
     if (!PERCENT_WIDGETS.has(widget.name) || widget[PERCENT_DISPLAY]) return false;
@@ -93,6 +107,40 @@ function applyPercentDisplay(widget) {
     return true;
 }
 
+function removeDuplicateColorControls(node, className) {
+    const colorNames = COLOR_WIDGETS[className];
+    if (!colorNames) return false;
+    let changed = false;
+    const seen = new Set();
+    for (let index = 0; index < (node.widgets || []).length; ) {
+        const widget = node.widgets[index];
+        if (!colorNames.has(widget.name)) {
+            index++;
+            continue;
+        }
+        if (!seen.has(widget.name)) {
+            seen.add(widget.name);
+            index++;
+            continue;
+        }
+        widget.onRemove?.();
+        widget.element?.remove?.();
+        node.widgets.splice(index, 1);
+        changed = true;
+    }
+    const widgetNames = new Set(
+        (node.widgets || []).filter((widget) => colorNames.has(widget.name)).map((widget) => widget.name),
+    );
+    for (let index = (node.inputs || []).length - 1; index >= 0; index--) {
+        const input = node.inputs[index];
+        if (!widgetNames.has(input.name) || String(input.type).toUpperCase() !== "COLOR") continue;
+        if (node.removeInput) node.removeInput(index);
+        else node.inputs.splice(index, 1);
+        changed = true;
+    }
+    return changed;
+}
+
 let activeLocale = "";
 
 function nodeClass(node) {
@@ -104,10 +152,21 @@ function titleForClass(className) {
     return key ? t(key) : "";
 }
 
+function scheduleNodeRefresh(node) {
+    if (!node || PENDING_REFRESH.has(node)) return;
+    PENDING_REFRESH.add(node);
+    setTimeout(() => {
+        PENDING_REFRESH.delete(node);
+        if (!applyNodeTitle(node)) return;
+        node.graph?.setDirtyCanvas?.(true, true);
+        app?.canvas?.setDirty?.(true, true);
+    }, 100);
+}
+
 function applyNodeTitle(node) {
     const className = nodeClass(node);
     const title = titleForClass(className);
-    let changed = false;
+    let changed = removeDuplicateColorControls(node, className);
     if (title && node.title !== title) {
         node.title = title;
         changed = true;
@@ -129,6 +188,10 @@ function applyNodeTitle(node) {
         const current = String(widget.value ?? "");
         const entry = entries.find(([, english, chinese]) => current === english || current === chinese);
         if (entry) widget.value = t(entry[0]);
+        else if (className === "NO8DImageTitle" && widget.name === "output_size") {
+            widget.value = t(entries[0][0]);
+            widget.callback?.(widget.value, app.canvas, node, app.canvas?.graph_mouse);
+        }
         widget.options = widget.options || {};
         widget.options.values = entries.map(([key]) => t(key));
         changed = true;
@@ -169,6 +232,7 @@ app.registerExtension({
     },
     async nodeCreated(node) {
         applyNodeTitle(node);
+        scheduleNodeRefresh(node);
     },
     async beforeRegisterNodeDef(nodeType, nodeData) {
         const title = titleForClass(nodeData?.name);
@@ -182,6 +246,7 @@ app.registerExtension({
         nodeType.prototype.onNodeCreated = function () {
             onCreated?.apply(this, arguments);
             applyNodeTitle(this);
+            scheduleNodeRefresh(this);
         };
         const onConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function () {

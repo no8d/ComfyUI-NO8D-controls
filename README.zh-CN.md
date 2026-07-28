@@ -73,13 +73,14 @@ Prompt Libraries 专属工作流：[examples/NO8D-Prompt-libraries.json](example
 
 ### NO8D-LoRA 堆栈
 
-在一个节点中管理多个 LoRA，并在不接入 CLIP 的情况下应用到模型。
+通过 ComfyUI 原生 UNET Loader 加载模型，并在不接入 CLIP 的情况下管理和应用多个 LoRA。
 
 ![NO8D-LoRA 堆栈](docs/images/stack-node-readme.jpg)
 
 - 添加、删除、启用、关闭和排序 LoRA。
-- 调整权重及滑条范围。
+- 新增 LoRA 默认权重为 `1.0`，默认滑条范围为 `0–2`。
 - 合并已启用 LoRA 的触发词并输出文本。
+- UNET 控件动态继承 ComfyUI 原生加载器，可随上游更新。
 
 ### NO8D-提示词
 
@@ -90,7 +91,8 @@ Prompt Libraries 专属工作流：[examples/NO8D-Prompt-libraries.json](example
 ![NO8D-提示词](docs/images/prompt-plus-node.png)
 
 - 支持纯文本、纯图像和文本加图像三种输入。
-- 提供风格、景别和提示词长度控制。
+- 提供风格、景别和提示词长度控制，并支持“不描述风格”。
+- 将参考图原始媒介与锁定的目标风格分离，检测到风格词冲突时允许自动纠正一次。
 - 可分别选择文本模型和图像模型。
 - 纯文本提示词需要文本 LLM；参考图反推需要支持图像输入的视觉/多模态模型。
 
@@ -118,14 +120,19 @@ Prompt Libraries 专属工作流：[examples/NO8D-Prompt-libraries.json](example
 
 ### NO8D-生成
 
-把 ComfyUI 采样控制、图像预览和遮罩局部重绘整合到一个紧凑节点中。
+把 ComfyUI 采样控制、图像预览、局部重绘和扩图整合到一个紧凑节点中。
 
 ![NO8D-生成](docs/images/generate-node.png)
 
 - 控制采样器、调度器、步数、CFG、降噪和种子。
-- 支持画笔、套索、橡皮擦、羽化、透明度、反转和清除。
-- 画布存在遮罩时自动执行局部重绘。
+- 支持画布比例、横竖对调、底图移动缩放、套索、羽化、透明度、反转和清除。
+- 根据画布状态自动切换普通生成、原生局部重绘和扩图。
+- 支持 Flux2 Klein 与 Krea2 Identity Edit 参考图链路；普通生成继续使用已连接的 latent。
 - 输出最终生成图像。
+
+### NO8D-移除 Krea2 参考 Latents
+
+从 Ostris Krea2 conditioning 中移除 `reference_latents`，同时保留提示词、视觉语言条件及其他元数据。
 
 ### NO8D-A/B 对比
 
@@ -135,7 +142,8 @@ Prompt Libraries 专属工作流：[examples/NO8D-Prompt-libraries.json](example
 
 - 显示图像 A、图像 B 及其原始尺寸。
 - 支持列表翻页和单路图像历史对比。
-- 可把图像 A 传递到下游，也可关闭该输出分支。
+- 提供独立的 `image_a`、`image_b` 输出接口；自动输出开关控制图像 A 分支。
+- 在预览左侧或右侧右键时，ComfyUI 原生图像操作会作用于对应的 A 或 B 图像。
 
 ![NO8D-图片标题与多图拼接](docs/images/image-title-grid-nodes.png)
 
@@ -153,7 +161,8 @@ Prompt Libraries 专属工作流：[examples/NO8D-Prompt-libraries.json](example
 
 在图片顶部或底部添加外置标题栏，或在图片中间叠加标题。
 
-- 批次图片可通过逐行文本设置独立标题；全部为空时直接输出原图。
+- 批次图片可通过逐行文本设置独立标题；标题为空时跳过标题绘制。
+- 可在绘制标题前按最长边缩放为原始尺寸、1K、2K 或 4K，并保持原始宽高比。
 - 可控制标题底色、透明度、位置、高度、字号、间距、文字颜色和对齐。
 - 顶部和底部会增加输出高度；中间标题保持原图尺寸。
 - 图内顶部和图内底部覆盖在图片边缘，不改变输出尺寸。
@@ -171,12 +180,12 @@ Prompt Libraries 专属工作流：[examples/NO8D-Prompt-libraries.json](example
 
 ### NO8D-空 latent
 
-按常见模型类型和画面比例创建空 latent。
+选择尺寸后，通过 ComfyUI 原生 `EmptyLatentImage` 节点创建 latent。
 
 ![NO8D-空 latent](docs/images/empty-latent-node-readme.jpg)
 
-- 支持 SD/SDXL、SD3/Flux/Krea2 和 Flux2 预设。
-- 提供常用竖图和横图比例。
+- 提供常用横竖比例、短边预设，以及手动短边/长边覆盖。
+- 旧工作流中的模型类型和宽高参数会自动迁移到新控件。
 - 输出 latent 及计算后的宽度和高度。
 
 ## 提示词 API 与 LLM 配置

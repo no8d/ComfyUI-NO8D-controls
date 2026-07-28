@@ -54,18 +54,14 @@
       },
       "order": 7,
       "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 3074
-        }
-      ],
+      "inputs": [],
       "outputs": [
         {
           "name": "model",
           "type": "MODEL",
-          "links": []
+          "links": [
+            3291
+          ]
         },
         {
           "name": "trigger_words",
@@ -76,47 +72,7 @@
         }
       ],
       "properties": {
-        "Node name for S&R": "NO8DLoraStack"
-      },
-      "widgets_values": [
-        "None",
-        "[]",
-        ""
-      ],
-      "color": "#232",
-      "bgcolor": "#353"
-    },
-    {
-      "id": 1246,
-      "type": "UNETLoader",
-      "pos": [
-        -22000,
-        930
-      ],
-      "size": [
-        600,
-        90
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 1,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "MODEL",
-          "type": "MODEL",
-          "links": [
-            3074,
-            3291
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "UNETLoader",
-        "cnr_id": "comfy-core",
-        "ver": "0.25.0",
+        "Node name for S&R": "NO8DLoraStack",
         "models": [
           {
             "name": "krea2_turbo_fp8_scaled.safetensors",
@@ -127,8 +83,13 @@
       },
       "widgets_values": [
         "krea2_turbo_int8_convrot-b19a4f0be264.safetensors",
-        "default"
-      ]
+        "default",
+        "None",
+        "[]",
+        ""
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
     },
     {
       "id": 913,
@@ -324,9 +285,8 @@
         "Node name for S&R": "NO8DEmptyLatent"
       },
       "widgets_values": [
-        "SD3 / Flux / Krea2",
-        "768",
         "9:16",
+        "768",
         true,
         0,
         0,
@@ -816,14 +776,6 @@
       "IMAGE"
     ],
     [
-      3074,
-      1246,
-      0,
-      1301,
-      0,
-      "MODEL"
-    ],
-    [
       3218,
       1362,
       0,
@@ -865,7 +817,7 @@
     ],
     [
       3291,
-      1246,
+      1301,
       0,
       1400,
       0,

@@ -68,13 +68,14 @@ Merge outputs from multiple Prompt Libraries or other text nodes into one prompt
 
 ### NO8D-LoRA stack
 
-Manage multiple LoRAs in one node and apply them to a model without a CLIP input.
+Load a UNET through ComfyUI's native loader, then manage and apply multiple LoRAs without a CLIP input.
 
 ![NO8D-LoRA stack](docs/images/stack-node-readme.jpg)
 
 - Add, remove, enable, disable, and reorder LoRAs.
-- Adjust strength and custom slider ranges.
+- New LoRAs start at strength `1.0` with a default `0–2` slider range.
 - Merge trigger words from enabled LoRAs into one text output.
+- The UNET controls are inherited from ComfyUI's native loader and follow upstream updates.
 
 ### NO8D-Prompt
 
@@ -85,7 +86,8 @@ Expand text, analyze a reference image, or combine both into a complete positive
 ![NO8D-Prompt](docs/images/prompt-plus-node.png)
 
 - Supports text-only, image-only, and text-plus-image input.
-- Provides style, shot-scale, and prompt-length controls.
+- Provides style, shot-scale, and prompt-length controls, including a no-style-description mode.
+- Keeps the source medium separate from a locked target style and corrects conflicting style vocabulary once when needed.
 - Allows separate text and vision model selection.
 - Text-only prompting requires a text-capable LLM; reference-image analysis requires a vision-capable multimodal model.
 
@@ -113,14 +115,19 @@ Load and organize one or more local images as a ComfyUI list output.
 
 ### NO8D-Generate
 
-Combine ComfyUI sampling controls, image preview, and mask-based inpainting in one compact node.
+Combine ComfyUI sampling controls, image preview, inpainting, and outpainting in one compact node.
 
 ![NO8D-Generate](docs/images/generate-node.png)
 
 - Controls sampler, scheduler, steps, CFG, denoise, and seed.
-- Supports brush, lasso, eraser, feather, opacity, invert, and clear tools.
-- Automatically uses inpainting when the canvas contains a mask.
+- Supports editable canvas ratios, portrait/landscape swapping, source-image positioning, lasso masks, feathering, opacity, invert, and clear controls.
+- Automatically switches between normal generation, native inpainting, and outpainting according to the canvas state.
+- Supports native reference workflows for Flux2 Klein and Krea2 Identity Edit while preserving the connected latent for ordinary generation.
 - Outputs the final generated image.
+
+### NO8D-Remove Krea2 Reference Latents
+
+Remove Ostris Krea2 `reference_latents` from conditioning while preserving the prompt, visual-language conditioning, and other metadata.
 
 ### NO8D-A/B preview
 
@@ -130,7 +137,8 @@ Compare two image streams with an interactive split preview.
 
 - Displays image A and image B with their original dimensions.
 - Supports list-page switching and single-stream history comparison.
-- Can pass image A downstream or disable that output branch.
+- Provides separate `image_a` and `image_b` outputs; the auto-output switch controls the image A branch.
+- Native ComfyUI image actions target the A or B image selected under the right-click pointer.
 
 ![NO8D Image Title and Image Grid](docs/images/image-title-grid-nodes.png)
 
@@ -148,7 +156,8 @@ Combine multiple image inputs or image batches into one image.
 
 Add title bars outside the top or bottom edge, or overlay a title across the middle.
 
-- Set independent batch titles with one line per image; an entirely blank title list returns the source unchanged.
+- Set independent batch titles with one line per image; blank titles skip title rendering.
+- Resize by the longest edge to the original size, 1K, 2K, or 4K before rendering the title, while preserving aspect ratio.
 - Control the title background, opacity, position, height, font size, padding, text color, and alignment.
 - Top and bottom bars increase output height; middle titles preserve the source dimensions.
 - Inner top and inner bottom positions overlay the image edges without changing output dimensions.
@@ -166,12 +175,12 @@ Save images and matching captions for image-text datasets.
 
 ### NO8D-Empty latent
 
-Create empty latents using common model-family and aspect-ratio presets.
+Choose dimensions and create the latent through ComfyUI's native `EmptyLatentImage` node.
 
 ![NO8D-Empty latent](docs/images/empty-latent-node-readme.jpg)
 
-- Supports SD/SDXL, SD3/Flux/Krea2, and Flux2 presets.
-- Provides portrait and landscape aspect ratios.
+- Provides portrait and landscape aspect ratios with short-side presets and manual short/long-side overrides.
+- Existing saved values are migrated from the previous model-family and width/height controls.
 - Outputs the latent together with its calculated width and height.
 
 ## Prompt API and LLM configuration

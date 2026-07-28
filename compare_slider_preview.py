@@ -21,8 +21,8 @@ class NO8DABPreview:
             },
         }
 
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image_a",)
+    RETURN_TYPES = ("IMAGE", "IMAGE")
+    RETURN_NAMES = ("image_a", "image_b")
     FUNCTION = "preview"
     OUTPUT_NODE = True
     CATEGORY = "NO8D-control"
@@ -49,8 +49,9 @@ class NO8DABPreview:
                 filename_prefix="NO8DABPreview_B",
             )
             result["b_images"] = b_ui["ui"]["images"]
-        output = image_a if auto_output and image_a is not None else ExecutionBlocker(None)
-        return {"ui": result, "result": (output,)}
+        output_a = image_a if auto_output and image_a is not None else ExecutionBlocker(None)
+        output_b = image_b if image_b is not None else ExecutionBlocker(None)
+        return {"ui": result, "result": (output_a, output_b)}
 
 
 NODE_CLASS_MAPPINGS = {"NO8DABPreview": NO8DABPreview}

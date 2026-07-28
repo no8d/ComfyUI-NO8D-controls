@@ -12,7 +12,7 @@ class PromptStylePresetTests(unittest.TestCase):
     def test_public_style_choices_are_umbrella_categories(self):
         self.assertEqual(
             prompt_plus._STYLE_PRESETS,
-            ("自行判断", "写实摄影", "动漫插图", "手绘艺术", "数字艺术"),
+            ("自行判断", "不描述风格", "写实摄影", "动漫插图", "手绘艺术", "数字艺术"),
         )
 
     def test_legacy_style_choices_migrate_to_nearest_umbrella(self):
@@ -33,7 +33,7 @@ class PromptStylePresetTests(unittest.TestCase):
                 self.assertEqual(prompt_plus._normalize_style_preset(old_value), category)
 
     def test_each_category_infers_one_evidence_based_subtype(self):
-        for category in prompt_plus._STYLE_PRESETS[1:]:
+        for category in ("写实摄影", "动漫插图", "手绘艺术", "数字艺术"):
             with self.subTest(category=category):
                 rule = prompt_plus._style_preset_rule(category)
                 self.assertIn("upper-level style category", rule)
@@ -42,12 +42,208 @@ class PromptStylePresetTests(unittest.TestCase):
                 self.assertIn("With an image, visual evidence determines the subtype", rule)
                 self.assertIn("with text only, infer it", rule)
 
+    def test_no_style_description_has_an_english_compatible_value(self):
+        self.assertEqual(
+            prompt_plus._normalize_style_preset("No style description"),
+            "不描述风格",
+        )
+
+    def test_no_style_description_omits_style_but_keeps_visual_facts(self):
+        envelope = {
+            "visual_analysis": {
+                "source_medium": "flat-color cartoon illustration",
+                "style_category": "anime illustration",
+                "style_subtype": "cel-shaded cartoon key art",
+                "primary_subject": "an elderly martial artist",
+                "primary_subject_visible_extent": "full body",
+                "primary_subject_frame_occupancy_percent": 65,
+                "primary_subject_dominant_axis": "upper center to lower right diagonal",
+                "primary_subject_appearance_and_clothing": "black trousers and a white beard",
+                "primary_subject_pose_and_action": "a wide low squat with one arm raised overhead",
+                "camera_elevation": "level",
+                "view_direction": "level",
+                "camera_azimuth_or_visible_side": "frontal view",
+                "lens_class": "standard lens",
+                "perspective_effect": "natural spatial proportions",
+                "environment_and_spatial_context": "cracked ground beneath the subject",
+                "lighting_color_and_atmosphere": "strong warm key light against a red background",
+            }
+        }
+        rendered = prompt_plus._render_natural_prompt(
+            envelope,
+            "英文",
+            True,
+            "不描述风格",
+        )
+        self.assertIn("black trousers and a white beard", rendered)
+        self.assertIn("a wide low squat with one arm raised overhead", rendered)
+        self.assertIn("standard lens", rendered)
+        self.assertIn("strong warm key light against a red background", rendered)
+        self.assertNotRegex(
+            rendered.lower(),
+            r"cartoon|illustration|anime|cel[- ]shad|key art",
+        )
+
+    def test_no_style_image_request_leaves_all_style_fields_empty(self):
+        messages = prompt_plus._build_image_analysis_messages(
+            "",
+            "data:image/png;base64,abc",
+            "不描述风格",
+            "自行判断",
+            "标准",
+            "英文",
+        )
+        system = messages[0]["content"]
+        self.assertIn(
+            "Leave source_medium, style_category, and style_subtype empty",
+            system,
+        )
+        self.assertIn("Do not select or describe a style or medium", system)
+        self.assertIn("Describe all non-style visual facts normally", system)
+
+    def test_no_style_final_audit_keeps_lighting_and_atmosphere(self):
+        audit = prompt_plus._final_output_audit("不描述风格", "image")
+        self.assertIn("final prompt must contain no style", audit)
+        self.assertIn(
+            "Lighting, visible colors, materials, textures, and atmosphere are not style labels",
+            audit,
+        )
+        self.assertNotIn("one concrete subtype", audit)
+
     def test_realistic_photography_can_choose_phone_dslr_or_cinematic(self):
         rule = prompt_plus._style_preset_rule("写实摄影")
         self.assertIn("smartphone snapshot", rule)
         self.assertIn("DSLR/mirrorless", rule)
         self.assertIn("cinematic film still", rule)
         self.assertIn("Keep rough phone images rough", rule)
+
+    def test_locked_photography_separates_source_medium_from_target_style(self):
+        envelope = {
+            "visual_analysis": {
+                "source_medium": "flat-color cartoon illustration",
+                "style_category": "digital art",
+                "style_subtype": "stylized digital illustration with cel-shaded lighting",
+                "primary_subject": "a bald elderly martial artist",
+                "primary_subject_visible_extent": "full body",
+                "primary_subject_frame_occupancy_percent": 65,
+                "primary_subject_dominant_axis": "upper center to lower right diagonal",
+                "primary_subject_appearance_and_clothing": "bold outlines, black trousers and a white beard",
+                "primary_subject_pose_and_action": "a wide low squat with one arm raised overhead",
+                "primary_subject_expression": "",
+                "camera_elevation": "level",
+                "view_direction": "level",
+                "camera_azimuth_or_visible_side": "frontal view",
+                "lens_class": "standard lens",
+                "perspective_effect": "natural spatial proportions",
+                "environment_and_spatial_context": "flat-color clouds, cracked ground",
+                "lighting_color_and_atmosphere": "cel-shaded lighting, strong warm key light",
+            }
+        }
+        rendered = prompt_plus._render_natural_prompt(
+            envelope,
+            "英文",
+            True,
+            "写实摄影",
+        )
+        self.assertIn("photorealistic editorial character photography", rendered)
+        self.assertIn("black trousers and a white beard", rendered)
+        self.assertIn("a wide low squat with one arm raised overhead", rendered)
+        self.assertIn("strong warm key light", rendered)
+        self.assertNotRegex(
+            rendered.lower(),
+            r"cartoon|illustration|cel[- ]shad|flat[- ]color|bold outlines",
+        )
+
+    def test_style_conflict_detector_ignores_source_medium_but_checks_target_fields(self):
+        valid = {
+            "visual_analysis": {
+                "source_medium": "flat-color cartoon illustration",
+                "style_category": "realistic photography",
+                "style_subtype": "photorealistic editorial character photography",
+            }
+        }
+        invalid = {
+            "visual_analysis": {
+                "source_medium": "flat-color cartoon illustration",
+                "style_category": "realistic photography",
+                "style_subtype": "flat-color cartoon character photograph",
+            }
+        }
+        self.assertFalse(
+            prompt_plus._analysis_style_conflicts(json.dumps(valid), "写实摄影")
+        )
+        self.assertTrue(
+            prompt_plus._analysis_style_conflicts(json.dumps(invalid), "写实摄影")
+        )
+        self.assertFalse(
+            prompt_plus._analysis_style_conflicts(json.dumps(invalid), "自行判断")
+        )
+
+    def test_locked_style_correction_explicitly_preserves_content_not_source_medium(self):
+        instruction = prompt_plus._style_correction_instruction("写实摄影")
+        self.assertIn("source evidence, not the requested output medium", instruction)
+        self.assertIn("Set style_category to exactly realistic photography", instruction)
+        self.assertIn("Preserve subject identity, pose, composition, colors", instruction)
+
+    def test_image_generation_corrects_a_conflicting_locked_style_once(self):
+        conflicting = {
+            "visual_analysis": {
+                "source_medium": "flat-color cartoon illustration",
+                "style_category": "digital art",
+                "style_subtype": "cel-shaded cartoon illustration",
+                "primary_subject": "an elderly martial artist",
+                "primary_subject_pose_and_action": "standing in a wide low squat",
+                "camera_elevation": "level",
+                "view_direction": "level",
+            }
+        }
+        corrected = {
+            "visual_analysis": {
+                "source_medium": "flat-color cartoon illustration",
+                "style_category": "realistic photography",
+                "style_subtype": "photorealistic editorial character photography",
+                "primary_subject": "an elderly martial artist",
+                "primary_subject_pose_and_action": "standing in a wide low squat",
+                "camera_elevation": "level",
+                "view_direction": "level",
+            }
+        }
+        node = prompt_plus.NO8DBatchPromptPlus()
+        node._cache.clear()
+        with mock.patch.object(
+            prompt_plus,
+            "_chat_completion",
+            side_effect=(json.dumps(conflicting), json.dumps(corrected)),
+        ) as completion:
+            result = node._generate_prompt_item(
+                index=0,
+                total=1,
+                image_data_url="data:image/jpeg;base64,AA==",
+                image_hash="style-lock-test",
+                prompt="return a realistic photograph",
+                prompt_rule=prompt_plus._RULE_NATURAL,
+                extra_rules="",
+                base_seed=9,
+                style_preset="写实摄影",
+                composition_preset="自行判断",
+                length_preset="标准",
+                output_language="英文",
+                service={"id": "test-service", "vision_model": "vision-model"},
+                api_base_url="https://example.com/v1",
+                api_key="test-key",
+                model="text-model",
+                service_type="openai_compatible",
+                temperature=0.7,
+                max_tokens=512,
+            )
+        self.assertEqual(completion.call_count, 2)
+        correction_messages = completion.call_args_list[1].args[3]
+        self.assertIn(
+            "violated the locked target-style category",
+            correction_messages[-1]["content"],
+        )
+        self.assertIn("photorealistic editorial character photography", result)
+        self.assertNotIn("cartoon", result.lower())
 
     def test_selected_category_and_subtype_are_added_to_system_prompt(self):
         messages = prompt_plus._build_messages(
@@ -604,6 +800,7 @@ class PromptStylePresetTests(unittest.TestCase):
                 self.assertFalse(schema["additionalProperties"])
                 analysis = schema["properties"]["visual_analysis"]
                 for field in (
+                    "source_medium",
                     "explicit_subject_requirement",
                     "primary_subject_appearance_and_clothing",
                     "primary_subject_pose_and_action",
@@ -611,6 +808,7 @@ class PromptStylePresetTests(unittest.TestCase):
                     "lighting_color_and_atmosphere",
                 ):
                     self.assertIn(field, analysis["required"])
+                self.assertEqual(analysis["properties"]["source_medium"]["maxLength"], 100)
                 self.assertEqual(analysis["properties"]["primary_subject_appearance_and_clothing"]["maxLength"], 200)
                 self.assertEqual(analysis["properties"]["explicit_subject_requirement"]["maxLength"], 100)
                 self.assertEqual(analysis["properties"]["primary_subject_pose_and_action"]["maxLength"], 170)

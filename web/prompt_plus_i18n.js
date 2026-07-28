@@ -35,6 +35,7 @@ const PROMPT_RULE_DISPLAY = {
 };
 const STYLE_DISPLAY = {
     "自行判断": "Auto",
+    "不描述风格": "No style description",
     "写实摄影": "Realistic photography",
     "动漫插图": "Anime illustration",
     "手绘艺术": "Hand-drawn art",

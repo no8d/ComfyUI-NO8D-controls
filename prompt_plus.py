@@ -38,7 +38,7 @@ _MAX_PARALLEL_REQUESTS = 3
 _RETRY_HTTP_CODES = {408, 429, 500, 502, 503, 504}
 _ARK_BURST_RETRY_DELAY = 8.0
 _ARK_REQUEST_LOCK = threading.Lock()
-_PROMPT_PIPELINE_VERSION = "structured-geometry-v8"
+_PROMPT_PIPELINE_VERSION = "structured-geometry-v10"
 # The structured worksheet has substantially more fields than the rendered
 # prompt. Keep its private budget separate from the public 256/512-token target.
 # Native JSON-schema decoding still obeys max_tokens and needs room to emit all
@@ -46,6 +46,7 @@ _PROMPT_PIPELINE_VERSION = "structured-geometry-v8"
 _NATURAL_ANALYSIS_TOKEN_OVERHEAD = 1792
 _STYLE_PRESETS = (
     "自行判断",
+    "不描述风格",
     "写实摄影",
     "动漫插图",
     "手绘艺术",
@@ -57,6 +58,8 @@ _STYLE_PRESET_ALIASES = {
     "None": "自行判断",
     "Auto": "自行判断",
     "自行判断": "自行判断",
+    "No style description": "不描述风格",
+    "不描述风格": "不描述风格",
     "Realistic photography": "写实摄影",
     "Anime illustration": "动漫插图",
     "Hand-drawn art": "手绘艺术",
@@ -87,6 +90,12 @@ _STYLE_PRESET_ALIASES = {
 }
 _STYLE_PRESET_INPUTS = _STYLE_PRESETS
 _STYLE_PRESET_RULES = {
+    "不描述风格": (
+        "Do not classify, infer, name, or describe any visual style, artistic medium, rendering method, photographic "
+        "genre, capture format, or style subtype. Keep source_medium, style_category, and style_subtype empty. Continue "
+        "to describe the subject, pose, action, expression, clothing or surface appearance, camera relationship, framing, "
+        "lens and perspective, environment, lighting, visible colors, materials, textures, and atmosphere."
+    ),
     "写实摄影": (
         "Stay within realistic photography. Infer the best-supported photographic subtype from the image and/or text, "
         "such as a casual smartphone snapshot, documentary or street photography, DSLR/mirrorless portrait or editorial "
@@ -118,6 +127,55 @@ _STYLE_PRESET_RULES = {
         "Describe the selected subtype through its brush or rendering language, edge control, material treatment, layer-like "
         "depth, color design, lighting, and finish. Do not mislabel it as an ordinary camera photograph or a physical "
         "traditional artwork."
+    ),
+}
+_STYLE_CATEGORY_VALUES = {
+    "写实摄影": "realistic photography",
+    "动漫插图": "anime illustration",
+    "手绘艺术": "hand-drawn art",
+    "数字艺术": "digital art",
+}
+_STYLE_FALLBACK_SUBTYPES = {
+    "写实摄影": {
+        "英文": "photorealistic editorial character photography",
+        "中文": "照片级写实角色编辑摄影",
+    },
+    "动漫插图": {
+        "英文": "anime character key art",
+        "中文": "动漫角色主视觉插图",
+    },
+    "手绘艺术": {
+        "英文": "hand-painted gouache illustration",
+        "中文": "手绘水粉插画",
+    },
+    "数字艺术": {
+        "英文": "digital concept art",
+        "中文": "数字概念艺术",
+    },
+}
+_STYLE_CONFLICT_PATTERNS = {
+    "写实摄影": re.compile(
+        r"\b(?:anime|manga|cartoon|comic(?:-book)?|illustrat(?:ion|ed|ive)|cel[- ]shad(?:ed|ing)|"
+        r"flat[- ]colou?r|line[- ]art|bold outlines?|digital painting|concept art|2d render)\b|"
+        r"动漫|漫画|卡通|插画|插图|赛璐璐|平涂|描边|线稿|数字绘画|概念艺术",
+        re.IGNORECASE,
+    ),
+    "动漫插图": re.compile(
+        r"\b(?:photograph(?:y|ic)?|photo(?:realistic)?|live[- ]action|smartphone snapshot|dslr|"
+        r"mirrorless photo|analog film photo)\b|写实摄影|手机摄影|单反摄影|真人实拍",
+        re.IGNORECASE,
+    ),
+    "手绘艺术": re.compile(
+        r"\b(?:photograph(?:y|ic)?|smartphone snapshot|dslr|cgi|3d render|digital art|"
+        r"digital painting|anime key art|cel[- ]shad(?:ed|ing))\b|写实摄影|手机摄影|单反摄影|"
+        r"三维渲染|数字艺术|数字绘画|动漫主视觉|赛璐璐",
+        re.IGNORECASE,
+    ),
+    "数字艺术": re.compile(
+        r"\b(?:photograph(?:y|ic)?|smartphone snapshot|dslr|analog film photo|"
+        r"watercolou?r on paper|oil on canvas|charcoal on paper)\b|写实摄影|手机摄影|单反摄影|"
+        r"纸上水彩|布面油画|纸上木炭",
+        re.IGNORECASE,
     ),
 }
 _COMPOSITION_PRESETS = (
@@ -196,6 +254,107 @@ _IMAGE_ENCODE_CACHE_LOCK = threading.Lock()
 def _normalize_style_preset(style_preset):
     preset = str(style_preset or "").strip()
     return _STYLE_PRESET_ALIASES.get(preset, preset) if preset else "自行判断"
+
+
+def _contains_style_conflict(text, style_preset):
+    preset = _normalize_style_preset(style_preset)
+    pattern = _STYLE_CONFLICT_PATTERNS.get(preset)
+    return bool(pattern and pattern.search(str(text or "")))
+
+
+def _analysis_style_conflicts(text, style_preset):
+    preset = _normalize_style_preset(style_preset)
+    if preset in {"自行判断", "不描述风格"}:
+        return False
+    try:
+        cleaned = _strip_code_fence(_strip_thinking(str(text or ""))).strip()
+        envelope = _parse_analysis_envelope(cleaned)
+    except ValueError:
+        return False
+    analysis = envelope.get("visual_analysis")
+    if not isinstance(analysis, dict):
+        return False
+    category = str(analysis.get("style_category") or "").strip()
+    expected = _STYLE_CATEGORY_VALUES.get(preset, "")
+    if expected and category.lower() != expected.lower():
+        return True
+    fields = (
+        "style_subtype",
+        "primary_subject_appearance_and_clothing",
+        "primary_subject_pose_and_action",
+        "primary_subject_expression",
+        "environment_and_spatial_context",
+        "lighting_color_and_atmosphere",
+    )
+    values = [analysis.get(field) for field in fields]
+    values.append(envelope.get("scene_description"))
+    return any(_contains_style_conflict(value, preset) for value in values)
+
+
+def _remove_style_conflict_clauses(text, style_preset):
+    value = str(text or "").strip()
+    if not value or not _contains_style_conflict(value, style_preset):
+        return value
+    clauses = re.split(r"(?<=[.;。；])\s*|(?<=[,，])\s*", value)
+    kept = [
+        clause for clause in clauses
+        if clause.strip() and not _contains_style_conflict(clause, style_preset)
+    ]
+    return " ".join(kept).strip(" ,，.;；。")
+
+
+def _apply_style_preset(envelope, style_preset, output_language):
+    preset = _normalize_style_preset(style_preset)
+    if preset == "自行判断" or not isinstance(envelope, dict):
+        return envelope
+    original = envelope.get("visual_analysis")
+    if not isinstance(original, dict):
+        return envelope
+    prepared = dict(envelope)
+    analysis = dict(original)
+    prepared["visual_analysis"] = analysis
+    if preset == "不描述风格":
+        analysis["source_medium"] = ""
+        analysis["style_category"] = ""
+        analysis["style_subtype"] = ""
+        return prepared
+    analysis["style_category"] = _STYLE_CATEGORY_VALUES.get(
+        preset, analysis.get("style_category", "")
+    )
+    subtype = str(analysis.get("style_subtype") or "").strip()
+    language = _normalize_output_language(output_language)
+    if not subtype or _contains_style_conflict(subtype, preset):
+        subtype = _STYLE_FALLBACK_SUBTYPES[preset][language]
+    analysis["style_subtype"] = subtype
+    for field in (
+        "primary_subject_appearance_and_clothing",
+        "primary_subject_pose_and_action",
+        "primary_subject_expression",
+        "environment_and_spatial_context",
+        "lighting_color_and_atmosphere",
+    ):
+        analysis[field] = _remove_style_conflict_clauses(analysis.get(field), preset)
+    prepared["scene_description"] = _remove_style_conflict_clauses(
+        prepared.get("scene_description"), preset
+    )
+    return prepared
+
+
+def _style_correction_instruction(style_preset):
+    preset = _normalize_style_preset(style_preset)
+    category = _STYLE_CATEGORY_VALUES.get(preset, "")
+    if not category:
+        return ""
+    return (
+        "The previous worksheet violated the locked target-style category. Reinspect the same image and return one "
+        "complete JSON worksheet only. The reference image's original medium is source evidence, not the requested "
+        f"output medium. Set style_category to exactly {category}; put the original image medium only in source_medium; "
+        "choose a target style_subtype inside the locked category. Rewrite appearance, pose, environment, lighting, "
+        "atmosphere, and scene_description as properties of the requested target image. Preserve subject identity, pose, "
+        "composition, colors, objects, and spatial relationships, but remove every vocabulary item belonging to a "
+        f"conflicting medium. {_STYLE_PRESET_RULES.get(preset, '')}"
+    )
+
 
 def _normalize_composition_preset(composition_preset):
     preset = str(composition_preset or "").strip()
@@ -877,7 +1036,13 @@ def _validated_vertical_relation(analysis, conservative_image_geometry=False):
     return elevation, direction
 
 
-def _render_natural_prompt(envelope, output_language, conservative_image_geometry=False):
+def _render_natural_prompt(
+    envelope,
+    output_language,
+    conservative_image_geometry=False,
+    style_preset="自行判断",
+):
+    envelope = _apply_style_preset(envelope, style_preset, output_language)
     analysis = envelope.get("visual_analysis") if isinstance(envelope, dict) else None
     scene = str(
         (envelope or {}).get("scene_description")
@@ -981,7 +1146,13 @@ def _partial_analysis_envelope(text):
     return analysis, scene
 
 
-def _clean_prompt_output(text, rule, output_language="英文", strict_natural=False):
+def _clean_prompt_output(
+    text,
+    rule,
+    output_language="英文",
+    strict_natural=False,
+    style_preset="自行判断",
+):
     text = _strip_code_fence(_strip_thinking(text)).strip()
     text = re.sub(r"^\s*(expanded prompt|positive prompt|prompt|result|output)\s*:\s*", "", text, flags=re.IGNORECASE)
     text = text.strip().strip('"').strip()
@@ -990,7 +1161,12 @@ def _clean_prompt_output(text, rule, output_language="英文", strict_natural=Fa
         parse_error = None
         try:
             envelope = _parse_analysis_envelope(text)
-            rendered = _render_natural_prompt(envelope, output_language, strict_natural)
+            rendered = _render_natural_prompt(
+                envelope,
+                output_language,
+                strict_natural,
+                style_preset,
+            )
             if rendered:
                 return rendered
             if not strict_natural:
@@ -1139,6 +1315,8 @@ def _style_preset_rule(style_preset):
             "art, photobashing, and CGI hybrid art. State the selected concrete subtype and its supported visual vocabulary "
             "in the final prompt without exposing the classification process or listing alternatives."
         )
+    if preset == "不描述风格":
+        return _STYLE_PRESET_RULES[preset]
     category_rule = _STYLE_PRESET_RULES.get(preset, "")
     if not category_rule:
         return ""
@@ -1158,6 +1336,12 @@ def _style_task_instruction(style_preset):
             "Mandatory style task: classify the reference into exactly one of these four categories—realistic photography, "
             "anime illustration, hand-drawn art, or digital art—then select one evidence-based concrete subtype inside it. "
             "The opening sentence of the final prompt must explicitly contain that subtype, not merely a vague adjective."
+        )
+    if preset == "不描述风格":
+        return (
+            "Mandatory no-style task: do not classify or describe style, medium, rendering method, photographic genre, "
+            "capture format, or subtype. Leave source_medium, style_category, and style_subtype empty. Describe all "
+            "non-style visual facts normally."
         )
     return (
         f"Mandatory style task: the upper-level category is locked to {preset}. Select one concrete subtype inside this "
@@ -1192,25 +1376,37 @@ def _camera_task_instruction(input_mode):
 
 def _final_output_audit(style_preset, input_mode):
     preset = _normalize_style_preset(style_preset)
-    category_check = (
-        "one of the four allowed upper-level categories and one concrete subtype"
-        if preset == "自行判断"
-        else f"the selected {preset} category and one concrete subtype within it"
-    )
-    checks = [
-        f"Style: the final prompt must clearly communicate {category_check}.",
-        "Specificity: generic phrases by themselves—such as atmospheric photography, cinematic style, realistic look, "
-        "anime style, hand-drawn look, or digital art—do not count as a subtype; replace them with a supported concrete "
-        "form such as editorial photography, casual smartphone snapshot, cinematic film still, anime key art, watercolor, "
-        "or concept art.",
-    ]
+    if preset == "不描述风格":
+        checks = [
+            "Style omission: the final prompt must contain no style, medium, rendering-method, photographic-genre, "
+            "capture-format, or subtype description. Lighting, visible colors, materials, textures, and atmosphere are "
+            "not style labels and must still be described."
+        ]
+    else:
+        category_check = (
+            "one of the four allowed upper-level categories and one concrete subtype"
+            if preset == "自行判断"
+            else f"the selected {preset} category and one concrete subtype within it"
+        )
+        checks = [
+            f"Style: the final prompt must clearly communicate {category_check}.",
+            "Specificity: generic phrases by themselves—such as atmospheric photography, cinematic style, realistic look, "
+            "anime style, hand-drawn look, or digital art—do not count as a subtype; replace them with a supported concrete "
+            "form such as editorial photography, casual smartphone snapshot, cinematic film still, anime key art, watercolor, "
+            "or concept art.",
+        ]
     geometry_source = (
         "reproduce these relationships from image evidence"
         if input_mode in {"image", "image_text"}
         else "design these relationships coherently from the user's intent"
     )
+    opening_style_clause = (
+        ""
+        if preset == "不描述风格"
+        else "the concrete style subtype with "
+    )
     checks.append(
-        "Opening sentence: the answer is invalid unless its first sentence combines the concrete style subtype with "
+        f"Opening sentence: the answer is invalid unless its first sentence combines {opening_style_clause}"
         "the camera's vertical relationship to the primary subject, the camera/subject front-side-rear relationship, the "
         "subject's viewer-relative spatial extent, dominant axis and depth layer, and the lens class/perspective effect. "
         "For a person, the visible head-to-feet/body extent must determine shot scale; a visible full or nearly full body "
@@ -1284,15 +1480,24 @@ Camera geometry and subject relationship evidence (mandatory and direction-neutr
 """.strip()
 
 
-def _natural_analysis_contract(input_mode):
+def _natural_analysis_contract(input_mode, style_preset="自行判断"):
     basis = (
         "observed image evidence"
         if input_mode in {"image", "image_text"}
         else "an intentional design derived from the user's text"
     )
+    style_contract = (
+        "Leave source_medium, style_category, and style_subtype empty. Do not classify or describe style or medium anywhere "
+        "else in the worksheet."
+        if _normalize_style_preset(style_preset) == "不描述风格"
+        else "Keep source_medium separate from the requested target style. source_medium records what the reference image "
+        "visibly is; style_category and style_subtype describe the image the user wants generated. When a style preset is "
+        "selected, the reference medium must not override it or leak conflicting medium words into the descriptive fields."
+    )
     return f"""
 Natural-prompt analysis envelope (mandatory response transport format):
 - Before writing the prompt, fill every visual_analysis field below using {basis}. This is a compact composition worksheet, not a place for narrative prose.
+- {style_contract}
 - Estimate the primary subject's occupied bounding box and three meaningful anchors in viewer-relative normalized coordinates from 0 to 1000, with origin at image top-left and bbox order [x_min, y_min, x_max, y_max]. Use head/front, center mass, and legs/rear/far extent so an extended or diagonal subject cannot collapse into an assumed centered position.
 - State the primary subject's dominant spatial axis, visible body/object extent, and approximate percentage of frame occupancy. For a person, visible legs or feet prevent a false medium-shot label even when the face is prominent.
 - In image-plus-text mode, copy the user's explicit subject identity constraints into explicit_subject_requirement as one concise noun phrase, preserving stated name, nationality or ethnicity, gender, and age wording without substitution; for example, "an American woman" must not become "a young woman". Leave this field empty when the user did not explicitly specify a subject. Never infer these attributes from the image for this field.
@@ -1312,6 +1517,7 @@ Natural-prompt analysis envelope (mandatory response transport format):
 - Return exactly one valid JSON object with these keys and no markdown:
 {{
   "visual_analysis": {{
+    "source_medium": "",
     "style_category": "",
     "style_subtype": "",
     "explicit_subject_requirement": "",
@@ -1365,6 +1571,12 @@ def _build_messages(prompt_input, rule, extra_rules, seed, image_data_url="", st
                 f"{style_rule}\n"
                 "This only controls visual style inference. It must not override an explicit subject shot-scale selection."
             )
+        elif normalized_style == "不描述风格":
+            system += (
+                "\n\nStyle preset:\n"
+                f"{style_rule}\n"
+                "This omission applies only to style and medium. Preserve every other requested or visible scene fact."
+            )
         else:
             system += (
                 "\n\nStyle preset:\n"
@@ -1402,7 +1614,7 @@ def _build_messages(prompt_input, rule, extra_rules, seed, image_data_url="", st
         f"{audit_tail}"
     )
     if rule_mode == "natural":
-        system += f"\n\n{_natural_analysis_contract(input_mode)}"
+        system += f"\n\n{_natural_analysis_contract(input_mode, style_preset)}"
     prompt_text = str(prompt_input or "").strip()
     style_task = _style_task_instruction(style_preset)
     camera_task = _camera_task_instruction(input_mode)
@@ -1470,6 +1682,21 @@ def _build_image_analysis_messages(prompt_input, image_data_url, style_preset, c
     style_instruction = _style_task_instruction(style_preset)
     if style_preset != "自行判断":
         style_instruction += "\n" + _STYLE_PRESET_RULES.get(style_preset, "")
+    omit_style = style_preset == "不描述风格"
+    medium_instruction = (
+        "Leave source_medium, style_category, and style_subtype empty. Do not classify or describe the reference medium "
+        "or any target style."
+        if omit_style
+        else "Record the reference image's visible medium only in source_medium. style_category and style_subtype are the "
+        "requested target output, not a classification of the source. When a style preset is locked, preserve source "
+        "content, composition, pose, colors, and spatial evidence while translating all rendering/medium language into "
+        "that target category."
+    )
+    style_decision_instruction = (
+        f"Do not select or describe a style or medium. {style_instruction}"
+        if omit_style
+        else f"Select one concrete target style subtype. {style_instruction}"
+    )
     composition_instruction = _composition_preset_rule(composition_preset)
     text_requirement = str(prompt_input or "").strip()
     conflict_instruction = (
@@ -1485,6 +1712,7 @@ Every string must obey JSON escaping rules. Escape internal double quotes as \\"
 
 Required decisions:
 - Identify the primary subject and estimate its bbox and three anchors in viewer coordinates 0..1000, origin at image top-left.
+- {medium_instruction}
 - If the user text explicitly specifies the subject, copy its stated identity into explicit_subject_requirement as one concise noun phrase. Preserve stated name, nationality or ethnicity, gender, and age wording exactly in meaning; do not replace "an American woman" with "a young woman". Leave it empty for image-only input or when text specifies no subject. Never infer these attributes from the image for this field.
 - Keep camera elevation, viewing direction, subject orientation, and frame placement separate.
 - Vertical sign requires converging evidence. Use above/downward only when a visible top plane is accompanied by clear perspective foreshortening or scene convergence proving that the camera is elevated; use below/upward only when visible undersides are accompanied by equivalent perspective evidence. A visible crown, forehead, shoulders, chest, or neckline alone is insufficient.
@@ -1495,7 +1723,8 @@ Required decisions:
 - Lens width is independent of elevation. Describe the visible field of view and perspective effect.
 - Locate every important secondary subject with an anchor and depth layer. Use visible descriptors unless identity is unmistakable.
 - Scale expression detail and priority with shot distance. For extreme close-up, close-up, head-and-shoulders, or chest-up views, record detailed eye/gaze, brow, nose, mouth/lips/teeth, jaw, and facial-muscle evidence. For medium shots, retain only clearly readable expression cues. For full-body or wide shots, use only broad cues that remain visible. For extreme-wide views or an invisible face, leave the field empty. Do not reduce a readable close expression to "expressive", "happy", or "serious", and do not invent emotion.
-- Select one concrete style subtype. {style_instruction}
+- {style_decision_instruction}
+- When style description is enabled and the source medium conflicts with a locked target style, never repeat the source-medium vocabulary in style_subtype, appearance, pose, environment, lighting, atmosphere, or scene_description.
 - Shot-scale instruction: {composition_instruction}
 - {conflict_instruction}
 - Record appearance/clothing, articulated pose/action, environment/spatial context, and lighting/color/atmosphere in their dedicated fields. In appearance/clothing, list garment type, cut, layers, openings/straps, colors, materials, and footwear before hair, eyewear, jewelry, or makeup. Keep all fields mutually non-duplicative and grounded in visible evidence.
@@ -1508,6 +1737,7 @@ Required decisions:
 Schema:
 {{
   "visual_analysis": {{
+    "source_medium": "",
     "style_category": "realistic photography | anime illustration | hand-drawn art | digital art",
     "style_subtype": "",
     "explicit_subject_requirement": "",
@@ -1736,7 +1966,7 @@ def _image_analysis_response_format(base_url, scene_only=False):
         name = "no8d_scene_description"
     else:
         string_fields = (
-            "style_category", "style_subtype", "explicit_subject_requirement", "primary_subject",
+            "source_medium", "style_category", "style_subtype", "explicit_subject_requirement", "primary_subject",
             "primary_subject_dominant_axis", "primary_subject_visible_extent",
             "primary_subject_appearance_and_clothing", "primary_subject_pose_and_action",
             "primary_subject_expression", "shot_scale", "camera_elevation",
@@ -1747,6 +1977,7 @@ def _image_analysis_response_format(base_url, scene_only=False):
         )
         properties = {field: {"type": "string"} for field in string_fields}
         properties.update({
+            "source_medium": {"type": "string", "maxLength": 100},
             "explicit_subject_requirement": {"type": "string", "maxLength": 100},
             "primary_subject_appearance_and_clothing": {"type": "string", "maxLength": 200},
             "primary_subject_pose_and_action": {"type": "string", "maxLength": 170},
@@ -1964,8 +2195,30 @@ class NO8DBatchPromptPlus:
         if result is None:
             response_format = _image_analysis_response_format(api_base_url) if strict_image_analysis else None
             raw = _chat_completion(api_base_url, api_key, request_model, messages, request_temperature, max_tokens, effective_seed, service_type, response_format)
+            if strict_image_analysis and _analysis_style_conflicts(raw, style_preset):
+                correction_messages = messages + [
+                    {"role": "assistant", "content": raw},
+                    {"role": "user", "content": _style_correction_instruction(style_preset)},
+                ]
+                raw = _chat_completion(
+                    api_base_url,
+                    api_key,
+                    request_model,
+                    correction_messages,
+                    0.0,
+                    max_tokens,
+                    effective_seed,
+                    service_type,
+                    response_format,
+                )
             try:
-                result = _clean_prompt_output(raw, prompt_rule, output_language, strict_image_analysis)
+                result = _clean_prompt_output(
+                    raw,
+                    prompt_rule,
+                    output_language,
+                    strict_image_analysis,
+                    style_preset,
+                )
             except ValueError:
                 partial_analysis, partial_scene = _partial_analysis_envelope(raw)
                 if partial_analysis and not partial_scene:
@@ -2000,7 +2253,13 @@ class NO8DBatchPromptPlus:
                             "scene_description": repaired_scene,
                         }
                         repaired = json.dumps(merged, ensure_ascii=False)
-                    result = _clean_prompt_output(repaired, prompt_rule, output_language, True)
+                    result = _clean_prompt_output(
+                        repaired,
+                        prompt_rule,
+                        output_language,
+                        True,
+                        style_preset,
+                    )
                 except ValueError as exc:
                     raise RuntimeError(
                         "NO8D-Prompt: the vision model did not return a complete visual-analysis result after one correction. "
