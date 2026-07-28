@@ -6,6 +6,27 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-28
+
+### Added
+
+- Added editable canvas ratios, source-image transforms, native outpainting, and Flux2 Klein/Krea2 Identity Edit reference paths to `NO8D-Generate`.
+- Added the `NO8D-Remove Krea2 Reference Latents` conditioning utility.
+- Added separate `image_a` and `image_b` outputs to `NO8D-A/B preview`.
+- Added original, 1K, 2K, and 4K longest-edge sizing to `NO8D Image Title`.
+- Added a no-style-description mode and locked-style conflict correction to `NO8D-Prompt`.
+
+### Changed
+
+- Delegated `NO8D-Empty latent` creation to ComfyUI's native `EmptyLatentImage` and migrated manual dimensions to short/long-side controls.
+- Delegated UNET loading in `NO8D-LoRA stack` to ComfyUI's native `UNETLoader`; new LoRA entries now start at strength `1.0` with a `0–2` range.
+- Updated the bundled example workflows for the new node controls and Prompt Libraries guide entry.
+
+### Fixed
+
+- Kept the clicked A/B side selected across ComfyUI's native right-click handling so image actions target the correct image.
+- Removed duplicate color controls from the image composition nodes.
+
 ## [1.1.4] - 2026-07-19
 
 ### Changed

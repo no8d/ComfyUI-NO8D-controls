@@ -6,6 +6,7 @@ from collections.abc import Iterable, Mapping
 
 import numpy as np
 import torch
+from comfy.utils import common_upscale
 from PIL import Image, ImageDraw, ImageFont
 from comfy_api.v0_0_2 import io
 
@@ -70,6 +71,14 @@ _TEXT_ALIGN_ALIASES = {
     "Right": "right",
     "居右": "right",
 }
+_OUTPUT_SIZE_ALIASES = {
+    "original": 0,
+    "Original size": 0,
+    "原始尺寸": 0,
+    "1K": 1024,
+    "2K": 2048,
+    "4K": 4096,
+}
 
 
 def _parse_color(value: str) -> tuple[int, int, int]:
@@ -91,6 +100,27 @@ def _darken(color: tuple[int, int, int], amount: float = 0.2) -> tuple[int, int,
 
 def _percentage(value: int | str) -> int:
     return int(str(value).strip().removesuffix("%"))
+
+
+def _resize_long_edge(images: torch.Tensor, output_size: str) -> torch.Tensor:
+    target = _OUTPUT_SIZE_ALIASES.get(output_size)
+    if target is None:
+        raise ValueError(f"不支持的图像尺寸：{output_size}")
+    if target == 0:
+        return images
+    if not isinstance(images, torch.Tensor) or images.ndim != 4:
+        raise ValueError("图片输入必须是形状为 [B,H,W,C] 的 IMAGE 张量")
+    height, width = images.shape[1:3]
+    scale = target / max(height, width)
+    target_width = max(1, round(width * scale))
+    target_height = max(1, round(height * scale))
+    return common_upscale(
+        images.movedim(-1, 1),
+        target_width,
+        target_height,
+        "lanczos",
+        "disabled",
+    ).movedim(1, -1)
 
 
 def _tensor_images(inputs: Iterable[torch.Tensor]) -> list[Image.Image]:
@@ -233,7 +263,9 @@ def add_titles(
     text_padding: int,
     text_color: str,
     text_align: str,
+    output_size: str = "原始尺寸",
 ) -> torch.Tensor:
+    images = _resize_long_edge(images, output_size)
     source_images = _tensor_images([images])
     labels = str(titles).splitlines()
     labels.extend([""] * (len(source_images) - len(labels)))
@@ -415,7 +447,12 @@ class NO8DImageTitle(io.ComfyNode):
             inputs=[
                 io.Image.Input("images", display_name="图片"),
                 io.String.Input("titles", display_name="独立标题（每行一个）", default="image-01", multiline=True),
-                io.Color.Input("title_bar_color", display_name="标题底色", default=NO8D_ACCENT_COLOR),
+                io.Color.Input(
+                    "title_bar_color",
+                    display_name="标题底色",
+                    default=NO8D_ACCENT_COLOR,
+                    socketless=True,
+                ),
                 io.Int.Input(
                     "title_bar_opacity",
                     display_name="底色透明度",
@@ -442,8 +479,19 @@ class NO8DImageTitle(io.ComfyNode):
                 ),
                 io.Int.Input("font_size", display_name="标题字号", default=36, min=1, max=512, step=1),
                 io.Int.Input("text_padding", display_name="标题间距", default=4, min=0, max=1024, step=1),
-                io.Color.Input("text_color", display_name="标题颜色", default="#FFFFFF"),
+                io.Color.Input(
+                    "text_color",
+                    display_name="标题颜色",
+                    default="#FFFFFF",
+                    socketless=True,
+                ),
                 io.Combo.Input("text_align", display_name="标题对齐", options=["居左", "居中", "居右"], default="居中"),
+                io.Combo.Input(
+                    "output_size",
+                    display_name="图像尺寸",
+                    options=["原始尺寸", "1K", "2K", "4K"],
+                    default="原始尺寸",
+                ),
             ],
             outputs=[io.Image.Output(display_name="image")],
         )

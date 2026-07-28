@@ -1,14 +1,5 @@
-import torch
-
-import comfy.model_management
 import nodes
 
-
-MODEL_TYPES = [
-    "SD / SDXL",
-    "SD3 / Flux / Krea2",
-    "Flux2",
-]
 
 ASPECT_RATIOS = {
     "1:1": (1, 1),
@@ -49,20 +40,33 @@ def _size_from_short_side(aspect_ratio, short_side, invert_ratio, multiple):
     return _round_to_multiple(width, multiple), _round_to_multiple(height, multiple)
 
 
-def _size_from_manual_or_short_side(aspect_ratio, short_side, invert_ratio, manual_width, manual_height, multiple):
+def _size_from_manual_or_short_side(
+    aspect_ratio,
+    short_side,
+    invert_ratio,
+    manual_short_side,
+    manual_long_side,
+    multiple,
+):
     ratio_w, ratio_h = _ratio(aspect_ratio, invert_ratio)
-    manual_width = int(manual_width or 0)
-    manual_height = int(manual_height or 0)
+    manual_short_side = int(manual_short_side or 0)
+    manual_long_side = int(manual_long_side or 0)
+    ratio_short = min(ratio_w, ratio_h)
+    ratio_long = max(ratio_w, ratio_h)
 
-    if manual_width > 0 and manual_height > 0:
-        return _round_to_multiple(manual_width, multiple), _round_to_multiple(manual_height, multiple)
-    if manual_width > 0:
-        height = manual_width * ratio_h / ratio_w
-        return _round_to_multiple(manual_width, multiple), _round_to_multiple(height, multiple)
-    if manual_height > 0:
-        width = manual_height * ratio_w / ratio_h
-        return _round_to_multiple(width, multiple), _round_to_multiple(manual_height, multiple)
-    return _size_from_short_side(aspect_ratio, short_side, invert_ratio, multiple)
+    if manual_short_side <= 0 and manual_long_side <= 0:
+        return _size_from_short_side(aspect_ratio, short_side, invert_ratio, multiple)
+
+    if manual_short_side <= 0:
+        manual_short_side = manual_long_side * ratio_short / ratio_long
+    if manual_long_side <= 0:
+        manual_long_side = manual_short_side * ratio_long / ratio_short
+
+    if ratio_w > ratio_h:
+        width, height = manual_long_side, manual_short_side
+    else:
+        width, height = manual_short_side, manual_long_side
+    return _round_to_multiple(width, multiple), _round_to_multiple(height, multiple)
 
 
 class NO8DEmptyLatent:
@@ -70,52 +74,66 @@ class NO8DEmptyLatent:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "model_type": (MODEL_TYPES, {"default": "SD / SDXL"}),
-                "short_side": (SHORT_SIDES, {"default": "512"}),
                 "aspect_ratio": (list(ASPECT_RATIOS.keys()), {"default": "1:1"}),
-                "invert_ratio": ("BOOLEAN", {"default": False}),
-                "manual_width": ("INT", {"default": 0, "min": 0, "max": nodes.MAX_RESOLUTION, "step": 16}),
-                "manual_height": ("INT", {"default": 0, "min": 0, "max": nodes.MAX_RESOLUTION, "step": 16}),
-                "batch_size": ("INT", {"default": 1, "min": 1, "max": 4096}),
+                "short_side": (SHORT_SIDES, {"default": "512"}),
+                "invert_ratio": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "Swap the selected aspect ratio between portrait and landscape.",
+                }),
+                "manual_short_side": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": nodes.MAX_RESOLUTION,
+                    "step": 8,
+                    "tooltip": "Override the short side. Keep at 0 to calculate it from the selected size or manual long side.",
+                }),
+                "manual_long_side": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": nodes.MAX_RESOLUTION,
+                    "step": 8,
+                    "tooltip": "Override the long side. Keep at 0 to calculate it from the aspect ratio.",
+                }),
+                "batch_size": ("INT", {
+                    "default": 1,
+                    "min": 1,
+                    "max": 4096,
+                    "tooltip": "The number of latent images in the batch.",
+                }),
             }
         }
 
     RETURN_TYPES = ("LATENT", "INT", "INT")
     RETURN_NAMES = ("latent", "width", "height")
+    OUTPUT_TOOLTIPS = (
+        "The empty latent created by ComfyUI's native EmptyLatentImage node.",
+        "The final pixel width passed to the core node.",
+        "The final pixel height passed to the core node.",
+    )
     FUNCTION = "generate"
     CATEGORY = "NO8D-control"
-    DESCRIPTION = "Create an empty latent by choosing a model family, aspect ratio, short side size, or manual width and height."
+    DESCRIPTION = "Choose dimensions, then create the latent with ComfyUI's native EmptyLatentImage node."
+    SEARCH_ALIASES = ["empty latent", "native empty latent", "空 latent", "空潜空间"]
 
-    def generate(self, model_type, short_side, aspect_ratio, invert_ratio=False, manual_width=0, manual_height=0, batch_size=1):
-        if model_type == "Flux2":
-            multiple = 16
-            channels = 128
-            downscale = 16
-        elif model_type == "SD3 / Flux / Krea2":
-            multiple = 16
-            channels = 16
-            downscale = 8
-        else:
-            multiple = 8
-            channels = 4
-            downscale = 8
-
+    def generate(
+        self,
+        aspect_ratio,
+        short_side,
+        invert_ratio=False,
+        manual_short_side=0,
+        manual_long_side=0,
+        batch_size=1,
+    ):
         width, height = _size_from_manual_or_short_side(
             aspect_ratio,
             short_side,
             invert_ratio,
-            manual_width,
-            manual_height,
-            multiple,
+            manual_short_side,
+            manual_long_side,
+            8,
         )
-        latent_kwargs = {"device": comfy.model_management.intermediate_device()}
-        if model_type != "Flux2":
-            latent_kwargs["dtype"] = comfy.model_management.intermediate_dtype()
-        latent = torch.zeros([batch_size, channels, height // downscale, width // downscale], **latent_kwargs)
-        result = {"samples": latent}
-        if downscale == 8:
-            result["downscale_ratio_spacial"] = 8
-        return (result, width, height)
+        latent = nodes.EmptyLatentImage().generate(width, height, batch_size)[0]
+        return (latent, width, height)
 
 
 NODE_CLASS_MAPPINGS = {"NO8DEmptyLatent": NO8DEmptyLatent}

@@ -1,47 +1,9 @@
 {
   "id": "9f57f238-9e02-48d1-a14a-bea29d62a04c",
   "revision": 0,
-  "last_node_id": 1442,
+  "last_node_id": 1444,
   "last_link_id": 3377,
   "nodes": [
-    {
-      "id": 1154,
-      "type": "Label (rgthree)",
-      "pos": [
-        -23790,
-        -720
-      ],
-      "size": [
-        3080,
-        240
-      ],
-      "flags": {
-        "pinned": true,
-        "allow_interaction": false
-      },
-      "order": 0,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [],
-      "title": "🥸NO8D-Controls Krea 2✨",
-      "properties": {
-        "fontSize": 240,
-        "fontFamily": "Arial",
-        "fontColor": "orange",
-        "textAlign": "left",
-        "backgroundColor": "transparent",
-        "padding": 0,
-        "borderRadius": 0,
-        "angle": 0,
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "version": "7.8",
-          "input_ue_unconnectable": {}
-        }
-      },
-      "color": "#fff0",
-      "bgcolor": "#fff0"
-    },
     {
       "id": 1433,
       "type": "NO8DPromptView",
@@ -56,7 +18,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 1,
+      "order": 0,
       "mode": 0,
       "inputs": [
         {
@@ -102,7 +64,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 2,
+      "order": 1,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -136,7 +98,7 @@
         "collapsed": false,
         "pinned": true
       },
-      "order": 10,
+      "order": 11,
       "mode": 0,
       "inputs": [
         {
@@ -200,7 +162,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 3,
+      "order": 2,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -256,7 +218,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 8,
+      "order": 9,
       "mode": 0,
       "inputs": [
         {
@@ -314,7 +276,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 9,
+      "order": 10,
       "mode": 0,
       "inputs": [
         {
@@ -341,52 +303,9 @@
       "widgets_values": [
         true,
         "",
-        "A portrait of a young white female model with red hair, twin ponytails, some bangs with platinum highlights, wearing pink round glasses. red background.\naggression_hostility: A fierce animal-like snarl. Her upper lip curls high to bare the canine teeth and upper gums, the nose wrinkles into deep folds, the nostrils flare, and the mouth corners pull sharply backward. Her jaw thrusts forward so both rows of teeth are visible, while her eyes narrow into a hard threatening stare beneath lowered brows.\ndigital_art: cinematic worldbuilding aesthetics emphasizing expansive visual depth, seamless environmental integration, refined lighting gradients, realistic atmospheric perspective, meticulously crafted detail distribution, and a strong sense of scale, creating immersive and believable imagery through polished rendering, subtle mood construction, and production-quality visual storytelling, reminiscent of Dylan Cole and Craig Mullins, inspired by The Lord of the Rings film matte paintings and Avatar.",
+        "A portrait of a young white female model with red hair, twin ponytails, some bangs with platinum highlights, wearing pink round glasses. red background.\ndigital_art: cinematic worldbuilding aesthetics emphasizing expansive visual depth, seamless environmental integration, refined lighting gradients, realistic atmospheric perspective, meticulously crafted detail distribution, and a strong sense of scale, creating immersive and believable imagery through polished rendering, subtle mood construction, and production-quality visual storytelling, reminiscent of Dylan Cole and Craig Mullins, inspired by The Lord of the Rings film matte paintings and Avatar.",
         "0",
         null
-      ]
-    },
-    {
-      "id": 1246,
-      "type": "UNETLoader",
-      "pos": [
-        -22800,
-        2070
-      ],
-      "size": [
-        500,
-        90
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 4,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "MODEL",
-          "type": "MODEL",
-          "links": [
-            3372
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "UNETLoader",
-        "cnr_id": "comfy-core",
-        "ver": "0.25.0",
-        "models": [
-          {
-            "name": "krea2_turbo_fp8_scaled.safetensors",
-            "url": "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/diffusion_models/krea2_turbo_fp8_scaled.safetensors",
-            "directory": "diffusion_models"
-          }
-        ]
-      },
-      "widgets_values": [
-        "krea2_turbo_int8_convrot-b19a4f0be264.safetensors",
-        "default"
       ]
     },
     {
@@ -403,15 +322,9 @@
       "flags": {
         "pinned": true
       },
-      "order": 7,
+      "order": 8,
       "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 3372
-        }
-      ],
+      "inputs": [],
       "outputs": [
         {
           "name": "model",
@@ -427,11 +340,20 @@
         }
       ],
       "properties": {
-        "Node name for S&R": "NO8DLoraStack"
+        "Node name for S&R": "NO8DLoraStack",
+        "models": [
+          {
+            "name": "krea2_turbo_fp8_scaled.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/diffusion_models/krea2_turbo_fp8_scaled.safetensors",
+            "directory": "diffusion_models"
+          }
+        ]
       },
       "widgets_values": [
+        "krea2_turbo_int8_convrot-b19a4f0be264.safetensors",
+        "default",
         "None",
-        "[{\"id\":\"1784731145077_95470a3cc7c51\",\"name\":\"Krea2-CivitAI\\\\Krea2_TextFusion_Refusal_Reduction.safetensors\",\"weight\":1,\"min\":-2,\"max\":2,\"enabled\":true,\"trigger\":\"\"}]",
+        "[]",
         ""
       ]
     },
@@ -449,7 +371,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 11,
+      "order": 12,
       "mode": 0,
       "inputs": [
         {
@@ -522,7 +444,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 5,
+      "order": 4,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -540,10 +462,10 @@
         "Node name for S&R": "NO8DKreaStyleSelector"
       },
       "widgets_values": [
-        "",
-        "",
+        "Anime Style",
+        "anime_illustration",
         true,
-        "[\"Expression 001\"]",
+        "[\"Anime Style\"]",
         false,
         false,
         ""
@@ -563,7 +485,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 6,
+      "order": 5,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -581,14 +503,77 @@
         "Node name for S&R": "NO8DKreaStyleSelector"
       },
       "widgets_values": [
-        "",
-        "",
+        "Anime Style",
+        "anime_illustration",
         true,
-        "[\"Atmospheric Matte Painting\"]",
+        "[\"Anime Style\"]",
         false,
         false,
         ""
       ]
+    },
+    {
+      "id": 1444,
+      "type": "MarkdownNote",
+      "pos": [
+        -24800,
+        830
+      ],
+      "size": [
+        400,
+        170
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "## [View more prompt libraries & usage guides here](https://www.patreon.com/no8d/posts/no8d-prompt-164632304?utm_medium=clipboard_copy&utm_source=copyLink&utm_campaign=postshare_creator&utm_content=join_link)"
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1443,
+      "type": "Label (rgthree)",
+      "pos": [
+        -24710,
+        470
+      ],
+      "size": [
+        2432.8125,
+        240
+      ],
+      "flags": {
+        "pinned": true,
+        "allow_interaction": false
+      },
+      "order": 7,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "🥸 NO8D-Controls ✨",
+      "properties": {
+        "fontSize": 240,
+        "fontFamily": "Arial",
+        "fontColor": "orange",
+        "textAlign": "left",
+        "backgroundColor": "transparent",
+        "padding": 0,
+        "borderRadius": 0,
+        "angle": 0,
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "color": "#fff0",
+      "bgcolor": "#fff0"
     }
   ],
   "links": [
@@ -639,14 +624,6 @@
       1438,
       2,
       "STRING"
-    ],
-    [
-      3372,
-      1246,
-      0,
-      1441,
-      0,
-      "MODEL"
     ],
     [
       3374,
@@ -720,10 +697,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.48225308641975323,
+      "scale": 0.54,
       "offset": [
-        25056.38539828456,
-        -554.3591077334534
+        25336.594288125954,
+        -204.10092549236802
       ]
     },
     "frontendVersion": "1.45.21",

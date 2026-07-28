@@ -7,6 +7,7 @@ import math
 import comfy.sd
 import comfy.utils
 import folder_paths
+import nodes as comfy_nodes
 
 
 _NO_LORA = "None"
@@ -76,13 +77,16 @@ def _trigger_words_from_entries(validated_entries):
 class NO8DLoraStack:
     @classmethod
     def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "model": ("MODEL",),
-                "lora_picker": (_lora_names(),),
-                "stack_json": ("STRING", {"default": "[]", "multiline": True}),
-            }
+        native_inputs = comfy_nodes.UNETLoader.INPUT_TYPES()
+        inputs = {
+            section: dict(values) if isinstance(values, dict) else values
+            for section, values in native_inputs.items()
         }
+        required = dict(inputs.get("required", {}))
+        required["lora_picker"] = (_lora_names(),)
+        required["stack_json"] = ("STRING", {"default": "[]", "multiline": True})
+        inputs["required"] = required
+        return inputs
 
     RETURN_TYPES = ("MODEL", "STRING")
     RETURN_NAMES = ("model", "trigger_words")
@@ -90,10 +94,17 @@ class NO8DLoraStack:
     CATEGORY = "NO8D-control"
 
     @classmethod
-    def IS_CHANGED(cls, model, lora_picker, stack_json):
+    def IS_CHANGED(cls, lora_picker, stack_json, **unet_inputs):
         entries = _parse_entries(stack_json)
         h = hashlib.sha1()
-        h.update(str(id(model)).encode())
+        h.update(
+            json.dumps(
+                unet_inputs,
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+            ).encode("utf-8")
+        )
         h.update(
             json.dumps(
                 _effective_entry_signature(entries),
@@ -103,7 +114,10 @@ class NO8DLoraStack:
         )
         return h.hexdigest()
 
-    def run(self, model, lora_picker, stack_json):
+    def run(self, lora_picker, stack_json, **unet_inputs):
+        native_loader = comfy_nodes.UNETLoader()
+        load_function = getattr(native_loader, comfy_nodes.UNETLoader.FUNCTION)
+        model = load_function(**unet_inputs)[0]
         entries = _parse_entries(stack_json)
 
         validated_entries = []

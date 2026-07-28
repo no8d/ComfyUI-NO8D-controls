@@ -7,7 +7,8 @@ import { refreshBypassElements, registerBypassElement, wrapBypassRefresh } from 
 const NODE_NAME = "NO8DLoraStack";
 const STACK_MIN_WIDTH = 620;
 const STACK_BOTTOM_GAP = 16;
-const DEFAULT_WEIGHT_MIN = -2;
+const DEFAULT_WEIGHT = 1;
+const DEFAULT_WEIGHT_MIN = 0;
 const DEFAULT_WEIGHT_MAX = 2;
 const WEIGHT_STEP = 0.01;
 const WEIGHT_DIGITS = 2;
@@ -69,7 +70,7 @@ function defaultEntry(options) {
     return {
         id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
         name: options.includes("None") ? "None" : (options[0] || "None"),
-        weight: 0,
+        weight: DEFAULT_WEIGHT,
         min: DEFAULT_WEIGHT_MIN,
         max: DEFAULT_WEIGHT_MAX,
         enabled: true,

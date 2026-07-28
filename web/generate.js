@@ -16,13 +16,48 @@ const DEFAULT_MASK_OPACITY = 0.4;
 const EMPTY_IMAGE_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const MAX_PREVIEW_EDGE = 1024;
 const BRUSH_FEATHER_RADIUS_MULTIPLIER = 2;
+// Outpaint has no brush radius.  Using half of the placed image as its
+// substitute made 60% feather cover hundreds of pixels and double-expose a
+// large part of the source.  Keep the seam proportional to the canvas while
+// bounding it to a practical blending band.
+const OUTPAINT_FEATHER_MAX_CANVAS_FRACTION = 0.1;
+const MASK_RENDER_VERSION = 2;
 const MASK_FEATHER_VALUE = 128;
 const EXECUTION_MASK_GRADIENT_STEPS = 32;
+const ASPECT_RATIOS = {
+    "1:1": [1, 1],
+    "1:2": [1, 2],
+    "2:3": [2, 3],
+    "3:4": [3, 4],
+    "4:5": [4, 5],
+    "9:16": [9, 16],
+    "9:21": [9, 21],
+};
+const TRANSFORM_HANDLE_SIZE = 10;
+// ComfyUI 1.42 uses the native bounding-rect corner detector with a 15 px
+// handle. This canvas-heavy node benefits from a slightly larger target while
+// retaining the exact same native corner directions and resize behavior.
+const NODE_RESIZE_CORNER_SIZE = 24;
 let activeLocale = "";
 
 function isGenerateNode(node) {
     const type = node?.constructor?.comfyClass || node?.comfyClass || node?.type;
     return type === NODE_NAME;
+}
+
+function migrateGenerateSlots(node) {
+    if (!node) return;
+    for (let index = (node.inputs?.length || 0) - 1; index >= 0; index -= 1) {
+        if (node.inputs[index]?.name !== "image") continue;
+        node.disconnectInput?.(index);
+        if (typeof node.removeInput === "function") node.removeInput(index);
+        else node.inputs.splice(index, 1);
+    }
+    for (let index = (node.outputs?.length || 0) - 1; index >= 1; index -= 1) {
+        node.disconnectOutput?.(index);
+        if (typeof node.removeOutput === "function") node.removeOutput(index);
+        else node.outputs.splice(index, 1);
+    }
 }
 
 function findWidget(node, name) {
@@ -420,18 +455,29 @@ function pointInRect(pos, rect) {
         && pos[1] >= rect[1] && pos[1] <= rect[1] + rect[3]);
 }
 
-function fitRect(image, rect) {
-    if (!image?.naturalWidth || !image?.naturalHeight) return null;
-    const scale = Math.min(rect[2] / image.naturalWidth, rect[3] / image.naturalHeight);
-    const width = image.naturalWidth * scale;
-    const height = image.naturalHeight * scale;
+function fitSizeRect(width, height, rect) {
+    if (!width || !height) return null;
+    const scale = Math.min(rect[2] / width, rect[3] / height);
     return [
-        rect[0] + (rect[2] - width) / 2,
-        rect[1] + (rect[3] - height) / 2,
-        width,
-        height,
+        rect[0] + (rect[2] - width * scale) / 2,
+        rect[1] + (rect[3] - height * scale) / 2,
+        width * scale,
+        height * scale,
         scale,
     ];
+}
+
+function roundCanvasDimension(value) {
+    return Math.max(16, Math.min(16384, Math.round(Number(value || 0) / 8) * 8));
+}
+
+function canvasSize(aspectRatio, latentShortSide, swapped) {
+    let [ratioWidth, ratioHeight] = ASPECT_RATIOS[aspectRatio] || ASPECT_RATIOS["1:1"];
+    if (swapped) [ratioWidth, ratioHeight] = [ratioHeight, ratioWidth];
+    const short = roundCanvasDimension(latentShortSide || 1024);
+    const width = ratioWidth >= ratioHeight ? short * ratioWidth / ratioHeight : short;
+    const height = ratioHeight >= ratioWidth ? short * ratioHeight / ratioWidth : short;
+    return [roundCanvasDimension(width), roundCanvasDimension(height)];
 }
 
 function hexToRgb(hex) {
@@ -655,9 +701,11 @@ class NO8DGenerateCanvasWidget {
         this.options = {};
         this.value = "";
         this.image = null;
+        this.sourceImage = null;
         this.previewImage = null;
-        this.renderCache = null;
-        this.imageRect = null;
+        this.sourcePreviewImage = null;
+        this.contentRect = null;
+        this.canvasRect = null;
         this.rect = [0, 0, MIN_WIDTH, 360];
         this.toolbarRect = null;
         this.strokes = [];
@@ -669,7 +717,18 @@ class NO8DGenerateCanvasWidget {
         this.eraserSize = 80;
         this.maskOpacity = DEFAULT_MASK_OPACITY;
         this.maskColor = DEFAULT_MASK_COLOR;
+        this.aspectRatio = "1:1";
+        this.latentShortSide = 1024;
+        this.swapDimensions = false;
+        [this.canvasWidth, this.canvasHeight] = canvasSize(
+            this.aspectRatio, this.latentShortSide, this.swapDimensions,
+        );
+        this.transformActive = false;
+        this.imageTransform = null;
+        this.transformDrag = null;
+        this.transformCursorRevision = 0;
         this.baseImageFile = "";
+        this.sourceImageFile = "";
         this.maskImageFile = "";
         this.maskBaseWidth = 0;
         this.maskBaseHeight = 0;
@@ -679,6 +738,7 @@ class NO8DGenerateCanvasWidget {
         this.pending = null;
         this.maskCommitTimer = null;
         this.maskRevision = 0;
+        this.outpaintResultVisible = false;
         this.valueEditorClose = null;
         this.activeEditor = null;
         this.activeEditorAction = null;
@@ -702,8 +762,10 @@ class NO8DGenerateCanvasWidget {
         const maskModeActive = this.isMaskModeActive();
         return JSON.stringify({
             base_image_file: this.baseImageFile,
+            source_image_file: this.sourceImageFile,
             mask_image_file: this.maskImageFile,
             mask_active: maskModeActive && Boolean(this.baseImageFile && this.maskImageFile),
+            outpaint_active: this.isOutpaintModeActive(),
             mask_tool: this.isMaskToolActive() ? this.tool : null,
             mask_base_width: this.maskBaseWidth,
             mask_base_height: this.maskBaseHeight,
@@ -711,6 +773,14 @@ class NO8DGenerateCanvasWidget {
             eraser_size: this.eraserSize,
             mask_opacity: this.maskOpacity,
             mask_color: this.maskColor,
+            mask_render_version: MASK_RENDER_VERSION,
+            aspect_ratio: this.aspectRatio,
+            short_side: this.latentShortSide,
+            swap_dimensions: this.swapDimensions,
+            canvas_width: this.canvasWidth,
+            canvas_height: this.canvasHeight,
+            transform_active: this.transformActive,
+            image_transform: this.imageTransform,
             invert: this.invert,
             strokes: serializeStrokes(this.strokes),
         });
@@ -724,8 +794,116 @@ class NO8DGenerateCanvasWidget {
         return this.tool === "brush" || this.tool === "lasso" || this.tool === "eraser";
     }
 
+    isInpaintModeActive() {
+        return this.isMaskToolActive() && this.hasMaskContent();
+    }
+
     isMaskModeActive() {
-        return this.hasMaskContent();
+        return this.isInpaintModeActive() || this.isOutpaintModeActive();
+    }
+
+    isOutpaintModeActive() {
+        return this.transformActive && this.hasOutpaintArea();
+    }
+
+    editingImage() {
+        return this.sourceImage || this.image;
+    }
+
+    ensureImageTransform() {
+        const image = this.editingImage();
+        if (!image?.naturalWidth || !image?.naturalHeight) return null;
+        if (!this.imageTransform) {
+            this.fitImageTransformToCanvas();
+        }
+        return this.imageTransform;
+    }
+
+    rasterImageTransform() {
+        const transform = this.ensureImageTransform();
+        if (!transform) return null;
+        const left = Math.round(transform.x);
+        const top = Math.round(transform.y);
+        const right = Math.round(transform.x + transform.width);
+        const bottom = Math.round(transform.y + transform.height);
+        return {
+            x: left,
+            y: top,
+            width: Math.max(1, right - left),
+            height: Math.max(1, bottom - top),
+        };
+    }
+
+    outpaintFeatherWidth(transform = this.rasterImageTransform()) {
+        if (!transform) return 0;
+        const canvasShortSide = Math.min(this.canvasWidth || 0, this.canvasHeight || 0);
+        const sourceShortSide = Math.min(transform.width, transform.height);
+        const maximum = Math.min(
+            canvasShortSide * OUTPAINT_FEATHER_MAX_CANVAS_FRACTION,
+            sourceShortSide * 0.15,
+        );
+        return Math.max(0, maximum) * (this.getFeatherPercent() / 100);
+    }
+
+    fitImageTransformToCanvas() {
+        const image = this.editingImage();
+        if (!image?.naturalWidth || !image?.naturalHeight) return null;
+        const imageWidth = image.naturalWidth;
+        const imageHeight = image.naturalHeight;
+        let scale;
+        if (imageWidth > imageHeight) {
+            scale = this.canvasWidth / imageWidth;
+        } else if (imageHeight > imageWidth) {
+            scale = this.canvasHeight / imageHeight;
+        } else {
+            scale = Math.min(
+                this.canvasWidth / imageWidth,
+                this.canvasHeight / imageHeight,
+            );
+        }
+        const width = imageWidth * scale;
+        const height = imageHeight * scale;
+        this.imageTransform = {
+            x: (this.canvasWidth - width) / 2,
+            y: (this.canvasHeight - height) / 2,
+            width,
+            height,
+        };
+        return this.imageTransform;
+    }
+
+    syncCanvasToImageSize(image) {
+        if (!image?.naturalWidth || !image?.naturalHeight) return;
+        const width = roundCanvasDimension(image.naturalWidth);
+        const height = roundCanvasDimension(image.naturalHeight);
+        const portraitRatio = Math.min(width, height) / Math.max(width, height);
+        let closestRatio = "1:1";
+        let closestDistance = Infinity;
+        for (const [name, [ratioWidth, ratioHeight]] of Object.entries(ASPECT_RATIOS)) {
+            const candidate = Math.min(ratioWidth, ratioHeight)
+                / Math.max(ratioWidth, ratioHeight);
+            const distance = Math.abs(candidate - portraitRatio);
+            if (distance < closestDistance) {
+                closestRatio = name;
+                closestDistance = distance;
+            }
+        }
+        this.aspectRatio = closestRatio;
+        this.swapDimensions = width > height && closestRatio !== "1:1";
+        this.latentShortSide = Math.min(width, height);
+        this.canvasWidth = width;
+        this.canvasHeight = height;
+        this.maskBaseWidth = width;
+        this.maskBaseHeight = height;
+    }
+
+    hasOutpaintArea() {
+        const transform = this.ensureImageTransform();
+        if (!transform) return false;
+        const epsilon = 0.5;
+        return transform.x > epsilon || transform.y > epsilon
+            || transform.x + transform.width < this.canvasWidth - epsilon
+            || transform.y + transform.height < this.canvasHeight - epsilon;
     }
 
     invalidateMaskCommit() {
@@ -748,6 +926,8 @@ class NO8DGenerateCanvasWidget {
     }
 
     clearMaskState() {
+        this.outpaintResultVisible = false;
+        const hadOutpaint = this.hasOutpaintArea();
         this.previewLoadToken += 1;
         this.invalidateMaskCommit();
         this.strokes = [];
@@ -756,12 +936,26 @@ class NO8DGenerateCanvasWidget {
         this.invert = false;
         this.baseImageFile = "";
         this.maskImageFile = "";
-        this.maskBaseWidth = 0;
-        this.maskBaseHeight = 0;
+        if (!hadOutpaint && this.image?.naturalWidth) {
+            const oldSource = this.sourceImage;
+            const oldSourcePreview = this.sourcePreviewImage;
+            this.sourceImage = this.image;
+            this.sourcePreviewImage = this.previewImage;
+            this.sourceImageFile = "";
+            this.imageTransform = null;
+            this.fitImageTransformToCanvas();
+            this.transformActive = false;
+            if (oldSource && oldSource !== this.image) releaseDecodedImage(oldSource);
+            if (oldSourcePreview && oldSourcePreview !== this.previewImage) {
+                releasePreviewCanvas(oldSourcePreview);
+            }
+        }
+        this.maskBaseWidth = this.canvasWidth;
+        this.maskBaseHeight = this.canvasHeight;
         this.clearMaskOverlay();
-        this.maskDirty = false;
-        this.clearRenderCache();
+        this.maskDirty = this.isOutpaintModeActive();
         this.value = this.getValue();
+        if (this.maskDirty) this.scheduleMaskCommit();
     }
 
     clearMaskOverlay() {
@@ -770,27 +964,65 @@ class NO8DGenerateCanvasWidget {
         this.maskOverlayKey = "";
     }
 
-    clearRenderCache() {
-        if (this.renderCache?.canvas) releasePreviewCanvas(this.renderCache.canvas);
-        this.renderCache = null;
+    clearInpaintMode() {
+        const hadMask = this.hasMaskContent();
+        this.invalidateMaskCommit();
+        this.strokes = [];
+        this.activeStroke = null;
+        this.invert = false;
+        this.tool = null;
+        this.baseImageFile = "";
+        this.maskImageFile = "";
+        this.maskDirty = false;
+        this.clearMaskOverlay();
+        return hadMask;
+    }
+
+    clearOutpaintMode() {
+        if (!this.transformActive) return false;
+        this.invalidateMaskCommit();
+        this.transformActive = false;
+        this.transformDrag = null;
+        this.setTransformCursor(null);
+        const image = this.editingImage();
+        if (image?.naturalWidth && image?.naturalHeight) {
+            this.syncCanvasToImageSize(image);
+            this.imageTransform = {
+                x: 0,
+                y: 0,
+                width: this.canvasWidth,
+                height: this.canvasHeight,
+            };
+        }
+        this.baseImageFile = "";
+        this.maskImageFile = "";
+        this.maskBaseWidth = this.canvasWidth;
+        this.maskBaseHeight = this.canvasHeight;
+        this.maskDirty = false;
+        this.clearMaskOverlay();
+        return true;
     }
 
     dispose() {
         if (this.disposed) return;
         this.disposed = true;
+        this.setTransformCursor(null);
         this.previewLoadToken += 1;
         this.invalidateMaskCommit();
         this.closeActiveEditor();
-        this.clearRenderCache();
         this.clearMaskOverlay();
-        if (this.previewImage) {
-            releasePreviewCanvas(this.previewImage);
-            this.previewImage = null;
-        }
-        if (this.image) {
-            releaseDecodedImage(this.image);
-            this.image = null;
-        }
+        const previewImage = this.previewImage;
+        const sourcePreviewImage = this.sourcePreviewImage;
+        const image = this.image;
+        const sourceImage = this.sourceImage;
+        if (previewImage) releasePreviewCanvas(previewImage);
+        if (sourcePreviewImage && sourcePreviewImage !== previewImage) releasePreviewCanvas(sourcePreviewImage);
+        if (image) releaseDecodedImage(image);
+        if (sourceImage && sourceImage !== image) releaseDecodedImage(sourceImage);
+        this.previewImage = null;
+        this.sourcePreviewImage = null;
+        this.image = null;
+        this.sourceImage = null;
         this.strokes = [];
         this.activeStroke = null;
         this.hoverImagePoint = null;
@@ -806,30 +1038,72 @@ class NO8DGenerateCanvasWidget {
             this.strokes = restoreStrokes(state.strokes);
             this.invert = Boolean(state.invert);
             this.tool = ["brush", "lasso", "eraser"].includes(state.mask_tool) ? state.mask_tool : null;
-            const hasRestorableMask = this.isMaskModeActive();
+            this.aspectRatio = ASPECT_RATIOS[state.aspect_ratio] ? state.aspect_ratio : "1:1";
+            const restoredShortSide = Number(state.short_side);
+            this.latentShortSide = Number.isFinite(restoredShortSide)
+                ? Math.min(4096, Math.max(256, roundCanvasDimension(restoredShortSide)))
+                : 1024;
+            this.swapDimensions = Boolean(state.swap_dimensions);
+            const defaultSize = canvasSize(
+                this.aspectRatio, this.latentShortSide, this.swapDimensions,
+            );
+            this.canvasWidth = roundCanvasDimension(state.canvas_width || defaultSize[0]);
+            this.canvasHeight = roundCanvasDimension(state.canvas_height || defaultSize[1]);
+            this.transformActive = Boolean(state.transform_active);
+            const transform = state.image_transform;
+            this.imageTransform = transform && ["x", "y", "width", "height"].every(
+                (key) => Number.isFinite(Number(transform[key])),
+            ) ? {
+                x: Number(transform.x),
+                y: Number(transform.y),
+                width: Math.max(1, Number(transform.width)),
+                height: Math.max(1, Number(transform.height)),
+            } : null;
+            const hadModeConflict = this.transformActive && this.hasMaskContent();
+            if (hadModeConflict) {
+                this.strokes = [];
+                this.activeStroke = null;
+                this.invert = false;
+                this.tool = null;
+            }
+            const hasRestorableMask = Boolean(state.mask_active)
+                || this.hasMaskContent()
+                || Boolean(state.image_transform && state.source_image_file);
             this.baseImageFile = hasRestorableMask ? String(state.base_image_file || "") : "";
+            this.sourceImageFile = String(state.source_image_file || state.base_image_file || "");
             this.maskImageFile = hasRestorableMask ? String(state.mask_image_file || "") : "";
-            this.maskBaseWidth = Math.max(0, Number(state.mask_base_width) || 0);
-            this.maskBaseHeight = Math.max(0, Number(state.mask_base_height) || 0);
+            this.maskBaseWidth = this.canvasWidth;
+            this.maskBaseHeight = this.canvasHeight;
             this.brushSize = Math.max(1, Number(state.brush_size) || 80);
             this.eraserSize = Math.max(1, Number(state.eraser_size) || 80);
             this.maskOpacity = Math.min(1, Math.max(0.05, Number(state.mask_opacity) || DEFAULT_MASK_OPACITY));
             this.maskColor = /^#[0-9a-f]{6}$/i.test(state.mask_color) ? state.mask_color : DEFAULT_MASK_COLOR;
-            this.maskDirty = hasRestorableMask && (!this.baseImageFile || !this.maskImageFile);
+            this.maskDirty = hasRestorableMask && (
+                hadModeConflict
+                ||
+                !this.baseImageFile
+                || !this.maskImageFile
+                || Number(state.mask_render_version || 0) !== MASK_RENDER_VERSION
+            );
             this.value = this.getValue();
-            if (this.baseImageFile && !this.image) {
+            if (this.sourceImageFile && !this.sourceImage) {
                 const token = ++this.previewLoadToken;
-                loadImage({ filename: this.baseImageFile, type: "input" })
+                loadImage({ filename: this.sourceImageFile, type: "input" })
                     .then((image) => {
                         if (this.disposed || token !== this.previewLoadToken) {
                             releaseDecodedImage(image);
                             return;
                         }
-                        if (this.image && this.image !== image) releaseDecodedImage(this.image);
-                        if (this.previewImage) releasePreviewCanvas(this.previewImage);
-                        this.image = image;
-                        this.previewImage = makePreviewCanvas(image);
-                        this.clearRenderCache();
+                        if (this.sourceImage && this.sourceImage !== image) releaseDecodedImage(this.sourceImage);
+                        if (this.sourcePreviewImage) releasePreviewCanvas(this.sourcePreviewImage);
+                        this.sourceImage = image;
+                        this.sourcePreviewImage = makePreviewCanvas(image);
+                        if (!this.image) {
+                            this.image = image;
+                            this.previewImage = this.sourcePreviewImage;
+                        }
+                        this.ensureImageTransform();
+                        if (this.maskDirty) this.scheduleMaskCommit(0);
                         setDirty();
                     })
                     .catch(() => {});
@@ -839,14 +1113,20 @@ class NO8DGenerateCanvasWidget {
             this.activeStroke = null;
             this.invert = false;
             this.tool = null;
+            this.aspectRatio = "1:1";
+            this.latentShortSide = 1024;
+            this.swapDimensions = false;
+            [this.canvasWidth, this.canvasHeight] = canvasSize("1:1", 1024, false);
+            this.transformActive = false;
+            this.imageTransform = null;
             this.baseImageFile = "";
+            this.sourceImageFile = "";
             this.maskImageFile = "";
             this.maskBaseWidth = 0;
             this.maskBaseHeight = 0;
             this.maskDirty = false;
             this.clearMaskOverlay();
-            this.clearRenderCache();
-            this.value = this.getValue();
+                this.value = this.getValue();
         }
     }
 
@@ -863,38 +1143,38 @@ class NO8DGenerateCanvasWidget {
     }
 
     imagePoint(pos, allowOutside = false) {
-        if (!this.imageRect?.[2] || !this.imageRect?.[3]) return null;
-        if (!allowOutside && !pointInRect(pos, this.imageRect)) return null;
-        const baseWidth = this.maskBaseWidth || this.image?.naturalWidth || 0;
-        const baseHeight = this.maskBaseHeight || this.image?.naturalHeight || 0;
+        if (!this.canvasRect?.[2] || !this.canvasRect?.[3]) return null;
+        if (!allowOutside && !pointInRect(pos, this.canvasRect)) return null;
+        const baseWidth = this.canvasWidth;
+        const baseHeight = this.canvasHeight;
         if (!baseWidth || !baseHeight) return null;
         return [
-            ((pos[0] - this.imageRect[0]) / this.imageRect[2]) * baseWidth,
-            ((pos[1] - this.imageRect[1]) / this.imageRect[3]) * baseHeight,
+            ((pos[0] - this.canvasRect[0]) / this.canvasRect[2]) * baseWidth,
+            ((pos[1] - this.canvasRect[1]) / this.canvasRect[3]) * baseHeight,
         ];
     }
 
     drawMask(ctx) {
-        if (!this.imageRect || !this.image?.naturalWidth || !this.image?.naturalHeight) return;
-        if (!this.hasMaskContent()) {
+        if (!this.canvasRect || !this.editingImage()?.naturalWidth) return;
+        if (!this.isMaskModeActive()) {
             this.clearMaskOverlay();
             return;
         }
         const overlayKey = this.maskOverlayCacheKey();
         if (this.maskOverlay && this.maskOverlayKey === overlayKey) {
-            ctx.drawImage(this.maskOverlay, this.imageRect[0], this.imageRect[1], this.imageRect[2], this.imageRect[3]);
+            ctx.drawImage(this.maskOverlay, this.canvasRect[0], this.canvasRect[1], this.canvasRect[2], this.canvasRect[3]);
             return;
         }
         this.clearMaskOverlay();
         const displayOverlay = document.createElement("canvas");
-        displayOverlay.width = Math.max(1, Math.round(this.imageRect[2]));
-        displayOverlay.height = Math.max(1, Math.round(this.imageRect[3]));
+        displayOverlay.width = Math.max(1, Math.round(this.canvasRect[2]));
+        displayOverlay.height = Math.max(1, Math.round(this.canvasRect[3]));
         const displayCtx = displayOverlay.getContext("2d");
         const maskScale = this.previewMaskScale();
         this.drawMaskPreview(displayCtx, maskScale);
         this.maskOverlay = displayOverlay;
         this.maskOverlayKey = overlayKey;
-        ctx.drawImage(displayOverlay, this.imageRect[0], this.imageRect[1], this.imageRect[2], this.imageRect[3]);
+        ctx.drawImage(displayOverlay, this.canvasRect[0], this.canvasRect[1], this.canvasRect[2], this.canvasRect[3]);
     }
 
     maskOverlayCacheKey() {
@@ -908,12 +1188,13 @@ class NO8DGenerateCanvasWidget {
             return `${stroke.op}:${stroke.kind}:${stroke.brushSize}:${points.length}:${Math.round(first[0])},${Math.round(first[1])}:${Math.round(last[0])},${Math.round(last[1])}:${checksum}`;
         }).join("|");
         return [
-            Math.round(this.imageRect?.[0] || 0),
-            Math.round(this.imageRect?.[1] || 0),
-            Math.round(this.imageRect?.[2] || 0),
-            Math.round(this.imageRect?.[3] || 0),
-            this.maskBaseWidth || this.image?.naturalWidth || 0,
-            this.maskBaseHeight || this.image?.naturalHeight || 0,
+            Math.round(this.canvasRect?.[0] || 0),
+            Math.round(this.canvasRect?.[1] || 0),
+            Math.round(this.canvasRect?.[2] || 0),
+            Math.round(this.canvasRect?.[3] || 0),
+            this.canvasWidth,
+            this.canvasHeight,
+            JSON.stringify(this.imageTransform || {}),
             this.strokes.length,
             strokeKey,
             this.invert ? 1 : 0,
@@ -924,10 +1205,8 @@ class NO8DGenerateCanvasWidget {
     }
 
     previewMaskScale() {
-        const baseWidth = this.maskBaseWidth || this.image?.naturalWidth || 0;
-        const baseHeight = this.maskBaseHeight || this.image?.naturalHeight || 0;
-        if (!baseWidth || !baseHeight || !this.imageRect?.[2] || !this.imageRect?.[3]) return 1;
-        return Math.min(this.imageRect[2] / baseWidth, this.imageRect[3] / baseHeight);
+        if (!this.canvasWidth || !this.canvasHeight || !this.canvasRect?.[2] || !this.canvasRect?.[3]) return 1;
+        return Math.min(this.canvasRect[2] / this.canvasWidth, this.canvasRect[3] / this.canvasHeight);
     }
 
     drawMaskPreview(ctx, scale) {
@@ -954,9 +1233,27 @@ class NO8DGenerateCanvasWidget {
         layer.width = width;
         layer.height = height;
         const layerCtx = layer.getContext("2d");
-        if (this.invert) {
+        if (this.isOutpaintModeActive()) {
+            const transform = this.rasterImageTransform();
+            const growth = Math.max(0, brushScale - 1)
+                * Math.min(transform.width, transform.height) * 0.5 * scale;
+            const imageX = transform.x * scale + growth;
+            const imageY = transform.y * scale + growth;
+            const imageWidth = transform.width * scale - growth * 2;
+            const imageHeight = transform.height * scale - growth * 2;
             layerCtx.fillStyle = "#fff";
-            layerCtx.fillRect(0, 0, layer.width, layer.height);
+            layerCtx.fillRect(0, 0, width, height);
+            if (imageWidth > 0 && imageHeight > 0) {
+                layerCtx.clearRect(imageX, imageY, imageWidth, imageHeight);
+            }
+        }
+        const manual = document.createElement("canvas");
+        manual.width = width;
+        manual.height = height;
+        const manualCtx = manual.getContext("2d");
+        if (this.invert) {
+            manualCtx.fillStyle = "#fff";
+            manualCtx.fillRect(0, 0, manual.width, manual.height);
         }
         const baseWidth = this.maskBaseWidth || this.image?.naturalWidth || 0;
         const baseHeight = this.maskBaseHeight || this.image?.naturalHeight || 0;
@@ -965,23 +1262,37 @@ class NO8DGenerateCanvasWidget {
             if (!stroke.points.length) continue;
             if (stroke.op !== pass) continue;
             const visible = this.invert ? stroke.op !== "add" : stroke.op === "add";
-            layerCtx.globalCompositeOperation = visible ? "source-over" : "destination-out";
-            layerCtx.strokeStyle = "#fff";
-            layerCtx.fillStyle = "#fff";
-            layerCtx.lineCap = "round";
-            layerCtx.lineJoin = "round";
+            manualCtx.globalCompositeOperation = visible ? "source-over" : "destination-out";
+            manualCtx.strokeStyle = "#fff";
+            manualCtx.fillStyle = "#fff";
+            manualCtx.lineCap = "round";
+            manualCtx.lineJoin = "round";
             const scaled = scaledMaskStroke(
                 stroke, scale, brushScale, featherDiameters.get(stroke), visible,
             );
             if (!scaled) continue;
-            layerCtx.lineWidth = scaled.brushSize;
-            drawStrokeGeometry(layerCtx, scaled);
+            manualCtx.lineWidth = scaled.brushSize;
+            drawStrokeGeometry(manualCtx, scaled);
         }
-        layerCtx.globalCompositeOperation = "source-over";
+        manualCtx.globalCompositeOperation = "source-over";
+        layerCtx.drawImage(manual, 0, 0);
+        releasePreviewCanvas(manual);
         return layer;
     }
 
     makePreviewOuterMask(width, height, scale, percent) {
+        if (this.isOutpaintModeActive()) {
+            const transform = this.rasterImageTransform();
+            if (!transform) return null;
+            const sourceShortSide = Math.min(transform.width, transform.height);
+            const feather = this.outpaintFeatherWidth(transform);
+            const brushScale = sourceShortSide > 0
+                ? 1 + feather * 2 / sourceShortSide
+                : 1;
+            return this.makePreviewCoreMask(
+                width, height, scale, brushScale,
+            );
+        }
         return this.makePreviewCoreMask(
             width,
             height,
@@ -1060,6 +1371,11 @@ class NO8DGenerateCanvasWidget {
         } else if (action === "eraser") {
             ctx.save(); ctx.translate(cx, cy); ctx.rotate(-Math.PI / 4);
             ctx.strokeRect(-7, -4, 14, 8); ctx.beginPath(); ctx.moveTo(2, -4); ctx.lineTo(2, 4); ctx.stroke(); ctx.restore();
+        } else if (action === "transform") {
+            ctx.strokeRect(cx - 6, cy - 5, 12, 10);
+            for (const [x, y] of [[cx - 6, cy - 5], [cx + 6, cy - 5], [cx - 6, cy + 5], [cx + 6, cy + 5]]) {
+                ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
+            }
         } else {
             ctx.font = "18px sans-serif";
             ctx.textAlign = "center";
@@ -1086,8 +1402,8 @@ class NO8DGenerateCanvasWidget {
     }
 
     makeBinaryMask(brushScale = 1, featherDiameters = null) {
-        const width = this.maskBaseWidth || this.image?.naturalWidth || 0;
-        const height = this.maskBaseHeight || this.image?.naturalHeight || 0;
+        const width = this.canvasWidth;
+        const height = this.canvasHeight;
         if (!width || !height) return null;
         if (!this.hasMaskContent()) return null;
         const overlay = document.createElement("canvas");
@@ -1122,12 +1438,12 @@ class NO8DGenerateCanvasWidget {
         const [x, y, width, height] = this.toolbarRect;
         ctx.fillStyle = "#191919";
         ctx.fillRect(x, y, width, height);
-        this.buttons = [];
         const groupPadding = 4;
         const itemGap = 4;
-        const toolWidth = 30;
+        const toolWidth = 28;
         const propertyWidth = 88;
         const toolActive = this.hasActiveTool();
+        const propertyActive = toolActive || this.transformActive;
         const drawGroup = (left, groupWidth) => {
             ctx.fillStyle = "#232323";
             ctx.fillRect(left, y + 8, groupWidth, height - 16);
@@ -1136,38 +1452,78 @@ class NO8DGenerateCanvasWidget {
             ctx.strokeRect(left + 0.5, y + 8.5, groupWidth - 1, height - 17);
         };
 
-        const toolGroupWidth = groupPadding * 2 + toolWidth * 3 + itemGap * 2;
+        const visibleToolActions = ["transform", "lasso"];
+        const toolGroupWidth = (
+            groupPadding * 2
+            + toolWidth * visibleToolActions.length
+            + itemGap * (visibleToolActions.length - 1)
+        );
         let groupLeft = x + 8;
         drawGroup(groupLeft, toolGroupWidth);
         let left = groupLeft + groupPadding;
-        for (const action of ["lasso", "brush", "eraser"]) {
+        const editingImageAvailable = Boolean(this.editingImage()?.naturalWidth);
+        for (const action of visibleToolActions) {
             const rect = [left, y + 12, toolWidth, height - 24];
-            this.buttons.push({ action, rect });
-            ctx.fillStyle = action === this.tool ? "#2563eb" : "#303030";
+            const enabled = editingImageAvailable;
+            const active = action === "transform" ? this.transformActive : action === this.tool;
+            this.buttons.push({ action, rect, enabled });
+            ctx.fillStyle = enabled && active ? "#2563eb" : "#303030";
             ctx.fillRect(...rect);
-            this.drawToolIcon(ctx, action, rect);
+            this.drawToolIcon(ctx, action, rect, enabled);
             left += toolWidth + itemGap;
         }
 
-        const propertyGroupWidth = groupPadding * 2 + propertyWidth * 3 + 6 * 2;
-        groupLeft = x + (width - propertyGroupWidth) / 2;
-        drawGroup(groupLeft, propertyGroupWidth);
-        left = groupLeft + groupPadding;
-        const featherPercent = Math.round(Number(findWidget(this.node, "mask_feather")?.value || 0));
-        left = this.drawProperty(ctx, "mask_feather", t("feather"), `${featherPercent}%`, left, y, propertyWidth, height, toolActive);
-        left = this.drawProperty(ctx, "mask_opacity", t("maskOpacity"), `${Math.round(this.maskOpacity * 100)}%`, left, y, propertyWidth, height, toolActive);
-        const colorStart = left;
-        this.drawProperty(ctx, "mask_color", t("colorValue"), "", left, y, propertyWidth, height, toolActive);
-        const swatchRect = [colorStart + propertyWidth - 22, y + 17, 14, height - 34];
-        swatchRect[0] = colorStart + propertyWidth - 18;
-        swatchRect[1] = y + (height - 10) / 2;
-        swatchRect[2] = 10;
-        swatchRect[3] = 10;
-        ctx.fillStyle = toolActive ? this.maskColor : "#555";
-        ctx.fillRect(...swatchRect);
-        ctx.strokeStyle = "#777";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(...swatchRect);
+        if (this.transformActive) {
+            const ratioWidth = Math.min(150, Math.max(110, width * 0.2));
+            const swapWidth = 62;
+            const outpaintGroupWidth = (
+                groupPadding * 2 + ratioWidth + itemGap + swapWidth
+            );
+            groupLeft = x + (width - outpaintGroupWidth) / 2;
+            drawGroup(groupLeft, outpaintGroupWidth);
+            left = groupLeft + groupPadding;
+            left = this.drawProperty(
+                ctx,
+                "canvas_ratio",
+                t("canvasRatio"),
+                this.swapDimensions
+                    ? this.aspectRatio.split(":").reverse().join(":")
+                    : this.aspectRatio,
+                left,
+                y,
+                ratioWidth,
+                height,
+                true,
+            );
+            const rect = [left, y + 12, swapWidth, height - 24];
+            this.buttons.push({ action: "canvas_swap", rect, enabled: true });
+            ctx.fillStyle = this.swapDimensions ? "#2563eb" : "#303030";
+            ctx.fillRect(...rect);
+            ctx.fillStyle = "#eee";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(
+                t("swapCanvas"),
+                rect[0] + rect[2] / 2,
+                rect[1] + rect[3] / 2,
+            );
+        } else {
+            const propertyGroupWidth = groupPadding * 2 + propertyWidth * 3 + 6 * 2;
+            groupLeft = x + (width - propertyGroupWidth) / 2;
+            drawGroup(groupLeft, propertyGroupWidth);
+            left = groupLeft + groupPadding;
+            const featherPercent = Math.round(Number(findWidget(this.node, "mask_feather")?.value || 0));
+            left = this.drawProperty(ctx, "mask_feather", t("feather"), `${featherPercent}%`, left, y, propertyWidth, height, propertyActive);
+            left = this.drawProperty(ctx, "mask_opacity", t("maskOpacity"), `${Math.round(this.maskOpacity * 100)}%`, left, y, propertyWidth, height, propertyActive);
+            const colorStart = left;
+            this.drawProperty(ctx, "mask_color", t("colorValue"), "", left, y, propertyWidth, height, propertyActive);
+            const swatchRect = [colorStart + propertyWidth - 18, y + (height - 10) / 2, 10, 10];
+            ctx.fillStyle = propertyActive ? this.maskColor : "#555";
+            ctx.fillRect(...swatchRect);
+            ctx.strokeStyle = "#777";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(...swatchRect);
+        }
 
         const actionGroupWidth = groupPadding * 2 + toolWidth * 2 + itemGap;
         groupLeft = x + width - 8 - actionGroupWidth;
@@ -1176,34 +1532,61 @@ class NO8DGenerateCanvasWidget {
         for (const action of ["clear", "invert"]) {
             right -= toolWidth;
             const rect = [right, y + 12, toolWidth, height - 24];
-            this.buttons.push({ action, rect, enabled: toolActive });
-            const active = toolActive && this.flashAction === action;
+            this.buttons.push({ action, rect, enabled: propertyActive });
+            const active = propertyActive && this.flashAction === action;
             ctx.fillStyle = active ? "#2563eb" : "#303030";
             ctx.fillRect(...rect);
-            this.drawToolIcon(ctx, action, rect, toolActive);
+            this.drawToolIcon(ctx, action, rect, propertyActive);
             right -= itemGap;
         }
+    }
 
+    drawTransformHandles(ctx) {
+        if (!this.transformActive || !this.contentRect) return;
+        const visibleRect = this.visibleTransformRect();
+        if (!visibleRect) return;
+        const [x, y, width, height] = visibleRect;
+        const points = [
+            [x, y, "nw"], [x + width / 2, y, "n"], [x + width, y, "ne"],
+            [x, y + height / 2, "w"], [x + width, y + height / 2, "e"],
+            [x, y + height, "sw"], [x + width / 2, y + height, "s"], [x + width, y + height, "se"],
+        ];
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(...this.canvasRect.slice(0, 4));
+        ctx.clip();
+        ctx.strokeStyle = "#66ccff";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x, y, width, height);
+        for (const [cx, cy] of points) {
+            const rect = [
+                cx - TRANSFORM_HANDLE_SIZE / 2,
+                cy - TRANSFORM_HANDLE_SIZE / 2,
+                TRANSFORM_HANDLE_SIZE,
+                TRANSFORM_HANDLE_SIZE,
+            ];
+            ctx.fillStyle = "#f5f5f5";
+            ctx.fillRect(...rect);
+            ctx.strokeStyle = "#2563eb";
+            ctx.strokeRect(...rect);
+        }
+        ctx.restore();
     }
 
     getFeatherPercent() {
         return Math.min(100, Math.max(0, Number(findWidget(this.node, "mask_feather")?.value || 0)));
     }
 
-    getFeatherWidth(baseRadius = this.currentToolSize() / 2) {
-        return baseRadius * (BRUSH_FEATHER_RADIUS_MULTIPLIER - 1) * (this.getFeatherPercent() / 100);
-    }
-
     drawBrushCursor(ctx) {
-        if (!this.hoverImagePoint || !this.imageRect?.[4] || this.tool === "lasso" || !["brush", "eraser"].includes(this.tool)) return;
-        const baseWidth = this.maskBaseWidth || this.image?.naturalWidth || 0;
-        const baseHeight = this.maskBaseHeight || this.image?.naturalHeight || 0;
+        if (!this.hoverImagePoint || !this.canvasRect?.[4] || this.tool === "lasso" || !["brush", "eraser"].includes(this.tool)) return;
+        const baseWidth = this.canvasWidth;
+        const baseHeight = this.canvasHeight;
         if (!baseWidth || !baseHeight) return;
-        const scaleX = this.imageRect[2] / baseWidth;
-        const scaleY = this.imageRect[3] / baseHeight;
+        const scaleX = this.canvasRect[2] / baseWidth;
+        const scaleY = this.canvasRect[3] / baseHeight;
         const scale = Math.min(scaleX, scaleY);
-        const x = this.imageRect[0] + this.hoverImagePoint[0] * scaleX;
-        const y = this.imageRect[1] + this.hoverImagePoint[1] * scaleY;
+        const x = this.canvasRect[0] + this.hoverImagePoint[0] * scaleX;
+        const y = this.canvasRect[1] + this.hoverImagePoint[1] * scaleY;
         const toolSize = this.activeStroke?.brushSize || this.currentToolSize();
         const feather = (toolSize / 2) * (BRUSH_FEATHER_RADIUS_MULTIPLIER - 1) * (this.getFeatherPercent() / 100);
         const innerRadius = Math.max(1, toolSize * scale / 2);
@@ -1222,79 +1605,61 @@ class NO8DGenerateCanvasWidget {
         ring(innerRadius);
     }
 
-    renderCacheKey(previewRect, imageRect) {
-        const strokeKey = this.strokes.map((stroke) => {
-            const points = stroke.points || [];
-            const first = points[0] || [0, 0];
-            const last = points[points.length - 1] || first;
-            const checksum = points.reduce((total, point, index) => (
-                total + (index + 1) * (Math.round(point[0]) * 31 + Math.round(point[1]) * 17)
-            ), 0);
-            return `${stroke.op}:${stroke.kind}:${stroke.brushSize}:${points.length}:${Math.round(first[0])},${Math.round(first[1])}:${Math.round(last[0])},${Math.round(last[1])}:${checksum}`;
-        }).join("|");
-        return [
-            Math.round(previewRect[2]), Math.round(previewRect[3]),
-            Math.round(imageRect[0] - previewRect[0]), Math.round(imageRect[1] - previewRect[1]),
-            Math.round(imageRect[2]), Math.round(imageRect[3]),
-            this.image?.src || "",
-            this.previewImage?.width || this.image?.naturalWidth || 0,
-            this.previewImage?.height || this.image?.naturalHeight || 0,
-            this.maskBaseWidth || 0,
-            this.maskBaseHeight || 0,
-            this.strokes.length,
-            strokeKey,
-            this.getFeatherPercent(),
-            this.hasMaskContent() ? "mask" : "nomask",
-            this.maskOpacity,
-            this.maskColor,
-        ].join("|");
-    }
-
-    getRenderedPreview(previewRect, imageRect) {
-        const key = this.renderCacheKey(previewRect, imageRect);
-        if (this.renderCache?.key === key) return this.renderCache.canvas;
-
-        this.clearRenderCache();
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.round(previewRect[2]));
-        canvas.height = Math.max(1, Math.round(previewRect[3]));
-        const cacheCtx = canvas.getContext("2d");
-        cacheCtx.fillStyle = "#080808";
-        cacheCtx.fillRect(0, 0, canvas.width, canvas.height);
-
-        const localImageRect = [
-            imageRect[0] - previewRect[0],
-            imageRect[1] - previewRect[1],
-            imageRect[2],
-            imageRect[3],
-            imageRect[4],
-        ];
-        cacheCtx.drawImage(this.previewImage || this.image, localImageRect[0], localImageRect[1], localImageRect[2], localImageRect[3]);
-
-        if (this.hasMaskContent()) {
-            const previousRect = this.imageRect;
-            this.imageRect = localImageRect;
-            this.drawMask(cacheCtx);
-            this.imageRect = previousRect;
-        }
-
-        this.renderCache = { key, canvas };
-        return canvas;
-    }
-
     draw(ctx, node, width, y, height) {
         const widgetHeight = Math.max(220, Number(this.computedHeight) || Number(height) || 220);
         this.rect = [PAD, y + 4, Math.max(1, width - PAD * 2), widgetHeight - 8];
         this.toolbarRect = [this.rect[0], this.rect[1] + this.rect[3] - TOOLBAR_HEIGHT, this.rect[2], TOOLBAR_HEIGHT];
-        const previewRect = [this.rect[0], this.rect[1], this.rect[2], this.rect[3] - TOOLBAR_HEIGHT];
+        const previewRect = [
+            this.rect[0], this.rect[1], this.rect[2],
+            this.rect[3] - TOOLBAR_HEIGHT,
+        ];
 
         ctx.save();
         ctx.fillStyle = "#080808";
         ctx.fillRect(...previewRect);
-        this.imageRect = fitRect(this.image, previewRect);
-        if (this.imageRect) {
-            const preview = this.getRenderedPreview(previewRect, this.imageRect);
-            ctx.drawImage(preview, previewRect[0], previewRect[1], previewRect[2], previewRect[3]);
+        this.canvasRect = fitSizeRect(this.canvasWidth, this.canvasHeight, previewRect);
+        this.contentRect = null;
+        if (this.canvasRect) {
+            ctx.fillStyle = "#111";
+            ctx.fillRect(this.canvasRect[0], this.canvasRect[1], this.canvasRect[2], this.canvasRect[3]);
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(this.canvasRect[0], this.canvasRect[1], this.canvasRect[2], this.canvasRect[3]);
+            ctx.clip();
+            const resultMatchesCanvas = this.outpaintResultVisible
+                && this.image?.naturalWidth === this.canvasWidth
+                && this.image?.naturalHeight === this.canvasHeight;
+            if (resultMatchesCanvas) {
+                this.contentRect = [...this.canvasRect.slice(0, 4)];
+                ctx.drawImage(this.previewImage || this.image, ...this.canvasRect.slice(0, 4));
+            } else if (this.transformActive
+                && this.editingImage()?.naturalWidth) {
+                const transform = this.ensureImageTransform();
+                const scale = this.canvasRect[4];
+                this.contentRect = [
+                    this.canvasRect[0] + transform.x * scale,
+                    this.canvasRect[1] + transform.y * scale,
+                    transform.width * scale,
+                    transform.height * scale,
+                ];
+                ctx.drawImage(this.sourcePreviewImage || this.editingImage(), ...this.contentRect);
+            } else if (this.image?.naturalWidth) {
+                // A canvas ratio change must not rescale the already generated
+                // image independently on each axis. Keep the source aspect
+                // ratio until the transform tool explicitly changes it.
+                this.contentRect = fitSizeRect(
+                    this.image.naturalWidth,
+                    this.image.naturalHeight,
+                    this.canvasRect.slice(0, 4),
+                ).slice(0, 4);
+                ctx.drawImage(this.previewImage || this.image, ...this.contentRect);
+            }
+            if (this.isMaskModeActive()) this.drawMask(ctx);
+            ctx.restore();
+            this.drawTransformHandles(ctx);
+            ctx.strokeStyle = "#444";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(this.canvasRect[0] + 0.5, this.canvasRect[1] + 0.5, this.canvasRect[2] - 1, this.canvasRect[3] - 1);
             const count = Number(node._no8dGeneratePreviewCount) || 0;
             const index = Number(node._no8dGeneratePreviewIndex) || 0;
             if (count > 1) {
@@ -1314,54 +1679,95 @@ class NO8DGenerateCanvasWidget {
                 ctx.fillText(label, x + labelWidth / 2, yPos + 11);
             }
             this.drawBrushCursor(ctx);
-        } else {
-            this.clearRenderCache();
-            ctx.fillStyle = "#aaa";
+        }
+        if (!this.image?.naturalWidth) {
+                ctx.fillStyle = "#aaa";
             ctx.font = "12px sans-serif";
             ctx.textAlign = "left";
             ctx.textBaseline = "top";
             ctx.fillText(t("noImage"), previewRect[0] + 12, previewRect[1] + 12);
         }
+        this.buttons = [];
         this.drawToolbar(ctx);
         ctx.restore();
         this.repositionActiveEditor();
     }
 
     renderExecutionMask() {
-        const width = this.maskBaseWidth || this.image?.naturalWidth || 0;
-        const height = this.maskBaseHeight || this.image?.naturalHeight || 0;
+        const width = this.canvasWidth;
+        const height = this.canvasHeight;
+        if (!width || !height) return null;
         const featherDiameters = strokeFeatherDiameters(this.strokes, width, height);
         const coreMask = this.makeBinaryMask(1, featherDiameters);
-        if (!coreMask) return null;
-        if (this.getFeatherPercent() <= 0) return coreMask;
         const canvas = document.createElement("canvas");
-        canvas.width = coreMask.width;
-        canvas.height = coreMask.height;
+        canvas.width = width;
+        canvas.height = height;
         const ctx = canvas.getContext("2d");
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        const featherPercent = this.getFeatherPercent() / 100;
-        for (let step = EXECUTION_MASK_GRADIENT_STEPS - 1; step >= 0; step -= 1) {
-            const { brushScale, value } = executionMaskGradientStep(step, featherPercent);
-            const layer = step === 0
-                ? coreMask
-                : this.makeBinaryMask(brushScale, featherDiameters);
-            if (!layer) continue;
-            const layerCtx = layer.getContext("2d");
-            layerCtx.globalCompositeOperation = "source-in";
-            layerCtx.fillStyle = `rgb(${value}, ${value}, ${value})`;
-            layerCtx.fillRect(0, 0, layer.width, layer.height);
-            layerCtx.globalCompositeOperation = "source-over";
-            ctx.drawImage(layer, 0, 0);
-            if (layer !== coreMask) releasePreviewCanvas(layer);
+
+        if (this.isOutpaintModeActive()) {
+            const transform = this.rasterImageTransform();
+            const feather = this.outpaintFeatherWidth(transform);
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(0, 0, width, height);
+            if (feather <= 0) {
+                ctx.fillStyle = "#000";
+                ctx.fillRect(transform.x, transform.y, transform.width, transform.height);
+            } else {
+                for (let step = 1; step <= EXECUTION_MASK_GRADIENT_STEPS; step += 1) {
+                    const progress = step / EXECUTION_MASK_GRADIENT_STEPS;
+                    const inset = feather * progress;
+                    const innerWidth = Math.max(0, transform.width - inset * 2);
+                    const innerHeight = Math.max(0, transform.height - inset * 2);
+                    if (!innerWidth || !innerHeight) break;
+                    const value = Math.round(255 * (1 - progress));
+                    ctx.fillStyle = `rgb(${value}, ${value}, ${value})`;
+                    ctx.fillRect(
+                        transform.x + inset,
+                        transform.y + inset,
+                        innerWidth,
+                        innerHeight,
+                    );
+                }
+            }
         }
+
+        if (!coreMask) return this.isOutpaintModeActive() ? canvas : null;
+        const manual = document.createElement("canvas");
+        manual.width = width;
+        manual.height = height;
+        const manualCtx = manual.getContext("2d");
+        if (this.getFeatherPercent() <= 0) {
+            manualCtx.drawImage(coreMask, 0, 0);
+        } else {
+            const featherPercent = this.getFeatherPercent() / 100;
+            for (let step = EXECUTION_MASK_GRADIENT_STEPS - 1; step >= 0; step -= 1) {
+                const { brushScale, value } = executionMaskGradientStep(step, featherPercent);
+                const layer = step === 0
+                    ? coreMask
+                    : this.makeBinaryMask(brushScale, featherDiameters);
+                if (!layer) continue;
+                const layerCtx = layer.getContext("2d");
+                layerCtx.globalCompositeOperation = "source-in";
+                layerCtx.fillStyle = `rgb(${value}, ${value}, ${value})`;
+                layerCtx.fillRect(0, 0, layer.width, layer.height);
+                layerCtx.globalCompositeOperation = "source-over";
+                manualCtx.drawImage(layer, 0, 0);
+                if (layer !== coreMask) releasePreviewCanvas(layer);
+            }
+        }
+        ctx.globalCompositeOperation = "lighten";
+        ctx.drawImage(manual, 0, 0);
+        ctx.globalCompositeOperation = "source-over";
+        releasePreviewCanvas(manual);
         releasePreviewCanvas(coreMask);
         return canvas;
     }
 
     makeEmptyExecutionMask() {
-        const width = this.maskBaseWidth || this.image?.naturalWidth || 0;
-        const height = this.maskBaseHeight || this.image?.naturalHeight || 0;
+        const width = this.canvasWidth;
+        const height = this.canvasHeight;
         if (!width || !height) return null;
         const canvas = document.createElement("canvas");
         canvas.width = width;
@@ -1369,6 +1775,22 @@ class NO8DGenerateCanvasWidget {
         const ctx = canvas.getContext("2d");
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, width, height);
+        return canvas;
+    }
+
+    renderCompositeBase() {
+        const image = this.editingImage();
+        const transform = this.rasterImageTransform();
+        if (!image?.naturalWidth || !transform || !this.canvasWidth || !this.canvasHeight) return null;
+        const canvas = document.createElement("canvas");
+        canvas.width = this.canvasWidth;
+        canvas.height = this.canvasHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(image, transform.x, transform.y, transform.width, transform.height);
         return canvas;
     }
 
@@ -1382,31 +1804,38 @@ class NO8DGenerateCanvasWidget {
             if (this.isCurrentMaskRevision(revision)) {
                 this.baseImageFile = "";
                 this.maskImageFile = "";
-                this.maskBaseWidth = 0;
-                this.maskBaseHeight = 0;
+                this.maskBaseWidth = this.canvasWidth;
+                this.maskBaseHeight = this.canvasHeight;
                 this.maskDirty = false;
                 this.value = this.getValue();
             }
             return;
         }
-        if (!this.image?.src && !this.baseImageFile) return;
-        if (!this.baseImageFile && this.image?.src) {
-            const source = await (await fetch(this.image.src)).blob();
+        const editImage = this.editingImage();
+        if (!editImage?.src && !this.sourceImageFile) return;
+        if (!this.sourceImageFile && editImage?.src) {
+            const source = await (await fetch(editImage.src)).blob();
             if (!this.isCurrentMaskRevision(revision)) return;
             const uploadedBase = await uploadBlob(
-                source, "base", this.node.id, () => this.isCurrentMaskRevision(revision),
+                source, "source", this.node.id, () => this.isCurrentMaskRevision(revision),
+            );
+            if (!this.isCurrentMaskRevision(revision)) return;
+            this.sourceImageFile = uploadedBase;
+        }
+        if (!this.isCurrentMaskRevision(revision)) return;
+        this.maskBaseWidth = this.canvasWidth;
+        this.maskBaseHeight = this.canvasHeight;
+        const base = this.renderCompositeBase();
+        const mask = this.renderExecutionMask() || this.makeEmptyExecutionMask();
+        if (!base || !mask) return;
+        try {
+            const baseBlob = await canvasBlob(base);
+            if (!this.isCurrentMaskRevision(revision)) return;
+            const uploadedBase = await uploadBlob(
+                baseBlob, "base", this.node.id, () => this.isCurrentMaskRevision(revision),
             );
             if (!this.isCurrentMaskRevision(revision)) return;
             this.baseImageFile = uploadedBase;
-        }
-        if (!this.isCurrentMaskRevision(revision)) return;
-        if (!this.maskBaseWidth || !this.maskBaseHeight) {
-            this.maskBaseWidth = this.image?.naturalWidth || 0;
-            this.maskBaseHeight = this.image?.naturalHeight || 0;
-        }
-        const mask = this.renderExecutionMask() || this.makeEmptyExecutionMask();
-        if (!mask) return;
-        try {
             const blob = await canvasBlob(mask);
             if (!this.isCurrentMaskRevision(revision)) return;
             const uploadedMask = await uploadBlob(
@@ -1417,6 +1846,7 @@ class NO8DGenerateCanvasWidget {
             this.maskDirty = false;
             this.value = this.getValue();
         } finally {
+            releasePreviewCanvas(base);
             releasePreviewCanvas(mask);
         }
     }
@@ -1440,15 +1870,109 @@ class NO8DGenerateCanvasWidget {
         }, delay);
     }
 
+    updateCanvasDimensions() {
+        this.outpaintResultVisible = false;
+        const [width, height] = canvasSize(
+            this.aspectRatio, this.latentShortSide, this.swapDimensions,
+        );
+        this.canvasWidth = width;
+        this.canvasHeight = height;
+        this.maskBaseWidth = width;
+        this.maskBaseHeight = height;
+        if (this.transformActive && this.editingImage()?.naturalWidth) {
+            this.fitImageTransformToCanvas();
+        }
+        this.clearMaskOverlay();
+        if (this.isMaskModeActive() && this.editingImage()?.naturalWidth) {
+            this.markMaskDirty();
+            this.scheduleMaskCommit();
+        }
+        this.value = this.getValue();
+        setDirty();
+    }
+
+    promoteOutpaintResultToEditingBase() {
+        const result = this.image;
+        if (!this.outpaintResultVisible
+            || !result?.naturalWidth
+            || result.naturalWidth !== this.canvasWidth
+            || result.naturalHeight !== this.canvasHeight) {
+            return false;
+        }
+        const oldSource = this.sourceImage;
+        const oldSourcePreview = this.sourcePreviewImage;
+        this.sourceImage = result;
+        this.sourcePreviewImage = this.previewImage;
+        this.sourceImageFile = "";
+        this.baseImageFile = "";
+        this.maskImageFile = "";
+        this.maskBaseWidth = this.canvasWidth;
+        this.maskBaseHeight = this.canvasHeight;
+        this.imageTransform = {
+            x: 0,
+            y: 0,
+            width: this.canvasWidth,
+            height: this.canvasHeight,
+        };
+        this.outpaintResultVisible = false;
+        this.invalidateMaskCommit();
+        this.maskDirty = false;
+        this.clearMaskOverlay();
+        if (oldSource && oldSource !== result) releaseDecodedImage(oldSource);
+        if (oldSourcePreview && oldSourcePreview !== this.previewImage) {
+            releasePreviewCanvas(oldSourcePreview);
+        }
+        return true;
+    }
+
+    activateTransform() {
+        if (!this.editingImage()?.naturalWidth) return;
+        if (this.transformActive && this.outpaintResultVisible) {
+            this.promoteOutpaintResultToEditingBase();
+        }
+        this.outpaintResultVisible = false;
+        this.closeActiveEditor();
+        const activating = !this.transformActive;
+        if (activating) this.clearInpaintMode();
+        this.tool = null;
+        this.transformActive = activating;
+        if (this.transformActive) {
+            if (!this.sourceImage) {
+                this.sourceImage = this.image;
+                this.sourcePreviewImage = this.previewImage;
+            }
+            this.ensureImageTransform();
+            this.markMaskDirty();
+            this.scheduleMaskCommit();
+        } else {
+            this.invalidateMaskCommit();
+            this.maskDirty = this.hasMaskContent();
+            this.clearMaskOverlay();
+            this.setTransformCursor(null);
+        }
+        this.value = this.getValue();
+        setDirty();
+    }
+
     runAction(action) {
+        if (this.outpaintResultVisible
+            && ["transform", "lasso", "brush", "eraser"].includes(action)) {
+            this.promoteOutpaintResultToEditingBase();
+        }
+        if (action !== "transform") this.outpaintResultVisible = false;
         if (action === "brush" || action === "lasso" || action === "eraser") {
             this.closeActiveEditor();
+            this.clearOutpaintMode();
             this.tool = this.tool === action ? null : action;
+        } else if (action === "transform") {
+            this.activateTransform();
+        } else if (action === "canvas_swap") {
+            this.swapDimensions = !this.swapDimensions;
+            this.updateCanvasDimensions();
         } else if (action === "invert") {
             this.invert = !this.invert;
             this.clearMaskOverlay();
-            this.clearRenderCache();
-            this.markMaskDirty();
+                this.markMaskDirty();
             this.scheduleMaskCommit();
         } else if (action === "clear") {
             this.clearMaskState();
@@ -1473,6 +1997,7 @@ class NO8DGenerateCanvasWidget {
     }
 
     setProperty(action, value) {
+        this.outpaintResultVisible = false;
         if (action === "brush_size") {
             const size = Math.min(512, Math.max(1, Math.round(value)));
             if (this.tool === "eraser") this.eraserSize = size;
@@ -1485,7 +2010,6 @@ class NO8DGenerateCanvasWidget {
             this.maskOpacity = Math.min(1, Math.max(0.05, value / 100));
         }
         this.clearMaskOverlay();
-        this.clearRenderCache();
         setDirty();
     }
 
@@ -1599,8 +2123,7 @@ class NO8DGenerateCanvasWidget {
                 preset.style.outlineOffset = selected ? "1px" : "0";
             }
             this.clearMaskOverlay();
-            this.clearRenderCache();
-            setDirty();
+                setDirty();
         };
         update(this.maskColor);
         spectrum.addEventListener("input", () => update(hueToHex(spectrum.value)));
@@ -1634,10 +2157,62 @@ class NO8DGenerateCanvasWidget {
         setTimeout(() => document.addEventListener("pointerdown", outside, true), 0);
     }
 
+    openRatioEditor(event, _buttonRect, nodePos) {
+        this.valueEditorClose?.();
+        const editor = document.createElement("div");
+        editor.className = "no8d-generate-ratio-editor no8d-ui no8d-panel";
+        const { presetGroup, valueGroup } = this.createEditorGroups(editor);
+        valueGroup.remove();
+        presetGroup.style.flex = "1 1 auto";
+        presetGroup.style.justifyContent = "center";
+        this.activeEditor = { element: editor, height: EDITOR_HEIGHT };
+        this.activeEditorAction = "canvas_ratio";
+        this.positionBottomEditor(editor, event, nodePos);
+        this.bindEditorEvents(editor);
+
+        let closed = false;
+        const close = () => {
+            if (closed) return;
+            closed = true;
+            editor.remove();
+            document.removeEventListener("pointerdown", outside, true);
+            if (this.valueEditorClose === close) this.valueEditorClose = null;
+            if (this.activeEditor?.element === editor) this.activeEditor = null;
+            if (this.activeEditorAction === "canvas_ratio") this.activeEditorAction = null;
+            setDirty();
+        };
+        const outside = (outsideEvent) => {
+            if (!editor.contains(outsideEvent.target)) setTimeout(close, 0);
+        };
+        for (const ratio of Object.keys(ASPECT_RATIOS)) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.textContent = ratio;
+            const selected = ratio === this.aspectRatio;
+            button.style.cssText = [
+                "min-width:54px", "height:32px", "padding:0 8px", "color:#ddd",
+                `background:${selected ? "#2563eb" : "#292929"}`,
+                `border:1px solid ${selected ? "#2563eb" : "#555"}`,
+                "border-radius:3px", "cursor:pointer",
+            ].join(";");
+            button.addEventListener("click", () => {
+                this.aspectRatio = ratio;
+                this.updateCanvasDimensions();
+                close();
+            });
+            presetGroup.append(button);
+        }
+        document.body.append(editor);
+        this.valueEditorClose = close;
+        setTimeout(() => document.addEventListener("pointerdown", outside, true), 0);
+    }
+
     openNumberEditor(action, event, buttonRect, nodePos) {
         this.valueEditorClose?.();
-        const min = action === "brush_size" ? 1 : action === "mask_feather" ? 0 : 5;
-        const max = action === "brush_size" ? 512 : 100;
+        const min = action === "brush_size" ? 1
+            : action === "mask_feather" ? 0 : 5;
+        const max = action === "brush_size" ? 512
+            : 100;
         const editor = document.createElement("div");
         editor.className = "no8d-generate-value-editor no8d-ui no8d-panel";
         const { presetGroup, valueGroup } = this.createEditorGroups(editor);
@@ -1757,19 +2332,222 @@ class NO8DGenerateCanvasWidget {
         input.select();
     }
 
+    canvasPointer(pos) {
+        if (!this.canvasRect?.[4]) return null;
+        return [
+            (pos[0] - this.canvasRect[0]) / this.canvasRect[4],
+            (pos[1] - this.canvasRect[1]) / this.canvasRect[4],
+        ];
+    }
+
+    transformHit(pos) {
+        if (!this.transformActive || !pointInRect(pos, this.canvasRect)) return null;
+        const visibleRect = this.visibleTransformRect();
+        if (!visibleRect) return null;
+        const [x, y, width, height] = visibleRect;
+        const right = x + width;
+        const bottom = y + height;
+        const tolerance = Math.max(7, TRANSFORM_HANDLE_SIZE);
+        const nearX = (value, target) => Math.abs(value - target) <= tolerance;
+        const nearY = (value, target) => Math.abs(value - target) <= tolerance;
+        const withinX = pos[0] >= x - tolerance && pos[0] <= right + tolerance;
+        const withinY = pos[1] >= y - tolerance && pos[1] <= bottom + tolerance;
+
+        if (nearX(pos[0], x) && nearY(pos[1], y)) return "nw";
+        if (nearX(pos[0], right) && nearY(pos[1], y)) return "ne";
+        if (nearX(pos[0], x) && nearY(pos[1], bottom)) return "sw";
+        if (nearX(pos[0], right) && nearY(pos[1], bottom)) return "se";
+        if (withinX && nearY(pos[1], y)) return "n";
+        if (withinX && nearY(pos[1], bottom)) return "s";
+        if (withinY && nearX(pos[0], x)) return "w";
+        if (withinY && nearX(pos[0], right)) return "e";
+        return pointInRect(pos, visibleRect) ? "move" : null;
+    }
+
+    visibleTransformRect() {
+        if (!this.contentRect || !this.canvasRect) return null;
+        const left = Math.max(this.contentRect[0], this.canvasRect[0]);
+        const top = Math.max(this.contentRect[1], this.canvasRect[1]);
+        const right = Math.min(
+            this.contentRect[0] + this.contentRect[2],
+            this.canvasRect[0] + this.canvasRect[2],
+        );
+        const bottom = Math.min(
+            this.contentRect[1] + this.contentRect[3],
+            this.canvasRect[1] + this.canvasRect[3],
+        );
+        if (right <= left || bottom <= top) return null;
+        return [left, top, right - left, bottom - top];
+    }
+
+    setTransformCursor(hit, dragging = false) {
+        const cursors = {
+            nw: "nwse-resize",
+            se: "nwse-resize",
+            ne: "nesw-resize",
+            sw: "nesw-resize",
+            n: "ns-resize",
+            s: "ns-resize",
+            e: "ew-resize",
+            w: "ew-resize",
+            move: dragging ? "grabbing" : "grab",
+        };
+        const cursor = cursors[hit] || "";
+        const revision = ++this.transformCursorRevision;
+        const applyCursor = () => {
+            if (revision !== this.transformCursorRevision) return;
+            const canvas = app.canvas?.canvas;
+            if (!canvas?.style) return;
+            if (cursor) canvas.style.setProperty("cursor", cursor, "important");
+            else canvas.style.removeProperty("cursor");
+        };
+        // LiteGraph also writes the canvas cursor during pointer handling.
+        // Apply once now and once after that handler has completed so hover
+        // feedback is visible before the user starts dragging.
+        applyCursor();
+        requestAnimationFrame(applyCursor);
+    }
+
+    releaseTransformCursor() {
+        this.transformCursorRevision += 1;
+        app.canvas?.canvas?.style?.removeProperty("cursor");
+    }
+
+    isNodeResizeCorner(pos) {
+        const width = Number(this.node?.size?.[0]) || 0;
+        const height = Number(this.node?.size?.[1]) || 0;
+        if (!width || !height || !Array.isArray(pos)) return false;
+        const nearHorizontalEdge = pos[0] <= NODE_RESIZE_CORNER_SIZE
+            || pos[0] >= width - NODE_RESIZE_CORNER_SIZE;
+        const nearVerticalEdge = pos[1] <= NODE_RESIZE_CORNER_SIZE
+            || pos[1] >= height - NODE_RESIZE_CORNER_SIZE;
+        return nearHorizontalEdge && nearVerticalEdge;
+    }
+
+    updateHover(pos) {
+        if (this.transformDrag || this.activeStroke) return;
+        this.hoverImagePoint = this.imagePoint(pos);
+        this.setTransformCursor(
+            this.transformActive ? this.transformHit(pos) : null,
+        );
+        setCursorDirty();
+    }
+
+    clearHover() {
+        if (this.transformDrag || this.activeStroke) return;
+        this.hoverImagePoint = null;
+        this.setTransformCursor(null);
+        setCursorDirty();
+    }
+
+    beginTransformDrag(pos) {
+        if (!this.transformActive || !this.contentRect) return false;
+        if (this.outpaintResultVisible) {
+            this.promoteOutpaintResultToEditingBase();
+        }
+        const hit = this.transformHit(pos);
+        if (!hit) return false;
+        const pointer = this.canvasPointer(pos);
+        if (!pointer) return false;
+        this.transformDrag = {
+            handle: hit,
+            pointer,
+            transform: { ...this.ensureImageTransform() },
+        };
+        this.setTransformCursor(hit, true);
+        return true;
+    }
+
+    snapImageTransform(transform) {
+        const threshold = Math.min(this.canvasWidth, this.canvasHeight) * 0.05;
+        const snapAxis = (position, size, canvasSize) => {
+            const candidates = [0, canvasSize - size];
+            const nearest = candidates.reduce((best, candidate) => (
+                Math.abs(candidate - position) < Math.abs(best - position) ? candidate : best
+            ));
+            return Math.abs(nearest - position) <= threshold ? nearest : position;
+        };
+        return {
+            ...transform,
+            x: snapAxis(transform.x, transform.width, this.canvasWidth),
+            y: snapAxis(transform.y, transform.height, this.canvasHeight),
+        };
+    }
+
+    updateTransformDrag(pos, disableSnap = false) {
+        const drag = this.transformDrag;
+        const pointer = this.canvasPointer(pos);
+        if (!drag || !pointer) return false;
+        const original = drag.transform;
+        const deltaX = pointer[0] - drag.pointer[0];
+        const deltaY = pointer[1] - drag.pointer[1];
+        if (drag.handle === "move") {
+            this.imageTransform = {
+                ...original,
+                x: original.x + deltaX,
+                y: original.y + deltaY,
+            };
+        } else {
+            const ratio = original.width / original.height;
+            const left = original.x;
+            const right = original.x + original.width;
+            const top = original.y;
+            const bottom = original.y + original.height;
+            const horizontal = drag.handle.includes("w")
+                ? original.width - deltaX
+                : drag.handle.includes("e") ? original.width + deltaX : null;
+            const vertical = drag.handle.includes("n")
+                ? original.height - deltaY
+                : drag.handle.includes("s") ? original.height + deltaY : null;
+            let width = horizontal;
+            if (width == null && vertical != null) width = vertical * ratio;
+            if (horizontal != null && vertical != null) {
+                width = Math.abs(horizontal / original.width) >= Math.abs(vertical / original.height)
+                    ? horizontal : vertical * ratio;
+            }
+            width = Math.max(16, Number(width) || 16);
+            const height = width / ratio;
+            let x = left;
+            let y = top;
+            if (drag.handle.includes("w")) x = right - width;
+            else if (!drag.handle.includes("e")) x = left + (original.width - width) / 2;
+            if (drag.handle.includes("n")) y = bottom - height;
+            else if (!drag.handle.includes("s")) y = top + (original.height - height) / 2;
+            this.imageTransform = { x, y, width, height };
+        }
+        if (!disableSnap) this.imageTransform = this.snapImageTransform(this.imageTransform);
+        this.clearMaskOverlay();
+        this.maskDirty = true;
+        setCursorDirty();
+        return true;
+    }
+
     mouse(event, pos) {
         // ComfyUI passes custom-widget mouse positions in node-local
         // coordinates and keeps routing an active drag through CanvasPointer.
         const nodePos = pos;
         const type = String(event?.type || "");
         if (type.includes("contextmenu") || (type.includes("down") && event.button !== 0)) return false;
+        // The custom canvas widget fills nearly the whole node. Never consume
+        // pointer events in ComfyUI's native corner resize handles.
+        if (!this.transformDrag && !this.activeStroke && this.isNodeResizeCorner(nodePos)) {
+            this.releaseTransformCursor();
+            return false;
+        }
 
         if (type.includes("move")) {
-            this.hoverImagePoint = this.imagePoint(nodePos, Boolean(this.activeStroke));
-            setCursorDirty();
+            if (this.transformDrag || this.activeStroke) {
+                this.hoverImagePoint = this.imagePoint(nodePos, true);
+                if (this.transformActive) {
+                    const hit = this.transformDrag?.handle || this.transformHit(nodePos);
+                    this.setTransformCursor(hit, Boolean(this.transformDrag));
+                }
+                setCursorDirty();
+            } else {
+                this.updateHover(nodePos);
+            }
         } else if ((type.includes("leave") || type.includes("out")) && !this.activeStroke) {
-            this.hoverImagePoint = null;
-            setCursorDirty();
+            this.clearHover();
         }
 
         if (type.includes("down")) {
@@ -1778,7 +2556,12 @@ class NO8DGenerateCanvasWidget {
                 event.preventDefault?.();
                 event.stopPropagation?.();
                 if (button.enabled === false) return true;
-                if (["brush", "eraser"].includes(button.action)) {
+                if (button.action === "canvas_ratio") {
+                    if (this.activeEditorAction === button.action) this.closeActiveEditor();
+                    else this.openRatioEditor(event, button.rect, nodePos);
+                } else if (["canvas_swap", "transform"].includes(button.action)) {
+                    this.runAction(button.action);
+                } else if (["brush", "eraser"].includes(button.action)) {
                     const wasActive = this.tool === button.action;
                     this.runAction(button.action);
                     if (!wasActive) this.openNumberEditor("brush_size", event, button.rect, nodePos);
@@ -1795,10 +2578,15 @@ class NO8DGenerateCanvasWidget {
                 }
                 return true;
             }
+            if (this.beginTransformDrag(nodePos)) {
+                event.preventDefault?.();
+                event.stopPropagation?.();
+                return true;
+            }
             if (event.button !== 0 || !this.hasActiveTool()) return false;
             if (!this.maskBaseWidth || !this.maskBaseHeight) {
-                this.maskBaseWidth = this.image?.naturalWidth || 0;
-                this.maskBaseHeight = this.image?.naturalHeight || 0;
+                this.maskBaseWidth = this.canvasWidth;
+                this.maskBaseHeight = this.canvasHeight;
             }
             const point = this.imagePoint(nodePos);
             if (!point) return false;
@@ -1812,18 +2600,30 @@ class NO8DGenerateCanvasWidget {
             this.strokes.push(this.activeStroke);
             this.markMaskDirty();
             this.clearMaskOverlay();
-            this.clearRenderCache();
-            setDirty();
+                setDirty();
             return true;
+        }
+
+        if (type.includes("move") && this.transformDrag) {
+            return this.updateTransformDrag(nodePos, Boolean(event.altKey));
         }
 
         if (type.includes("move") && this.activeStroke) {
             const point = this.imagePoint(nodePos, true);
             if (point) this.activeStroke.points.push(point);
             this.clearMaskOverlay();
-            this.clearRenderCache();
-            this.maskDirty = true;
+                this.maskDirty = true;
             setCursorDirty();
+            return true;
+        }
+
+        if ((type.includes("up") || type.includes("cancel")) && this.transformDrag) {
+            this.updateTransformDrag(nodePos, Boolean(event.altKey));
+            this.transformDrag = null;
+            this.setTransformCursor(this.transformHit(nodePos));
+            this.markMaskDirty();
+            this.scheduleMaskCommit();
+            this.value = this.getValue();
             return true;
         }
 
@@ -1842,8 +2642,11 @@ class NO8DGenerateCanvasWidget {
     async setPreview(ref, options = {}) {
         if (this.disposed) return;
         const token = ++this.previewLoadToken;
+        const keepEditingBase = this.isMaskModeActive();
         const previousImage = this.image;
         const previousPreview = this.previewImage;
+        const previousSource = this.sourceImage;
+        const previousSourcePreview = this.sourcePreviewImage;
         const image = await loadImage(ref);
         if (this.disposed || token !== this.previewLoadToken) {
             releaseDecodedImage(image);
@@ -1852,10 +2655,35 @@ class NO8DGenerateCanvasWidget {
         const preview = makePreviewCanvas(image);
         this.image = image;
         this.previewImage = preview;
+        if (!keepEditingBase) {
+            this.outpaintResultVisible = false;
+            this.sourceImage = image;
+            this.sourcePreviewImage = preview;
+            this.sourceImageFile = "";
+            this.baseImageFile = "";
+            this.maskImageFile = "";
+            this.syncCanvasToImageSize(image);
+            this.imageTransform = null;
+            this.fitImageTransformToCanvas();
+        } else {
+            this.outpaintResultVisible = this.isOutpaintModeActive()
+                && image.naturalWidth === this.canvasWidth
+                && image.naturalHeight === this.canvasHeight;
+        }
         syncNativeImageState(this.node, ref, image, options.refs);
-        if (previousImage && previousImage !== image) releaseDecodedImage(previousImage);
-        if (previousPreview && previousPreview !== preview) releasePreviewCanvas(previousPreview);
-        this.clearRenderCache();
+        if (previousImage && previousImage !== image && previousImage !== this.sourceImage) {
+            releaseDecodedImage(previousImage);
+        }
+        if (previousPreview && previousPreview !== preview && previousPreview !== this.sourcePreviewImage) {
+            releasePreviewCanvas(previousPreview);
+        }
+        if (!keepEditingBase && previousSource && previousSource !== image && previousSource !== previousImage) {
+            releaseDecodedImage(previousSource);
+        }
+        if (!keepEditingBase && previousSourcePreview && previousSourcePreview !== preview
+            && previousSourcePreview !== previousPreview) {
+            releasePreviewCanvas(previousSourcePreview);
+        }
         if (options.clearMask) this.clearMaskState();
         else {
             const maskNeedsCommit = this.maskDirty;
@@ -1891,6 +2719,31 @@ function findGenerateNodeForPreviewEvent(detail) {
     return isGenerateNode(directNode) ? directNode : null;
 }
 
+async function applyGeneratePreview(node, message) {
+    const widget = node?._no8dGenerateCanvas;
+    if (!widget) return false;
+    const refs = refsFromMessage(message);
+    if (!refs.length) return false;
+    const ref = refs[refs.length - 1];
+    const key = `${ref.type || "temp"}\n${ref.subfolder || ""}\n${ref.filename}`;
+    if (node._no8dGeneratePreviewLoad?.key === key) {
+        await node._no8dGeneratePreviewLoad.promise;
+        return true;
+    }
+    const promise = widget.setPreview(ref, { clearMask: false, refs });
+    node._no8dGeneratePreviewLoad = { key, promise };
+    try {
+        await promise;
+        suppressNativePreview(node);
+        setDirty();
+    } finally {
+        if (node._no8dGeneratePreviewLoad?.promise === promise) {
+            node._no8dGeneratePreviewLoad = null;
+        }
+    }
+    return true;
+}
+
 app.registerExtension({
     name: "NO8D.Generate",
 
@@ -1902,10 +2755,47 @@ app.registerExtension({
         // editable canvas instead, so the native preview must not be created.
         nodeType.prototype.onDrawBackground = function () {};
         wrapBypassRefresh(nodeType);
+        const originalFindResizeDirection = nodeType.prototype.findResizeDirection;
+        nodeType.prototype.findResizeDirection = function (x, y) {
+            if (this.resizable === false) return undefined;
+            const rect = this.boundingRect;
+            if (rect?.containsXy?.(x, y) && typeof rect.findContainingCorner === "function") {
+                return rect.findContainingCorner(x, y, NODE_RESIZE_CORNER_SIZE);
+            }
+            return originalFindResizeDirection?.apply(this, arguments);
+        };
+        // Legacy custom-widget mouse callbacks only receive pointermove after
+        // pointerdown in current LiteGraph. Node hover callbacks are the
+        // supported path for pre-drag edge/corner cursor feedback.
+        const originalOnMouseMove = nodeType.prototype.onMouseMove;
+        nodeType.prototype.onMouseMove = function (event, pos, canvas) {
+            const widget = this._no8dGenerateCanvas;
+            if (widget?.isNodeResizeCorner?.(pos)) {
+                // Release our forced image-transform cursor before LiteGraph
+                // selects its own node-resize cursor.
+                widget.releaseTransformCursor?.();
+                return originalOnMouseMove?.apply(this, arguments);
+            }
+            const result = originalOnMouseMove?.apply(this, arguments);
+            widget?.updateHover?.(pos);
+            return result;
+        };
+        const originalOnMouseLeave = nodeType.prototype.onMouseLeave;
+        nodeType.prototype.onMouseLeave = function () {
+            this._no8dGenerateCanvas?.clearHover?.();
+            originalOnMouseLeave?.apply(this, arguments);
+        };
         const originalOnExecuted = nodeType.prototype.onExecuted;
         nodeType.prototype.onExecuted = function () {
             originalOnExecuted?.apply(this, arguments);
             suppressNativePreview(this);
+            // Expanded output nodes are attributed to this display node by
+            // ComfyUI.  Handling the node callback directly avoids depending
+            // on the transient expanded-node id format used by the global
+            // `executed` websocket event.
+            applyGeneratePreview(this, arguments[0]).catch((error) => {
+                console.error("[NO8D Generate] node preview load failed", error);
+            });
         };
         const originalOnRemoved = nodeType.prototype.onRemoved;
         nodeType.prototype.onRemoved = function () {
@@ -1916,6 +2806,7 @@ app.registerExtension({
         const originalOnConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function (info) {
             originalOnConfigure?.apply(this, arguments);
+            migrateGenerateSlots(this);
             hideToolbarWidgets(this);
             requestAnimationFrame(() => {
                 createSamplerPanel(this);
@@ -1940,6 +2831,7 @@ app.registerExtension({
 
     nodeCreated(node) {
         if (!isGenerateNode(node)) return;
+        migrateGenerateSlots(node);
         suppressNativePreview(node);
         hideToolbarWidgets(node);
         createSamplerPanel(node);
@@ -1957,14 +2849,9 @@ app.registerExtension({
         window.addEventListener("languagechange", () => refreshAllGenerateLabels(true));
         api.addEventListener("executed", async ({ detail }) => {
             const node = findGenerateNodeForPreviewEvent(detail);
-            const widget = node?._no8dGenerateCanvas;
-            if (!widget) return;
-            const refs = refsFromMessage(detail?.output || detail);
-            if (!refs.length) return;
+            if (!node) return;
             try {
-                await widget.setPreview(refs[refs.length - 1], { clearMask: false, refs });
-                suppressNativePreview(node);
-                setDirty();
+                await applyGeneratePreview(node, detail?.output || detail);
             } catch (error) {
                 console.error("[NO8D Generate] preview load failed", error);
             }

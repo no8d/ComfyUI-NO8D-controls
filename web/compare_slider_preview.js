@@ -190,14 +190,14 @@ function syncNativeImageState(node) {
     if (!node) return;
     suppressNativePreviewWidget(node);
     const images = node._no8dABImages || {};
-    const entries = [images.a, images.b].filter((entry) => entry?.img?.naturalWidth);
+    const slotOrder = node._no8dNativeImageSlot === "b" ? ["b", "a"] : ["a", "b"];
+    const entries = slotOrder
+        .map((slot) => images[slot])
+        .filter((entry) => entry?.img?.naturalWidth);
     node.imgs = entries.map((entry) => entry.img);
     node.images = entries.map((entry) => entry.ref);
-    if (!node.imgs.length) {
-        node.imageIndex = 0;
-    } else if (node.imageIndex == null || node.imageIndex >= node.imgs.length) {
-        node.imageIndex = 0;
-    }
+    node.imageIndex = 0;
+    node.overIndex = 0;
 }
 
 function clearNativeImageState(node) {
@@ -206,6 +206,8 @@ function clearNativeImageState(node) {
     node.imgs = undefined;
     node.images = undefined;
     node.imageIndex = 0;
+    node.overIndex = 0;
+    node._no8dNativeImageSlot = null;
 }
 
 function persistPreviewRefs(node) {
@@ -266,11 +268,24 @@ function selectNativeImageAt(node, pos) {
     if (hasA && hasB) {
         const rect = widget.imageRect || widget.rect;
         const splitX = rect[0] + rect[2] * (node._no8dSplit ?? 50) / 100;
-        node.imageIndex = pos[0] <= splitX ? 0 : 1;
+        node._no8dNativeImageSlot = pos[0] <= splitX ? "a" : "b";
     } else {
-        node.imageIndex = 0;
+        node._no8dNativeImageSlot = hasA ? "a" : "b";
     }
-    node.overIndex = node.imageIndex;
+    syncNativeImageState(node);
+}
+
+function isSecondaryClick(event) {
+    return event?.button === 2;
+}
+
+function selectNativeImageUnderPointer(node, canvas) {
+    const graphMouse = canvas?.graph_mouse || app.canvas?.graph_mouse;
+    if (!Array.isArray(graphMouse) || !Array.isArray(node?.pos)) return;
+    selectNativeImageAt(node, [
+        graphMouse[0] - node.pos[0],
+        graphMouse[1] - node.pos[1],
+    ]);
 }
 
 function receivePreviewRefs(node, message) {
@@ -436,6 +451,9 @@ class NO8DCompareWidget {
         const nodePos = this.nodePosFromEventPos(pos);
         const type = String(event?.type || "");
         if (type.includes("contextmenu") || (type.includes("down") && event.button !== 0)) {
+            if (type.includes("contextmenu") || isSecondaryClick(event)) {
+                selectNativeImageAt(this.node, nodePos);
+            }
             return false;
         }
         if (type.includes("down") && event.button === 0 && pointInRect(nodePos, this.pageRect)) {
@@ -653,9 +671,12 @@ app.registerExtension({
         };
         const onMouseDown = nodeType.prototype.onMouseDown;
         nodeType.prototype.onMouseDown = function (event, pos) {
-            if (isTargetNode(this) && event?.button === 2) selectNativeImageAt(this, pos);
+            const selectContextImage = isTargetNode(this) && isSecondaryClick(event);
+            if (selectContextImage) selectNativeImageAt(this, pos);
             if (isTargetNode(this) && startSplitDrag(this, event, pos)) return true;
-            return onMouseDown?.apply(this, arguments);
+            const result = onMouseDown?.apply(this, arguments);
+            if (selectContextImage) selectNativeImageAt(this, pos);
+            return result;
         };
         const onMouseMove = nodeType.prototype.onMouseMove;
         nodeType.prototype.onMouseMove = function (event, pos) {
@@ -666,6 +687,11 @@ app.registerExtension({
         nodeType.prototype.onMouseUp = function () {
             if (isTargetNode(this) && stopSplitDrag(this)) return true;
             return onMouseUp?.apply(this, arguments);
+        };
+        const getExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
+        nodeType.prototype.getExtraMenuOptions = function (canvas, options) {
+            if (isTargetNode(this)) selectNativeImageUnderPointer(this, canvas);
+            return getExtraMenuOptions?.apply(this, arguments);
         };
         const onExecuted = nodeType.prototype.onExecuted;
         nodeType.prototype.onExecuted = function (message) {

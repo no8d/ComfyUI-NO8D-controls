@@ -19,11 +19,11 @@
 
 - `slider_lora_stack.py` + `web/slider_lora_stack.js`
   - 节点：英文 `NO8D-LoRA stack`，中文 `NO8D-LoRA 堆栈`
-  - 功能：多 LoRA 堆叠、排序、启用/关闭、权重范围、触发词输出。
+  - 功能：动态复用 ComfyUI 原生 `UNETLoader`，完成多 LoRA 堆叠、排序、启用/关闭、权重范围和触发词输出。
 
 - `prompt_plus.py` + `web/prompt_plus_i18n.js` + `web/prompt_view.js`
   - 节点：英文 `NO8D-Prompt` / `NO8D-Prompt-view`，中文 `NO8D-提示词` / `NO8D-提示词预览`
-  - 功能：文本扩写、图像反推、文本 + 图像融合、固定提示词前缀、提示词预览与发送。
+  - 功能：文本扩写、图像反推、文本 + 图像融合、目标风格锁定、“不描述风格”、固定提示词前缀、提示词预览与发送。
 
 - `image_loader.py` + `web/image_loader_i18n.js`
   - 节点：英文 `NO8D-Load-images`，中文 `NO8D-图像载入`
@@ -31,7 +31,7 @@
 
 - `generate.py` + `web/generate.js`
   - 节点：英文 `NO8D-Generate`，中文 `NO8D-生成`
-  - 功能：采样参数面板、图像预览、遮罩绘制、局部重绘、list 输入执行。
+  - 功能：采样参数面板、图像预览、画布比例与底图变换、局部重绘、扩图、Flux2 Klein/Krea2 Identity Edit 参考图和 list 输入执行。
   - 输出：仅输出最终图像；不再输出 latent/mask，避免局部重绘后 image-space composite 与 latent 输出语义不一致。
   - 遮罩：执行完成后只更新可见预览并保留当前遮罩，不回写本次遮罩会话的 `base_image_file`；同一遮罩下每次都从固定原底图生成候选。清空遮罩并重新绘制时，才以当前预览建立新的底图会话。
   - 遮罩持久化：工作流保存笔画、反转和底图坐标；重载后可恢复可见且可继续编辑的遮罩。旧版仅保存文件名但没有笔画的数据会按无遮罩处理，避免隐藏重绘。
@@ -42,13 +42,13 @@
   - 羽化：画布仅作区域观察，保持清晰的 100% 实心区、统一 50% 羽化环和 0% 外部显示；后台执行遮罩独立生成 32 级线性 `1 → 0` 渐变，并用于 `SetLatentNoiseMask`、`DifferentialDiffusion` 和最终合成。外圈保持笔迹坐标不变；套索按自身包围盒短边计算，相连的画笔或橡皮笔迹按各自绘制区域的包围盒短边计算，不相连区域及不同工具互不影响。100% 时宽度等于对应区域短边的一半；外围层对添加笔迹向外扩张、对橡皮笔迹向内收缩。
   - 重绘激活：仅在画布存在遮罩内容时自动启用；单纯选择画笔/套索/橡皮工具仍保持普通生成，不设置额外的局部重绘模式下拉框。
   - 软遮罩扩散：使用原生 `VAEEncode + SetLatentNoiseMask + DifferentialDiffusion`，保留上传遮罩的灰度羽化信息；最终继续用同一软遮罩合成。
-  - 重绘强度：使用原生 `ThresholdMask(0.99) + VAEEncodeForInpaint + LatentBlend` 将普通底图 latent 与仅清除精确实心区内容的 latent 混合；原图 latent 占比为 `1 - 0.7 × denoise`，因此 denoise 1 时保留 30%、混入 70% 清除 latent。随后由 `SetLatentNoiseMask` 覆盖回连续渐变执行遮罩，羽化区不参与内容清除。
+  - 重绘强度：使用原生 `ThresholdMask(0.99) + VAEEncodeForInpaint + LatentBlend` 将普通底图 latent 与仅清除精确实心区内容的 latent 混合；原图 latent 占比为 `1 - denoise`。随后由 `SetLatentNoiseMask` 覆盖回连续渐变执行遮罩，羽化区不参与内容清除。
   - 重绘分辨率：从输入 latent 的张量形状和 ComfyUI 空间压缩元数据取得原始图像尺寸；2× VAE 画布在编码前通过原生 `ImageScale + MaskToImage + ImageToMask` 缩回该尺寸，采样完成后再用原始软遮罩合成到完整画布，避免四倍面积采样。
   - 解码兼容：局部内部节点只负责把 Krea2/Wan VAE 的 12 通道打包 RGB 解包为标准 ComfyUI `IMAGE`，采样、重绘、预览与合成仍使用原生节点。
   - 上传生命周期：底图和遮罩使用内容寻址文件名复用相同内容；不自动删除仍可能被队列或保存工作流引用的 input 资产。
   - 缓存一致性：Prompt-view 自动回显的上游文本与手动草稿分离，回显不会改写 `edited_text` 并触发下一轮无意义重算。
   - 种子确定性：锁定种子且提示词、遮罩和参数不变时，序列化输入保持完全一致，重复运行应直接命中 ComfyUI 缓存；随机种子可从同一原底图生成不同候选。
-  - 后端通过 `GraphBuilder` 展开为 ComfyUI 原生采样、解码和图像合成链路，不再插入自定义解码适配节点。
+  - 后端通过 `GraphBuilder` 展开为 ComfyUI 原生采样、解码和图像合成链路；仅保留内部 packed RGB 解包节点，普通 3/4 通道图像原样通过。
 
 - `compare_slider_preview.py` + `web/compare_slider_preview.js`
   - 节点：英文 `NO8D-A/B preview`，中文 `NO8D-A/B 对比`
@@ -60,7 +60,7 @@
 
 - `empty_latent.py` + `web/empty_latent_i18n.js`
   - 节点：英文 `NO8D-Empty latent`，中文 `NO8D-空 latent`
-  - 功能：按模型类型、比例和短边尺寸创建 latent。
+  - 功能：按比例、短边和手动长短边计算尺寸，再委托 ComfyUI 原生 `EmptyLatentImage` 创建 latent。
 
 - `prompt_config.py`、`prompt_server.py`、`web/prompt_settings.js`
   - 功能：提示词 API、规则和服务配置。
