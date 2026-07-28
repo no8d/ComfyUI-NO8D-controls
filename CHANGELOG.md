@@ -6,6 +6,21 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-07-29
+
+### Added
+
+- Added optional automatic downstream output, manual current-image output, bounded image history, and reset controls to `NO8D-Generate`.
+
+### Changed
+
+- Reworked the `NO8D-Generate` canvas tools, mask property controls, feather preview, source transforms, and edit-state handling.
+- Updated both bundled example workflows for the latest node controls and graph layout.
+
+### Fixed
+
+- Corrected Krea2 Identity Edit inpaint and outpaint reference construction to prevent unchanged content reconstruction and duplicate structures around feathered boundaries.
+
 ## [1.3.0] - 2026-07-28
 
 ### Added

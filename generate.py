@@ -5,6 +5,7 @@ import math
 
 import comfy.samplers
 import torch.nn.functional as F
+from comfy_execution.graph import ExecutionBlocker
 from comfy_execution.graph_utils import GraphBuilder
 
 OUTPAINT_PROMPT_STRENGTH = 0.35
@@ -56,6 +57,10 @@ class NO8DGenerate:
                 "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
                 "mask_feather": ("INT", {"default": 50, "min": 0, "max": 100, "step": 1}),
                 "canvas": ("NO8D_GENERATE_CANVAS",),
+                "auto_output": (
+                    "BOOLEAN",
+                    {"default": False, "label_on": "on", "label_off": "off"},
+                ),
             },
             "optional": {"negative": ("CONDITIONING",)},
             "hidden": {
@@ -84,6 +89,7 @@ class NO8DGenerate:
         denoise,
         mask_feather,
         canvas,
+        auto_output=False,
         negative=None,
         prompt=None,
         unique_id=None,
@@ -98,6 +104,7 @@ class NO8DGenerate:
         base_image_file = str(canvas_state.get("base_image_file") or "")
         source_image_file = str(canvas_state.get("source_image_file") or "")
         mask_image_file = str(canvas_state.get("mask_image_file") or "")
+        manual_output_file = str(canvas_state.get("manual_output_file") or "")
         mask_active = bool(canvas_state.get("mask_active"))
         outpaint_active = bool(canvas_state.get("outpaint_active"))
         canvas_width = self._canvas_dimension(canvas_state.get("canvas_width"), 1024)
@@ -108,6 +115,15 @@ class NO8DGenerate:
         ) and self._model_branch_contains(
             prompt, model, "identityedit",
         )
+
+        if manual_output_file:
+            published = graph.node("LoadImage", image=manual_output_file)
+            return {
+                "result": (
+                    published.out(0) if 0 in linked_outputs else None,
+                ),
+                "expand": graph.finalize(),
+            }
 
         if mask_active and (not base_image_file or not mask_image_file):
             raise RuntimeError(
@@ -145,7 +161,20 @@ class NO8DGenerate:
                 if source_image_file:
                     source = graph.node("LoadImage", image=source_image_file)
                     grounding_image = source.out(0)
-                if not outpaint_active:
+                if outpaint_active:
+                    # Fade the clean source patch through the same continuous
+                    # mask shown by the canvas. Krea2 still predicts one full
+                    # target frame, but feather now weakens source conditioning
+                    # near the expansion boundary instead of alpha-blending two
+                    # independently aligned RGB images.
+                    spatial_reference_image = self._masked_reference_image(
+                        graph,
+                        encode_image,
+                        sample_mask,
+                        canvas_width,
+                        canvas_height,
+                    )
+                else:
                     # An intact Identity Edit source tells the model to
                     # reconstruct the same masked content. Remove that content
                     # from the spatial source patch, just as Outpaint presents
@@ -168,6 +197,12 @@ class NO8DGenerate:
                         canvas_width,
                         canvas_height,
                     )
+                    # Do not leak the intact masked content back through
+                    # Grounded Encode. Both Krea2 reference paths must see the
+                    # same denoise-controlled hole; otherwise Identity Edit
+                    # simply reconstructs the old pixels despite a cleared
+                    # local target.
+                    grounding_image = spatial_reference_image
                 grounded = self._krea2_grounded_conditioning(
                     graph,
                     prompt,
@@ -202,18 +237,22 @@ class NO8DGenerate:
                     use_krea2_reference=use_krea2_reference,
                     reference_pixels=spatial_reference_image,
                     krea2_ref_boost=1.0,
-                    # Keep the placed source pixels in the target latent.
-                    # The source patch supplies Krea2's clean reference path;
-                    # the native noise mask makes the expanded area the only
-                    # sampled region, so moving/resizing the source on canvas
-                    # cannot become a full-frame reconstruction underneath it.
+                    # Match Krea2 Edit's trained outpaint graph: the expanded
+                    # canvas is the clean frame-1 source patch while frame 0
+                    # starts from an independent empty target latent. The
+                    # native pixel mask below restores the untouched source
+                    # and blends only the transition band.
                     krea2_local_target=False,
-                    krea2_preserve_target=True,
+                    krea2_preserve_target=False,
                     krea2_source_latent_only=use_krea2_reference,
                 )
                 if use_krea2_reference:
-                    # The latent noise mask already protects the placed image.
-                    # A second pixel-space paste would create a visible seam.
+                    # Krea2 Identity Edit predicts one coherent target frame
+                    # from the expanded source patch. Pixel-compositing the
+                    # original back over that prediction makes displaced
+                    # structures (table edges, limbs, clothing) appear twice
+                    # across the feather band. Keep the trained workflow's
+                    # single decoded frame as the result.
                     output_mask = None
             elif inpaint_crop is not None:
                 generated_image = self._sample_cropped_inpaint(
@@ -256,11 +295,12 @@ class NO8DGenerate:
                     use_krea2_reference=True,
                     reference_pixels=spatial_reference_image,
                     krea2_ref_boost=1.0,
-                    # Identity Edit was trained with an independent target:
-                    # the current canvas is the frame-1 source reference while
-                    # KSampler denoises a fresh frame-0 latent. The final
-                    # native mask composite limits that result to Inpaint.
-                    krea2_preserve_target=False,
+                    # Inpaint needs stricter spatial continuity than Outpaint:
+                    # use ComfyUI's native cleared local target and continuous
+                    # noise mask, while the masked frame-1 patch supplies Krea2
+                    # identity/edit context. This keeps unchanged pixels in the
+                    # same latent coordinate system across the feather band.
+                    krea2_local_target=True,
                     krea2_source_latent_only=True,
                 )
             else:
@@ -348,7 +388,12 @@ class NO8DGenerate:
         graph.node("PreviewImage", images=final_image)
 
         return {
-            "result": (final_image if 0 in linked_outputs else None,),
+            "result": (
+                final_image
+                if auto_output and 0 in linked_outputs
+                else ExecutionBlocker(None) if 0 in linked_outputs
+                else None,
+            ),
             "expand": graph.finalize(),
         }
 
@@ -356,8 +401,6 @@ class NO8DGenerate:
     def _manual_inpaint_crop_geometry(
         canvas_state, canvas_width, canvas_height, mask_feather,
     ):
-        if canvas_state.get("invert"):
-            return None
         strokes = canvas_state.get("strokes")
         if not isinstance(strokes, list):
             return None
