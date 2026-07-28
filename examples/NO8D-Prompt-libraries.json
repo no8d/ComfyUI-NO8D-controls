@@ -1,55 +1,9 @@
 {
   "id": "9f57f238-9e02-48d1-a14a-bea29d62a04c",
   "revision": 0,
-  "last_node_id": 1444,
-  "last_link_id": 3377,
+  "last_node_id": 1455,
+  "last_link_id": 3385,
   "nodes": [
-    {
-      "id": 1433,
-      "type": "NO8DPromptView",
-      "pos": [
-        -24300,
-        930
-      ],
-      "size": [
-        550,
-        270
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 0,
-      "mode": 0,
-      "inputs": [
-        {
-          "label": "Text",
-          "name": "text",
-          "shape": 7,
-          "type": "STRING",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "label": "Positive",
-          "name": "positive",
-          "type": "STRING",
-          "links": [
-            3364
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "NO8DPromptView"
-      },
-      "widgets_values": [
-        true,
-        "",
-        "A portrait of a young white female model with red hair, twin ponytails, some bangs with platinum highlights, wearing pink round glasses. red background.",
-        "0",
-        null
-      ]
-    },
     {
       "id": 1387,
       "type": "VAELoader",
@@ -64,7 +18,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 1,
+      "order": 0,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -162,7 +116,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 2,
+      "order": 1,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -205,10 +159,124 @@
       ]
     },
     {
+      "id": 1444,
+      "type": "MarkdownNote",
+      "pos": [
+        -24800,
+        830
+      ],
+      "size": [
+        400,
+        170
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "## [View more prompt libraries & usage guides here](https://www.patreon.com/no8d/posts/no8d-prompt-164632304?utm_medium=clipboard_copy&utm_source=copyLink&utm_campaign=postshare_creator&utm_content=join_link)"
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1453,
+      "type": "NO8DEmptyLatent",
+      "pos": [
+        -22800,
+        1940
+      ],
+      "size": [
+        500,
+        220
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "label": "latent",
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            3383
+          ]
+        },
+        {
+          "label": "宽度",
+          "name": "width",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "label": "高度",
+          "name": "height",
+          "type": "INT",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DEmptyLatent"
+      },
+      "widgets_values": [
+        "1:1",
+        "512",
+        false,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": 1446,
+      "type": "NO8DLoraStack",
+      "pos": [
+        -22800,
+        1630
+      ],
+      "size": [
+        500,
+        250
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "links": [
+            3379
+          ]
+        },
+        {
+          "name": "trigger_words",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DLoraStack"
+      },
+      "widgets_values": [
+        "krea2_turbo_int8_convrot-b19a4f0be264.safetensors",
+        "default",
+        "None",
+        "[]",
+        ""
+      ]
+    },
+    {
       "id": 1438,
       "type": "NO8DPromptMerge",
       "pos": [
-        -23610,
+        -23700,
         1130
       ],
       "size": [
@@ -253,7 +321,7 @@
           "name": "prompt",
           "type": "STRING",
           "links": [
-            3368
+            3385
           ]
         }
       ],
@@ -266,11 +334,11 @@
       "id": 1439,
       "type": "NO8DPromptView",
       "pos": [
-        -23610,
+        -23700,
         1330
       ],
       "size": [
-        610,
+        700,
         970
       ],
       "flags": {
@@ -280,16 +348,16 @@
       "mode": 0,
       "inputs": [
         {
-          "label": "Text",
+          "label": "文本",
           "name": "text",
           "shape": 7,
           "type": "STRING",
-          "link": 3368
+          "link": 3385
         }
       ],
       "outputs": [
         {
-          "label": "Positive",
+          "label": "正向提示词",
           "name": "positive",
           "type": "STRING",
           "links": [
@@ -303,57 +371,136 @@
       "widgets_values": [
         true,
         "",
-        "A portrait of a young white female model with red hair, twin ponytails, some bangs with platinum highlights, wearing pink round glasses. red background.\ndigital_art: cinematic worldbuilding aesthetics emphasizing expansive visual depth, seamless environmental integration, refined lighting gradients, realistic atmospheric perspective, meticulously crafted detail distribution, and a strong sense of scale, creating immersive and believable imagery through polished rendering, subtle mood construction, and production-quality visual storytelling, reminiscent of Dylan Cole and Craig Mullins, inspired by The Lord of the Rings film matte paintings and Avatar.",
+        "the camera is at subject eye level, left profile view relative to Goku riding a small orange hover-scooter; subject axis: upper left to lower right diagonal; occupying about 45% of the frame. a standard lens keeps relatively natural spatial proportions. Seated on the small vehicle, leaning forward; both hands grip a black control lever with a red button and silver brake lever. Spiky black hair; orange gi with blue shoulder panels and blue wristbands; blue boots with red straps and white soles; red headset with microphone and orange headband. Plain solid white background with no environmental details, ground, or scenery; the vehicle is presented as if hovering with small black. Flat, even illustrative lighting with bold black outlines; vibrant saturated colors dominated by orange, blue, purple, and red. facial expression and gaze: Wide open-mouthed smile showing teeth; eyes wide open directed left.\nanime_illustration: A clean, expressive illustration style built on confident, simplified linework defining stylized, appealing proportions, flat-to-cel-based shading applied with straightforward graphic clarity, large expressive eyes carrying the primary emotional weight of the design, a bright, approachable simplicity that favors instant readability over rendering complexity, and a versatile, universally recognizable animated charm rooted in broad contemporary Japanese animation convention. Influenced by: contemporary anime illustration tradition, cel-shaded character-design technique, Japanese animation studio practice, mainstream manga-adaptation method.",
         "0",
         null
       ]
     },
     {
-      "id": 1441,
-      "type": "NO8DLoraStack",
+      "id": 1433,
+      "type": "NO8DPromptView",
       "pos": [
-        -22800,
-        1630
+        -24300,
+        930
       ],
       "size": [
-        500,
-        380
+        550,
+        350
       ],
       "flags": {
         "pinned": true
       },
-      "order": 8,
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "文本",
+          "name": "text",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "正向提示词",
+          "name": "positive",
+          "type": "STRING",
+          "links": [
+            3364
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DPromptView"
+      },
+      "widgets_values": [
+        true,
+        "",
+        "the camera is at subject eye level, left profile view relative to Goku riding a small orange hover-scooter; subject axis: upper left to lower right diagonal; occupying about 45% of the frame. a standard lens keeps relatively natural spatial proportions. Seated on the small vehicle, leaning forward; both hands grip a black control lever with a red button and silver brake lever. Spiky black hair; orange gi with blue shoulder panels and blue wristbands; blue boots with red straps and white soles; red headset with microphone and orange headband. Plain solid white background with no environmental details, ground, or scenery; the vehicle is presented as if hovering with small black. Flat, even illustrative lighting with bold black outlines; vibrant saturated colors dominated by orange, blue, purple, and red. facial expression and gaze: Wide open-mouthed smile showing teeth; eyes wide open directed left.",
+        "0",
+        null
+      ]
+    },
+    {
+      "id": 1436,
+      "type": "NO8DKreaStyleSelector",
+      "pos": [
+        -24300,
+        1340
+      ],
+      "size": [
+        550,
+        600
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 6,
       "mode": 0,
       "inputs": [],
       "outputs": [
         {
-          "name": "model",
-          "type": "MODEL",
-          "links": [
-            3374
-          ]
-        },
-        {
-          "name": "trigger_words",
+          "label": "提示词",
+          "name": "prompt",
+          "shape": 6,
           "type": "STRING",
-          "links": null
+          "links": [
+            3365
+          ]
         }
       ],
       "properties": {
-        "Node name for S&R": "NO8DLoraStack",
-        "models": [
-          {
-            "name": "krea2_turbo_fp8_scaled.safetensors",
-            "url": "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/diffusion_models/krea2_turbo_fp8_scaled.safetensors",
-            "directory": "diffusion_models"
-          }
-        ]
+        "Node name for S&R": "NO8DKreaStyleSelector"
       },
       "widgets_values": [
-        "krea2_turbo_int8_convrot-b19a4f0be264.safetensors",
-        "default",
-        "None",
+        "",
+        "",
+        false,
         "[]",
+        false,
+        false,
+        ""
+      ]
+    },
+    {
+      "id": 1440,
+      "type": "NO8DKreaStyleSelector",
+      "pos": [
+        -24300,
+        2000
+      ],
+      "size": [
+        550,
+        600
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 7,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "label": "提示词",
+          "name": "prompt",
+          "shape": 6,
+          "type": "STRING",
+          "links": [
+            3371
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "NO8DKreaStyleSelector"
+      },
+      "widgets_values": [
+        "Photography",
+        "photography",
+        true,
+        "[\"Anime Style\"]",
+        false,
+        false,
         ""
       ]
     },
@@ -377,7 +524,7 @@
         {
           "name": "model",
           "type": "MODEL",
-          "link": 3374
+          "link": 3379
         },
         {
           "name": "positive",
@@ -390,10 +537,9 @@
           "link": 3376
         },
         {
-          "name": "image",
-          "shape": 7,
-          "type": "IMAGE",
-          "link": null
+          "name": "latent",
+          "type": "LATENT",
+          "link": 3383
         },
         {
           "name": "negative",
@@ -406,142 +552,95 @@
         {
           "name": "image",
           "type": "IMAGE",
-          "links": []
+          "links": [
+            3384
+          ]
         }
       ],
       "properties": {
         "Node name for S&R": "NO8DGenerate",
         "no8d_generate_preview": {
-          "filename": "ComfyUI_temp_ycojk_00002_.png",
+          "filename": "ComfyUI_temp_yrazs_00001_.png",
           "subfolder": "",
           "type": "temp"
-        }
+        },
+        "no8d_generate_history": [
+          {
+            "filename": "ComfyUI_temp_yrazs_00001_.png",
+            "subfolder": "",
+            "type": "temp"
+          },
+          {
+            "filename": "ComfyUI_temp_moeak_00001_.png",
+            "subfolder": "",
+            "type": "temp"
+          },
+          {
+            "filename": "ComfyUI_temp_ooorp_00001_.png",
+            "subfolder": "",
+            "type": "temp"
+          },
+          {
+            "filename": "ComfyUI_temp_pppsa_00001_.png",
+            "subfolder": "",
+            "type": "temp"
+          }
+        ]
       },
       "widgets_values": [
         6,
         1,
         "euler",
         "simple",
-        333318706060617,
+        654062156825285,
         "randomize",
         1,
-        50,
+        60,
         "",
-        "{\"base_image_file\":\"\",\"source_image_file\":\"\",\"mask_image_file\":\"\",\"mask_active\":false,\"outpaint_active\":false,\"mask_tool\":null,\"mask_base_width\":1536,\"mask_base_height\":1024,\"brush_size\":80,\"eraser_size\":80,\"mask_opacity\":0.4,\"mask_color\":\"#66ccff\",\"mask_render_version\":2,\"aspect_ratio\":\"2:3\",\"short_side\":1024,\"swap_dimensions\":true,\"canvas_width\":1536,\"canvas_height\":1024,\"transform_active\":false,\"image_transform\":{\"x\":0,\"y\":0,\"width\":1024,\"height\":1024},\"invert\":false,\"strokes\":[]}"
+        "{\"base_image_file\":\"\",\"source_image_file\":\"\",\"mask_image_file\":\"\",\"mask_active\":false,\"outpaint_active\":false,\"mask_tool\":null,\"mask_base_width\":1024,\"mask_base_height\":1024,\"brush_size\":80,\"eraser_size\":80,\"mask_opacity\":0.4,\"mask_color\":\"#00ddff\",\"mask_render_version\":3,\"aspect_ratio\":\"1:1\",\"short_side\":1024,\"swap_dimensions\":true,\"canvas_width\":1024,\"canvas_height\":1024,\"transform_active\":true,\"image_transform\":{\"x\":0,\"y\":102.39999999999998,\"width\":1024,\"height\":819.2},\"edit_checkpoint\":{\"mode\":\"outpaint\",\"aspect_ratio\":\"4:5\",\"short_side\":1024,\"swap_dimensions\":true,\"canvas_width\":1280,\"canvas_height\":1024,\"image_transform\":{\"x\":0,\"y\":0,\"width\":1280,\"height\":1024}},\"strokes\":[]}",
+        true
       ]
     },
     {
-      "id": 1436,
-      "type": "NO8DKreaStyleSelector",
+      "id": 1455,
+      "type": "PreviewImage",
       "pos": [
-        -24300,
-        1270
-      ],
-      "size": [
-        550,
-        600
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 4,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "label": "prompt",
-          "name": "prompt",
-          "shape": 6,
-          "type": "STRING",
-          "links": [
-            3365
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "NO8DKreaStyleSelector"
-      },
-      "widgets_values": [
-        "Anime Style",
-        "anime_illustration",
-        true,
-        "[\"Anime Style\"]",
-        false,
-        false,
-        ""
-      ]
-    },
-    {
-      "id": 1440,
-      "type": "NO8DKreaStyleSelector",
-      "pos": [
-        -24300,
-        1950
-      ],
-      "size": [
-        550,
-        600
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 5,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "label": "prompt",
-          "name": "prompt",
-          "shape": 6,
-          "type": "STRING",
-          "links": [
-            3371
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "NO8DKreaStyleSelector"
-      },
-      "widgets_values": [
-        "Anime Style",
-        "anime_illustration",
-        true,
-        "[\"Anime Style\"]",
-        false,
-        false,
-        ""
-      ]
-    },
-    {
-      "id": 1444,
-      "type": "MarkdownNote",
-      "pos": [
-        -24800,
+        -22160,
         830
       ],
       "size": [
-        400,
-        170
+        960,
+        970
       ],
       "flags": {
         "pinned": true
       },
-      "order": 6,
+      "order": 13,
       "mode": 0,
-      "inputs": [],
-      "outputs": [],
-      "properties": {},
-      "widgets_values": [
-        "## [View more prompt libraries & usage guides here](https://www.patreon.com/no8d/posts/no8d-prompt-164632304?utm_medium=clipboard_copy&utm_source=copyLink&utm_campaign=postshare_creator&utm_content=join_link)"
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 3384
+        }
       ],
-      "color": "#232",
-      "bgcolor": "#353"
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": []
     },
     {
       "id": 1443,
       "type": "Label (rgthree)",
       "pos": [
-        -24710,
+        -24310,
         470
       ],
       "size": [
@@ -552,7 +651,7 @@
         "pinned": true,
         "allow_interaction": false
       },
-      "order": 7,
+      "order": 8,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -602,14 +701,6 @@
       "STRING"
     ],
     [
-      3368,
-      1438,
-      0,
-      1439,
-      0,
-      "STRING"
-    ],
-    [
       3369,
       1439,
       0,
@@ -626,14 +717,6 @@
       "STRING"
     ],
     [
-      3374,
-      1441,
-      0,
-      1442,
-      0,
-      "MODEL"
-    ],
-    [
       3375,
       989,
       0,
@@ -648,6 +731,38 @@
       1442,
       2,
       "VAE"
+    ],
+    [
+      3379,
+      1446,
+      0,
+      1442,
+      0,
+      "MODEL"
+    ],
+    [
+      3383,
+      1453,
+      0,
+      1442,
+      3,
+      "LATENT"
+    ],
+    [
+      3384,
+      1442,
+      0,
+      1455,
+      0,
+      "IMAGE"
+    ],
+    [
+      3385,
+      1438,
+      0,
+      1439,
+      0,
+      "STRING"
     ]
   ],
   "groups": [
@@ -697,10 +812,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.54,
+      "scale": 0.37500000000000006,
       "offset": [
-        25336.594288125954,
-        -204.10092549236802
+        25731.862015255396,
+        -124.36729232400023
       ]
     },
     "frontendVersion": "1.45.21",

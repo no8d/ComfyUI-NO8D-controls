@@ -31,6 +31,11 @@ class _GraphBuilder:
         }
 
 
+class _ExecutionBlocker:
+    def __init__(self, message):
+        self.message = message
+
+
 def _load_generate_module():
     class _PreviewImage:
         OUTPUT_NODE = True
@@ -40,6 +45,8 @@ def _load_generate_module():
         KSampler=types.SimpleNamespace(SAMPLERS=["euler"], SCHEDULERS=["simple"])
     )
     execution = types.ModuleType("comfy_execution")
+    execution_graph = types.ModuleType("comfy_execution.graph")
+    execution_graph.ExecutionBlocker = _ExecutionBlocker
     graph_utils = types.ModuleType("comfy_execution.graph_utils")
     graph_utils.GraphBuilder = _GraphBuilder
     nodes = types.ModuleType("nodes")
@@ -51,6 +58,7 @@ def _load_generate_module():
             "comfy",
             "comfy.samplers",
             "comfy_execution",
+            "comfy_execution.graph",
             "comfy_execution.graph_utils",
             "nodes",
         )
@@ -58,6 +66,7 @@ def _load_generate_module():
     sys.modules["comfy"] = comfy
     sys.modules["comfy.samplers"] = comfy.samplers
     sys.modules["comfy_execution"] = execution
+    sys.modules["comfy_execution.graph"] = execution_graph
     sys.modules["comfy_execution.graph_utils"] = graph_utils
     sys.modules["nodes"] = nodes
     try:
@@ -92,6 +101,7 @@ class GenerateExpansionTests(unittest.TestCase):
             "seed": 1,
             "denoise": 1.0,
             "mask_feather": 50,
+            "auto_output": False,
             "prompt": {"2": {"inputs": {"images": ["1", 0]}}},
             "unique_id": "1",
         }
@@ -214,7 +224,7 @@ class GenerateExpansionTests(unittest.TestCase):
         self.assertEqual(classes.count("KSampler"), 1)
         self.assertNotIn("NO8DConditionalKSampler", classes)
 
-    def test_krea2_identity_inpaint_uses_independent_empty_target(self):
+    def test_krea2_identity_inpaint_uses_native_local_target(self):
         self.use_krea2_identity_model()
         result = self.node.expand(
             canvas=(
@@ -250,16 +260,21 @@ class GenerateExpansionTests(unittest.TestCase):
         )
         self.assertEqual(sampler["inputs"]["model"], [patch_id, 0])
         target_id = sampler["inputs"]["latent_image"][0]
-        self.assertEqual(expanded[target_id]["class_type"], "EmptySD3LatentImage")
+        self.assertEqual(expanded[target_id]["class_type"], "SetLatentNoiseMask")
+        cleared_id = expanded[target_id]["inputs"]["samples"][0]
+        self.assertEqual(
+            expanded[cleared_id]["class_type"],
+            "VAEEncodeForInpaint",
+        )
         self.assertEqual(sampler["inputs"]["denoise"], 1.0)
         classes = [node["class_type"] for node in expanded.values()]
-        self.assertNotIn("VAEEncodeForInpaint", classes)
-        self.assertNotIn("SetLatentNoiseMask", classes)
-        self.assertIn("EmptySD3LatentImage", classes)
+        self.assertIn("VAEEncodeForInpaint", classes)
+        self.assertIn("SetLatentNoiseMask", classes)
+        self.assertNotIn("EmptySD3LatentImage", classes)
         self.assertNotIn("DifferentialDiffusion", classes)
         self.assertEqual(classes.count("ImageCompositeMasked"), 2)
 
-    def test_krea2_identity_outpaint_uses_masked_canvas_target_without_pixel_paste(self):
+    def test_krea2_identity_outpaint_uses_one_empty_target_prediction(self):
         self.use_krea2_identity_model()
         result = self.node.expand(
             canvas=(
@@ -285,21 +300,30 @@ class GenerateExpansionTests(unittest.TestCase):
         sampler = samplers[0]
         source_id = patch["inputs"]["source_latent"][0]
         self.assertEqual(expanded[source_id]["class_type"], "VAEEncode")
+        masked_reference_id = expanded[source_id]["inputs"]["pixels"][0]
+        masked_reference = expanded[masked_reference_id]
+        self.assertEqual(masked_reference["class_type"], "ImageCompositeMasked")
+        self.assertEqual(
+            expanded[masked_reference["inputs"]["source"][0]]["class_type"],
+            "EmptyImage",
+        )
+        self.assertEqual(
+            expanded[masked_reference["inputs"]["mask"][0]]["class_type"],
+            "LoadImageMask",
+        )
         self.assertEqual(patch["inputs"]["ref_boost"], 1.0)
         self.assertNotIn("vae", patch["inputs"])
         self.assertNotIn("source_image", patch["inputs"])
         self.assertEqual(sampler["inputs"]["model"], [patch_id, 0])
         target_id = sampler["inputs"]["latent_image"][0]
-        self.assertEqual(expanded[target_id]["class_type"], "SetLatentNoiseMask")
-        encoded_id = expanded[target_id]["inputs"]["samples"][0]
-        self.assertEqual(expanded[encoded_id]["class_type"], "VAEEncode")
+        self.assertEqual(expanded[target_id]["class_type"], "EmptySD3LatentImage")
         self.assertEqual(sampler["inputs"]["denoise"], 1.0)
         classes = [node["class_type"] for node in nodes]
         self.assertNotIn("VAEEncodeForInpaint", classes)
-        self.assertNotIn("EmptySD3LatentImage", classes)
-        self.assertIn("SetLatentNoiseMask", classes)
+        self.assertIn("EmptySD3LatentImage", classes)
+        self.assertNotIn("SetLatentNoiseMask", classes)
         self.assertNotIn("DifferentialDiffusion", classes)
-        self.assertNotIn("ImageCompositeMasked", classes)
+        self.assertEqual(classes.count("ImageCompositeMasked"), 1)
 
     def test_krea2_identity_outpaint_does_not_repeat_the_t2i_subject_prompt(self):
         self.use_krea2_identity_model()
@@ -344,10 +368,8 @@ class GenerateExpansionTests(unittest.TestCase):
         sampler = next(
             node for node in expanded.values() if node["class_type"] == "KSampler"
         )
-        masked_id = sampler["inputs"]["latent_image"][0]
-        self.assertEqual(expanded[masked_id]["class_type"], "SetLatentNoiseMask")
-        target_id = expanded[masked_id]["inputs"]["samples"][0]
-        self.assertEqual(expanded[target_id]["class_type"], "VAEEncode")
+        target_id = sampler["inputs"]["latent_image"][0]
+        self.assertEqual(expanded[target_id]["class_type"], "EmptySD3LatentImage")
         grounded_id = next(
             node_id for node_id, node in expanded.items()
             if node["class_type"] == "NO8DKrea2GroundedEncode"
@@ -445,6 +467,11 @@ class GenerateExpansionTests(unittest.TestCase):
     def test_krea2_identity_denoise_scales_reference_hole_not_final_blend(self):
         self.use_krea2_identity_model()
         self.inputs["denoise"] = 0.3
+        self.inputs["positive"] = ["12", 0]
+        self.inputs["prompt"]["12"] = {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"clip": ["9", 0], "text": "original scene"},
+        }
         result = self.node.expand(
             canvas=(
                 '{"base_image_file":"base.png","mask_image_file":"mask.png",'
@@ -468,12 +495,24 @@ class GenerateExpansionTests(unittest.TestCase):
             and result["expand"][node["inputs"]["source"][0]]["class_type"]
             == "EmptyImage"
         )
+        reference_composite_id = next(
+            node_id for node_id, node in result["expand"].items()
+            if node is reference_composite
+        )
         self.assertEqual(
             reference_composite["inputs"]["mask"],
             [next(
                 node_id for node_id, node in result["expand"].items()
                 if node is mask_composite
             ), 0],
+        )
+        grounded = next(
+            node for node in nodes
+            if node["class_type"] == "NO8DKrea2GroundedEncode"
+        )
+        self.assertEqual(
+            grounded["inputs"]["image"],
+            [reference_composite_id, 0],
         )
         final_composite = next(
             node for node in nodes
@@ -516,9 +555,20 @@ class GenerateExpansionTests(unittest.TestCase):
             and node["inputs"]["image"] == "base.png"
         )
         source_latent_id = patch["inputs"]["source_latent"][0]
+        masked_reference_id = expanded[source_latent_id]["inputs"]["pixels"][0]
+        masked_reference = expanded[masked_reference_id]
+        self.assertEqual(masked_reference["class_type"], "ImageCompositeMasked")
         self.assertEqual(
-            expanded[source_latent_id]["inputs"]["pixels"],
+            masked_reference["inputs"]["destination"],
             [base_load_id, 0],
+        )
+        self.assertEqual(
+            expanded[masked_reference["inputs"]["source"][0]]["class_type"],
+            "EmptyImage",
+        )
+        self.assertEqual(
+            expanded[masked_reference["inputs"]["mask"][0]]["class_type"],
+            "LoadImageMask",
         )
         self.assertEqual(patch["inputs"]["ref_boost"], 1.0)
         self.assertNotIn("vae", patch["inputs"])
@@ -539,14 +589,15 @@ class GenerateExpansionTests(unittest.TestCase):
             if node["class_type"] == "KSampler"
         )
         self.assertEqual(sampler["inputs"]["model"], [patch_id, 0])
-        masked_id = sampler["inputs"]["latent_image"][0]
-        self.assertEqual(expanded[masked_id]["class_type"], "SetLatentNoiseMask")
-        target_id = expanded[masked_id]["inputs"]["samples"][0]
-        self.assertEqual(expanded[target_id]["class_type"], "VAEEncode")
-        self.assertFalse(any(
-            node["class_type"] == "ImageCompositeMasked"
-            for node in expanded.values()
-        ))
+        target_id = sampler["inputs"]["latent_image"][0]
+        self.assertEqual(expanded[target_id]["class_type"], "EmptySD3LatentImage")
+        self.assertEqual(
+            sum(
+                node["class_type"] == "ImageCompositeMasked"
+                for node in expanded.values()
+            ),
+            1,
+        )
 
     def test_krea2_identity_inpaint_masks_current_canvas_source_reference(self):
         self.use_krea2_identity_model()
@@ -594,13 +645,25 @@ class GenerateExpansionTests(unittest.TestCase):
             node for node in expanded.values()
             if node["class_type"] == "NO8DKrea2GroundedEncode"
         )
-        self.assertEqual(grounded["inputs"]["image"], [source_load_id, 0])
+        self.assertEqual(
+            grounded["inputs"]["image"],
+            [masked_reference_id, 0],
+        )
+        self.assertNotEqual(
+            grounded["inputs"]["image"],
+            [source_load_id, 0],
+        )
         sampler = next(
             node for node in expanded.values()
             if node["class_type"] == "KSampler"
         )
         target_id = sampler["inputs"]["latent_image"][0]
-        self.assertEqual(expanded[target_id]["class_type"], "EmptySD3LatentImage")
+        self.assertEqual(expanded[target_id]["class_type"], "SetLatentNoiseMask")
+        cleared_id = expanded[target_id]["inputs"]["samples"][0]
+        self.assertEqual(
+            expanded[cleared_id]["class_type"],
+            "VAEEncodeForInpaint",
+        )
 
     def test_krea2_identity_inpaint_does_not_restate_the_original_t2i_prompt(self):
         self.use_krea2_identity_model()
@@ -976,32 +1039,35 @@ class GenerateExpansionTests(unittest.TestCase):
             source,
         )
 
-    def test_finished_outpaint_becomes_the_next_editing_base(self):
+    def test_finished_edit_becomes_the_next_mode_editing_base(self):
         source = (
             pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
         ).read_text(encoding="utf-8")
-        self.assertIn("promoteOutpaintResultToEditingBase()", source)
-        self.assertIn(
-            "if (this.transformActive && this.outpaintResultVisible)",
-            source,
-        )
-        self.assertIn(
-            "this.promoteOutpaintResultToEditingBase();",
-            source,
-        )
-        self.assertIn(
-            '&& ["transform", "lasso", "brush", "eraser"].includes(action)',
-            source,
-        )
-        self.assertIn(
-            "beginTransformDrag(pos) {\n"
-            "        if (!this.transformActive || !this.contentRect) return false;\n"
-            "        if (this.outpaintResultVisible) {\n"
-            "            this.promoteOutpaintResultToEditingBase();",
-            source,
-        )
-        self.assertIn('if (action !== "transform") this.outpaintResultVisible = false;', source)
+        self.assertIn("acceptCurrentResultAsEditingBase()", source)
         self.assertIn("this.sourceImage = result;", source)
+        self.assertIn(
+            "if (this.tool === action && !this.transformActive) {\n"
+            "                this.acceptCurrentResultAsEditingBase();",
+            source,
+        )
+        self.assertIn(
+            "if (this.transformActive) {\n"
+            "                this.acceptCurrentResultAsEditingBase();\n"
+            "                this.clearOutpaintMode();",
+            source,
+        )
+        self.assertIn(
+            "} else {\n"
+            "            this.acceptCurrentResultAsEditingBase();\n"
+            "            this.transformActive = false;",
+            source,
+        )
+        self.assertIn(
+            "this.clearInpaintMode();\n"
+            "        this.clearOutpaintMode();\n"
+            "        this.editCheckpoint = null;",
+            source,
+        )
         self.assertIn("width: this.canvasWidth,", source)
         self.assertIn("height: this.canvasHeight,", source)
 
@@ -1011,7 +1077,7 @@ class GenerateExpansionTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("OUTPAINT_FEATHER_MAX_CANVAS_FRACTION = 0.1", source)
         self.assertIn("sourceShortSide * 0.15", source)
-        self.assertIn("MASK_RENDER_VERSION = 2", source)
+        self.assertIn("MASK_RENDER_VERSION = 3", source)
         self.assertIn("state.mask_render_version", source)
         self.assertNotIn(
             "this.getFeatherWidth(Math.min(transform.width, transform.height) / 2)",
@@ -1047,32 +1113,66 @@ class GenerateExpansionTests(unittest.TestCase):
         )
         self.assertNotIn("canvas_short_side", source)
         self.assertNotIn("SHORT_SIDE_PRESETS", source)
-        self.assertNotIn("`${this.canvasWidth} × ${this.canvasHeight}`", source)
+        self.assertIn("`${this.canvasWidth} × ${this.canvasHeight}  ⇥`", source)
         self.assertNotIn("OUTPAINT_TOOLBAR_HEIGHT", source)
         self.assertNotIn("drawOutpaintToolbar", source)
         self.assertNotIn("outpaintToolbarRect", source)
-        self.assertIn("if (this.transformActive) {", source)
-        self.assertIn('"canvas_ratio",', source)
+        self.assertIn("openRatioEditor(event, _buttonRect, nodePos)", source)
         self.assertIn(
-            'this.buttons.push({ action: "canvas_swap", rect, enabled: true });',
+            "if (!wasActive && this.transformActive) {\n"
+            "                        this.openRatioEditor(event, button.rect, nodePos);",
             source,
         )
+        self.assertIn('swapLabel.textContent = t("ratioSwap");', source)
+        self.assertIn('swap.role = "switch";', source)
+        self.assertIn("this.setEditorButtonSelected(button, selected);", source)
         self.assertIn("this.rect[3] - TOOLBAR_HEIGHT,", source)
 
-    def test_brush_and_eraser_buttons_are_hidden_but_legacy_state_is_supported(self):
+    def test_lasso_expands_brush_eraser_and_size_controls(self):
         source = (
             pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
         ).read_text(encoding="utf-8")
         self.assertIn(
-            'const visibleToolActions = ["transform", "lasso"];',
+            'const visibleToolActions = ["transform", "lasso", "reset"];',
             source,
         )
-        self.assertNotIn(
-            'for (const action of ["transform", "lasso", "brush", "eraser"])',
+        self.assertIn("openMaskToolEditor(event, _buttonRect, nodePos)", source)
+        self.assertIn('for (const action of ["lasso", "brush", "eraser"])', source)
+        self.assertIn("button.append(this.createToolIconCanvas(action));", source)
+        self.assertIn(
+            "const iconAction = action === \"lasso\" && this.isMaskToolActive()",
+            source,
+        )
+        self.assertIn("this.drawToolIcon(ctx, iconAction, rect, enabled);", source)
+        self.assertIn('slider.max = "512";', source)
+        self.assertIn(
+            'if (action === "brush" || action === "lasso" || action === "eraser")',
+            source,
+        )
+
+    def test_mask_properties_use_symmetric_icon_buttons(self):
+        source = (
+            pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("drawPropertyIcon(ctx, action, rect, enabled = true)", source)
+        self.assertIn(
+            'this.drawPropertyButton(ctx, "mask_feather"',
             source,
         )
         self.assertIn(
-            'if (action === "brush" || action === "lasso" || action === "eraser")',
+            'this.drawPropertyButton(ctx, "mask_opacity"',
+            source,
+        )
+        self.assertIn(
+            'this.drawPropertyButton(ctx, "mask_color"',
+            source,
+        )
+        self.assertIn(
+            'action === "mask_feather" ? t("featherRange") : t("maskOpacity")',
+            source,
+        )
+        self.assertIn(
+            'presetGroup.append(this.createEditorLabel(t("maskColorLabel")));',
             source,
         )
 
@@ -1084,7 +1184,12 @@ class GenerateExpansionTests(unittest.TestCase):
             "const editingImageAvailable = Boolean(this.editingImage()?.naturalWidth);",
             source,
         )
-        self.assertIn("const enabled = editingImageAvailable;", source)
+        self.assertIn(
+            'const enabled = action === "reset"\n'
+            "                ? Boolean(this.editCheckpoint || this.imageHistory.length > 1)\n"
+            "                : editingImageAvailable;",
+            source,
+        )
         self.assertNotIn(
             'const enabled = action !== "transform"',
             source,
@@ -1114,11 +1219,16 @@ class GenerateExpansionTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("clearInpaintMode() {", source)
         self.assertIn("clearOutpaintMode() {", source)
-        self.assertIn("if (activating) this.clearInpaintMode();", source)
         self.assertIn(
-            'if (action === "brush" || action === "lasso" || action === "eraser") {\n'
-            "            this.closeActiveEditor();\n"
-            "            this.clearOutpaintMode();",
+            "if (activating) {\n"
+            "            this.acceptCurrentResultAsEditingBase();\n"
+            "            this.clearInpaintMode();",
+            source,
+        )
+        self.assertIn(
+            "if (this.transformActive) {\n"
+            "                this.acceptCurrentResultAsEditingBase();\n"
+            "                this.clearOutpaintMode();",
             source,
         )
         self.assertIn(
@@ -1126,7 +1236,89 @@ class GenerateExpansionTests(unittest.TestCase):
             source,
         )
         self.assertIn("this.strokes = [];", source)
-        self.assertIn("this.invert = false;", source)
+        self.assertNotIn("this.invert", source)
+
+    def test_reset_restores_the_checkpoint_for_both_edit_modes(self):
+        source = (
+            pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("captureEditCheckpoint(mode)", source)
+        self.assertIn("restoreEditCheckpoint()", source)
+        self.assertIn('this.captureEditCheckpoint("inpaint");', source)
+        self.assertIn('this.captureEditCheckpoint("outpaint");', source)
+        self.assertIn(
+            'this.transformActive = checkpoint.mode === "outpaint";',
+            source,
+        )
+        self.assertIn("this.image = this.sourceImage;", source)
+        self.assertNotIn('"invert":', source)
+        self.assertNotIn('action === "invert"', source)
+
+    def test_mask_strokes_are_composited_in_drawing_order(self):
+        source = (
+            pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn(
+            'for (const pass of ["add", "subtract"]) for (const stroke of this.strokes)',
+            source,
+        )
+        self.assertGreaterEqual(
+            source.count("for (const stroke of this.strokes)"),
+            2,
+        )
+        self.assertIn(
+            'const visible = stroke.op === "add";',
+            source,
+        )
+
+    def test_feather_is_derived_from_the_final_composited_core_mask(self):
+        source = (
+            pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "function featherMaskFromCore(coreMask, radius, binaryOuter = false)",
+            source,
+        )
+        self.assertIn(
+            "const additiveStrokes = this.strokes.filter("
+            '(stroke) => stroke.op === "add");',
+            source,
+        )
+        self.assertIn(
+            "this.inpaintFeatherRadius(percent) * scale",
+            source,
+        )
+        self.assertIn(
+            "this.inpaintFeatherRadius(featherPercent)",
+            source,
+        )
+        self.assertNotIn("function scaledMaskStroke(", source)
+        self.assertNotIn("executionMaskGradientStep(", source)
+
+    def test_reset_tool_exposes_bounded_reference_history(self):
+        source = (
+            pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("const IMAGE_HISTORY_LIMIT = 6;", source)
+        self.assertIn("recordImageHistory(ref)", source)
+        self.assertIn("openHistoryEditor(event, _buttonRect, nodePos)", source)
+        self.assertIn("async restoreHistoryImage(ref)", source)
+        self.assertIn(
+            "Boolean(this.editCheckpoint || this.imageHistory.length > 1)",
+            source,
+        )
+        self.assertIn(
+            'if (!options.fromHistory) this.recordImageHistory(ref);',
+            source,
+        )
+        self.assertIn(
+            'this.openHistoryEditor(event, button.rect, nodePos);',
+            source,
+        )
+        self.assertIn(
+            'this.activeEditorAction === "image_history" || this.flashAction === action',
+            source,
+        )
 
     def test_transform_edges_and_corners_expose_directional_cursors(self):
         source = (
@@ -1141,8 +1333,35 @@ class GenerateExpansionTests(unittest.TestCase):
         self.assertIn('style.setProperty("cursor", cursor, "important")', source)
         self.assertIn("requestAnimationFrame(applyCursor)", source)
         self.assertIn("nodeType.prototype.onMouseMove = function", source)
-        self.assertIn("widget?.updateHover?.(pos)", source)
+        self.assertIn("widget?.updateHover?.(pos, event)", source)
         self.assertIn("nodeType.prototype.onMouseLeave = function", source)
+
+    def test_outpaint_result_is_not_committed_by_a_blank_canvas_click(self):
+        source = (
+            pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
+        ).read_text(encoding="utf-8")
+        begin = source.index("    beginTransformDrag(pos) {")
+        update = source.index("    updateTransformDrag(pos, disableSnap = false) {")
+        begin_body = source[begin:update]
+        self.assertNotIn("acceptCurrentResultAsEditingBase()", begin_body)
+        self.assertIn(
+            "if (this.outpaintResultVisible || !this.transformActive "
+            "|| !this.contentRect) return false;",
+            begin_body,
+        )
+        self.assertIn(
+            "if (this.outpaintResultVisible\n"
+            "            || !this.transformActive\n"
+            "            || !pointInRect(pos, this.canvasRect)) return null;",
+            source,
+        )
+        self.assertIn(
+            "if (!this.transformActive || this.outpaintResultVisible "
+            "|| !this.contentRect) return;",
+            source,
+        )
+        self.assertIn("const changed = this.transformDrag.changed;", source)
+        self.assertIn("if (changed) {", source)
 
     def test_canvas_widget_yields_native_node_resize_corners(self):
         source = (
@@ -1170,7 +1389,15 @@ class GenerateExpansionTests(unittest.TestCase):
         self.assertIn("visibleTransformRect()", source)
         self.assertIn("ctx.rect(...this.canvasRect.slice(0, 4));", source)
         self.assertIn(
-            "if (!this.transformActive || !pointInRect(pos, this.canvasRect)) return null;",
+            "if (this.outpaintResultVisible",
+            source,
+        )
+        self.assertIn(
+            "|| !this.transformActive",
+            source,
+        )
+        self.assertIn(
+            "|| !pointInRect(pos, this.canvasRect)) return null;",
             source,
         )
         self.assertIn("const deltaX = pointer[0] - drag.pointer[0];", source)
@@ -1310,6 +1537,118 @@ class GenerateExpansionTests(unittest.TestCase):
                 "PreviewImage",
             ],
         )
+
+    def test_auto_output_is_off_by_default_and_blocks_downstream(self):
+        inputs = self.node.INPUT_TYPES()["required"]
+        self.assertFalse(inputs["auto_output"][1]["default"])
+
+        result = self.node.expand(canvas="{}", **self.inputs)
+
+        self.assertIsInstance(result["result"][0], _ExecutionBlocker)
+        self.assertIsNone(result["result"][0].message)
+        self.assertIn(
+            "PreviewImage",
+            [node["class_type"] for node in result["expand"].values()],
+        )
+
+    def test_auto_output_on_passes_the_generated_image_downstream(self):
+        self.inputs["auto_output"] = True
+
+        result = self.node.expand(canvas="{}", **self.inputs)
+
+        self.assertIsInstance(result["result"][0], list)
+        self.assertNotIsInstance(result["result"][0], _ExecutionBlocker)
+
+    def test_manual_output_loads_the_approved_image_without_sampling(self):
+        result = self.node.expand(
+            canvas='{"manual_output_file":"no8d_generate/output.png"}',
+            **self.inputs,
+        )
+        classes = [node["class_type"] for node in result["expand"].values()]
+
+        self.assertEqual(classes, ["LoadImage"])
+        self.assertEqual(
+            next(iter(result["expand"].values()))["inputs"]["image"],
+            "no8d_generate/output.png",
+        )
+        self.assertEqual(result["result"][0], ["1", 0])
+
+    def test_frontend_exposes_auto_and_manual_output_controls(self):
+        source = (
+            pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('findWidget(node, "auto_output")', source)
+        self.assertIn('autoOutput.textContent = "⇥";', source)
+        self.assertIn('autoOutput.setAttribute("aria-pressed", String(autoEnabled));', source)
+        self.assertIn(
+            'autoOutput.style.setProperty("background", autoEnabled ? "#2563eb" : "#303030", "important");',
+            source,
+        )
+        self.assertIn('lock.setAttribute("aria-pressed", String(locked));', source)
+        self.assertIn(
+            'lock.style.setProperty("background", locked ? "#2563eb" : "#303030", "important");',
+            source,
+        )
+        self.assertIn('this.buttons.push({ action: "publish"', source)
+        self.assertIn('ctx.fillStyle = publishEnabled ? "#2563eb" : "#303030";', source)
+        self.assertIn('`${this.canvasWidth} × ${this.canvasHeight}  ⇥`', source)
+        self.assertIn("async publishCurrentImage()", source)
+        self.assertIn("state.manual_output_file = filename;", source)
+        self.assertIn("partialExecutionTargets: downstreamNodeIds", source)
+
+    def test_default_mask_color_is_cyan(self):
+        source = (
+            pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('const DEFAULT_MASK_COLOR = "#00ddff";', source)
+        self.assertIn("if (!Number.isFinite(number)) return [0, 221, 255];", source)
+
+    def test_interactive_controls_use_shape_semantics(self):
+        source = (
+            pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("function fillRoundedRect(ctx, rect, radius = 5)", source)
+        self.assertIn("function strokeRoundedRect(ctx, rect, radius = 5)", source)
+        self.assertIn("fillRoundedRect(ctx, publishRect, 6);", source)
+        self.assertIn(
+            "x + (width - publishWidth) / 2,\n"
+            "            y + 8,\n"
+            "            publishWidth,\n"
+            "            height - 16,",
+            source,
+        )
+        self.assertIn('"border-radius:5px", "cursor:pointer"', source)
+        self.assertIn("border-radius:0;padding:2px 7px", source)
+        self.assertIn('control.style.setProperty("border-radius", "0", "important");', source)
+        self.assertIn('"background:rgba(0,0,0,.8)"', source)
+        self.assertIn('"border:1px solid #555", "border-radius:6px"', source)
+
+    def test_active_inpaint_and_outpaint_editors_reopen_on_hover(self):
+        source = (
+            pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("reopenActiveToolEditor(event, pos)", source)
+        self.assertIn(
+            'item.action === "transform" && this.transformActive',
+            source,
+        )
+        self.assertIn(
+            'item.action === "lasso" && this.isMaskToolActive()',
+            source,
+        )
+        self.assertIn(
+            "this.openRatioEditor(event, button.rect, pos);",
+            source,
+        )
+        self.assertIn(
+            "this.openMaskToolEditor(event, button.rect, pos);",
+            source,
+        )
+        self.assertIn("this.reopenActiveToolEditor(event, pos);", source)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 {
   "id": "2fa2ba21-58fb-4aca-a0c6-6c61f5d588ab",
   "revision": 0,
-  "last_node_id": 1407,
-  "last_link_id": 3314,
+  "last_node_id": 1408,
+  "last_link_id": 3317,
   "nodes": [
     {
       "id": 1362,
@@ -39,59 +39,6 @@
       ]
     },
     {
-      "id": 1301,
-      "type": "NO8DLoraStack",
-      "pos": [
-        -22000,
-        1080
-      ],
-      "size": [
-        600,
-        720
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 7,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "links": [
-            3291
-          ]
-        },
-        {
-          "name": "trigger_words",
-          "type": "STRING",
-          "links": [
-            3307
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "NO8DLoraStack",
-        "models": [
-          {
-            "name": "krea2_turbo_fp8_scaled.safetensors",
-            "url": "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/diffusion_models/krea2_turbo_fp8_scaled.safetensors",
-            "directory": "diffusion_models"
-          }
-        ]
-      },
-      "widgets_values": [
-        "krea2_turbo_int8_convrot-b19a4f0be264.safetensors",
-        "default",
-        "None",
-        "[]",
-        ""
-      ],
-      "color": "#232",
-      "bgcolor": "#353"
-    },
-    {
       "id": 913,
       "type": "CLIPLoader",
       "pos": [
@@ -105,7 +52,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 2,
+      "order": 1,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -161,7 +108,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 15,
+      "order": 14,
       "mode": 0,
       "inputs": [
         {
@@ -208,7 +155,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 12,
+      "order": 11,
       "mode": 0,
       "inputs": [
         {
@@ -256,7 +203,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 3,
+      "order": 2,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -309,7 +256,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 4,
+      "order": 3,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -326,15 +273,13 @@
       "properties": {
         "Node name for S&R": "NO8DLoadImages",
         "no8d_image_loader_source": "temp",
-        "no8d_image_loader_output_keys": [
-          "input//test_000008.png"
-        ],
+        "no8d_image_loader_output_keys": [],
         "no8d_image_loader_thumb_size": 400,
         "no8d_image_loader_prev_thumb_size": 380
       },
       "widgets_values": [
         "[{\"name\":\"test_000008.png\",\"subfolder\":\"\",\"type\":\"input\",\"width\":3840,\"height\":2176,\"size\":25077973}]",
-        "[{\"name\":\"test_000008.png\",\"subfolder\":\"\",\"type\":\"input\",\"width\":3840,\"height\":2176,\"size\":25077973}]"
+        "[]"
       ],
       "color": "#232",
       "bgcolor": "#353"
@@ -354,7 +299,7 @@
         "collapsed": false,
         "pinned": true
       },
-      "order": 10,
+      "order": 9,
       "mode": 0,
       "inputs": [
         {
@@ -418,7 +363,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 9,
+      "order": 8,
       "mode": 0,
       "inputs": [
         {
@@ -434,7 +379,7 @@
           "widget": {
             "name": "fixed_text"
           },
-          "link": 3307
+          "link": 3317
         }
       ],
       "outputs": [
@@ -453,7 +398,7 @@
       "widgets_values": [
         true,
         "",
-        "atmospheric photography.\nphotorealistic 3D rendered character illustration. medium shot; the camera is at subject eye level, front three-quarter view, subject angled slightly left relative to anthropomorphic teddy bear mascot; subject axis: upper center to lower center vertical; occupying about 32% of the frame. a standard lens keeps relatively natural spatial proportions. Seated on a jet ski; one furry hand grips the handlebar while the other arm is raised high in a waving gesture. Body faces slightly toward the viewer's left. Light tan fluffy fur; wears a brown visor cap with a small bear emblem, a white cropped t-shirt with red collar trim and two chest patches, and white shorts with thin red vertical stripes. Open tropical ocean with turquoise water stretching to the horizon; pale blue sky dotted with scattered fluffy white clouds. Bright natural daylight with soft, even illumination; warm sunny color palette of turquoise, blue, and cream.",
+        "vintage film-style beach photography. medium shot; the camera is at subject eye level, front three-quarter view, subject's left side more toward the viewer relative to plush teddy bear costumed character; subject axis: upper center to lower center vertical; occupying about 32% of the frame. a standard lens keeps relatively natural spatial proportions. Seated on a jet ski; frame-left arm rests on the handlebar gripping it; frame-right arm raised high in a waving gesture. Light tan fluffy fur; brown visor cap with small bear logo; white cropped t-shirt with red collar trim, bear chest patch and smaller side patch; white shorts with thin red vertical stripes. Turquoise ocean stretching to the horizon; pale blue sky with scattered fluffy white clouds; open tropical seascape. Bright natural daylight; warm slightly faded vintage color cast; soft even illumination; cheerful summery beach atmosphere. facial expression and gaze: Neutral stitched teddy bear face with round black eyes, black nose.",
         "0",
         null
       ],
@@ -474,7 +419,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 14,
+      "order": 13,
       "mode": 0,
       "inputs": [
         {
@@ -495,6 +440,11 @@
           "name": "image_a",
           "type": "IMAGE",
           "links": []
+        },
+        {
+          "name": "image_b",
+          "type": "IMAGE",
+          "links": null
         }
       ],
       "properties": {
@@ -534,7 +484,7 @@
         "pinned": true,
         "allow_interaction": false
       },
-      "order": 5,
+      "order": 4,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -571,7 +521,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 8,
+      "order": 7,
       "mode": 0,
       "inputs": [
         {
@@ -603,7 +553,7 @@
         "Standard",
         "English",
         "",
-        0,
+        943119763697840,
         "randomize"
       ],
       "color": "#232",
@@ -621,7 +571,7 @@
         1070
       ],
       "flags": {},
-      "order": 13,
+      "order": 12,
       "mode": 4,
       "inputs": [
         {
@@ -657,29 +607,46 @@
       "bgcolor": "#353"
     },
     {
-      "id": 1201,
-      "type": "MarkdownNote",
+      "id": 1408,
+      "type": "NO8DLoraStack",
       "pos": [
-        -21280,
-        510
+        -22000,
+        930
       ],
       "size": [
-        580,
-        250
+        600,
+        870
       ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 6,
+      "flags": {},
+      "order": 5,
       "mode": 0,
       "inputs": [],
-      "outputs": [],
-      "properties": {},
-      "widgets_values": [
-        "## [If you want to know more, you're welcome to join my community](https://patreon.com/no8d?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink)"
+      "outputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "links": [
+            3316
+          ]
+        },
+        {
+          "name": "trigger_words",
+          "type": "STRING",
+          "links": [
+            3317
+          ]
+        }
       ],
-      "color": "#232",
-      "bgcolor": "#353"
+      "properties": {
+        "Node name for S&R": "NO8DLoraStack"
+      },
+      "widgets_values": [
+        "krea2_turbo_int8_convrot-b19a4f0be264.safetensors",
+        "default",
+        "None",
+        "[]",
+        ""
+      ]
     },
     {
       "id": 1400,
@@ -693,13 +660,13 @@
         1030
       ],
       "flags": {},
-      "order": 11,
+      "order": 10,
       "mode": 0,
       "inputs": [
         {
           "name": "model",
           "type": "MODEL",
-          "link": 3291
+          "link": 3316
         },
         {
           "name": "positive",
@@ -737,22 +704,55 @@
       "properties": {
         "Node name for S&R": "NO8DGenerate",
         "no8d_generate_preview": {
-          "filename": "ComfyUI_temp_ilikl_00001_.png",
+          "filename": "ComfyUI_temp_cjzea_00001_.png",
           "subfolder": "",
           "type": "temp"
-        }
+        },
+        "no8d_generate_history": [
+          {
+            "filename": "ComfyUI_temp_cjzea_00001_.png",
+            "subfolder": "",
+            "type": "temp"
+          }
+        ]
       },
       "widgets_values": [
         9,
         1,
         "res_multistep",
         "sgm_uniform",
-        544167400818282,
+        375054560657079,
         "randomize",
         1,
         60,
         "",
-        "{\"base_image_file\":\"\",\"mask_image_file\":\"\",\"mask_active\":false,\"mask_tool\":null,\"mask_base_width\":0,\"mask_base_height\":0,\"brush_size\":80,\"eraser_size\":80,\"mask_opacity\":0.4,\"mask_color\":\"#66ccff\",\"invert\":false,\"strokes\":[]}"
+        "{\"base_image_file\":\"\",\"source_image_file\":\"\",\"mask_image_file\":\"\",\"mask_active\":false,\"outpaint_active\":false,\"mask_tool\":\"lasso\",\"mask_base_width\":1368,\"mask_base_height\":768,\"brush_size\":80,\"eraser_size\":80,\"mask_opacity\":0.4,\"mask_color\":\"#00ddff\",\"mask_render_version\":3,\"aspect_ratio\":\"9:16\",\"short_side\":768,\"swap_dimensions\":true,\"canvas_width\":1368,\"canvas_height\":768,\"transform_active\":false,\"image_transform\":{\"x\":0,\"y\":0,\"width\":1368,\"height\":768},\"edit_checkpoint\":{\"mode\":\"inpaint\",\"aspect_ratio\":\"9:16\",\"short_side\":768,\"swap_dimensions\":true,\"canvas_width\":1368,\"canvas_height\":768,\"image_transform\":{\"x\":0,\"y\":0,\"width\":1368,\"height\":768}},\"strokes\":[]}",
+        false
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 1201,
+      "type": "MarkdownNote",
+      "pos": [
+        -21280,
+        510
+      ],
+      "size": [
+        580,
+        250
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "## [If you want to know more, you're welcome to join my community](https://patreon.com/no8d?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink)"
       ],
       "color": "#232",
       "bgcolor": "#353"
@@ -816,26 +816,10 @@
       "IMAGE"
     ],
     [
-      3291,
-      1301,
-      0,
-      1400,
-      0,
-      "MODEL"
-    ],
-    [
       3303,
       1399,
       0,
       989,
-      1,
-      "STRING"
-    ],
-    [
-      3307,
-      1301,
-      1,
-      1399,
       1,
       "STRING"
     ],
@@ -870,6 +854,22 @@
       1405,
       0,
       "IMAGE"
+    ],
+    [
+      3316,
+      1408,
+      0,
+      1400,
+      0,
+      "MODEL"
+    ],
+    [
+      3317,
+      1408,
+      1,
+      1399,
+      1,
+      "STRING"
     ]
   ],
   "groups": [
@@ -919,10 +919,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.495000000000002,
+      "scale": 0.31250000000000006,
       "offset": [
-        24473.108749447754,
-        415.5573888268997
+        25574.621966201743,
+        1072.3717178611957
       ]
     },
     "frontendVersion": "1.45.21",
