@@ -1824,7 +1824,26 @@ def _ollama_messages_from_openai(messages):
     return output
 
 
-def _ollama_chat(base_url, model, messages, temperature, max_tokens, seed=0):
+def _ollama_response_schema(response_format):
+    if not isinstance(response_format, dict):
+        return None
+    if response_format.get("type") == "json_schema":
+        json_schema = response_format.get("json_schema")
+        if isinstance(json_schema, dict):
+            schema = json_schema.get("schema")
+            return schema if isinstance(schema, dict) else None
+    return response_format if response_format.get("type") == "object" else None
+
+
+def _ollama_chat(
+    base_url,
+    model,
+    messages,
+    temperature,
+    max_tokens,
+    seed=0,
+    response_format=None,
+):
     base = str(base_url or "").strip().strip('"').strip("'").rstrip("/") or "http://localhost:11434"
     if base.endswith("/v1"):
         base = base[:-3].rstrip("/")
@@ -1835,11 +1854,18 @@ def _ollama_chat(base_url, model, messages, temperature, max_tokens, seed=0):
         "model": str(model).strip(),
         "messages": _ollama_messages_from_openai(messages),
         "stream": False,
+        # Vision prompt generation needs the final structured answer, not a
+        # separately budgeted reasoning trace. Ollama ignores this for models
+        # such as GPT-OSS whose thinking level cannot be disabled.
+        "think": False,
         "options": {
             "temperature": _safe_float(temperature, 0.7),
             "num_predict": _safe_int(max_tokens, 800),
         },
     }
+    schema = _ollama_response_schema(response_format)
+    if schema is not None:
+        payload["format"] = schema
     seed = _safe_int(seed, 0)
     if seed:
         payload["options"]["seed"] = seed
@@ -1859,7 +1885,25 @@ def _ollama_chat(base_url, model, messages, temperature, max_tokens, seed=0):
     message = parsed.get("message") if isinstance(parsed, dict) else None
     content = (message or {}).get("content") if isinstance(message, dict) else ""
     if not str(content or "").strip():
-        raise RuntimeError("NO8D-Prompt: Ollama returned empty content")
+        thinking = (message or {}).get("thinking") if isinstance(message, dict) else ""
+        done_reason = parsed.get("done_reason") if isinstance(parsed, dict) else None
+        eval_count = parsed.get("eval_count") if isinstance(parsed, dict) else None
+        details = [f"model={str(model).strip()}"]
+        if done_reason:
+            details.append(f"done_reason={done_reason}")
+        if eval_count is not None:
+            details.append(f"eval_count={eval_count}")
+        if str(thinking or ""):
+            details.append(f"thinking_chars={len(str(thinking))}")
+        hint = (
+            " The model produced reasoning but no final answer; use an instruct vision model "
+            "or increase the output-token limit."
+            if str(thinking or "")
+            else " Use a vision-capable instruct model and check its output-token limit."
+        )
+        raise RuntimeError(
+            f"NO8D-Prompt: Ollama returned empty content ({', '.join(details)}).{hint}"
+        )
     return str(content)
 
 
@@ -1906,7 +1950,15 @@ def _send_chat_completion(base_url, endpoint, data, headers, streaming, model):
 
 def _chat_completion(base_url, api_key, model, messages, temperature, max_tokens, seed=0, service_type="openai_compatible", response_format=None):
     if _uses_ollama_native(base_url, service_type):
-        return _ollama_chat(base_url, model, messages, temperature, max_tokens, seed)
+        return _ollama_chat(
+            base_url,
+            model,
+            messages,
+            temperature,
+            max_tokens,
+            seed,
+            response_format,
+        )
 
     endpoint = _endpoint_from_base_url(base_url)
     if not endpoint:
@@ -1953,8 +2005,11 @@ def _supports_native_json_schema(base_url):
     return (host.startswith("ark.") and host.endswith(".volces.com")) or host == "api.siliconflow.cn"
 
 
-def _image_analysis_response_format(base_url, scene_only=False):
-    if not _supports_native_json_schema(base_url):
+def _image_analysis_response_format(base_url, scene_only=False, service_type=""):
+    if not (
+        _supports_native_json_schema(base_url)
+        or _uses_ollama_native(base_url, service_type)
+    ):
         return None
     if scene_only:
         schema = {
@@ -2193,7 +2248,14 @@ class NO8DBatchPromptPlus:
         cache_key = hashlib.sha1(json.dumps(cache_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
         result = self._cache_get(cache_key)
         if result is None:
-            response_format = _image_analysis_response_format(api_base_url) if strict_image_analysis else None
+            response_format = (
+                _image_analysis_response_format(
+                    api_base_url,
+                    service_type=service_type,
+                )
+                if strict_image_analysis
+                else None
+            )
             raw = _chat_completion(api_base_url, api_key, request_model, messages, request_temperature, max_tokens, effective_seed, service_type, response_format)
             if strict_image_analysis and _analysis_style_conflicts(raw, style_preset):
                 correction_messages = messages + [
@@ -2243,6 +2305,7 @@ class NO8DBatchPromptPlus:
                 repair_format = _image_analysis_response_format(
                     api_base_url,
                     scene_only=bool(partial_analysis and not partial_scene),
+                    service_type=service_type,
                 )
                 repaired = _chat_completion(api_base_url, api_key, request_model, repair_messages, 0.0, repair_max_tokens, effective_seed, service_type, repair_format)
                 try:

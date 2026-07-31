@@ -790,6 +790,62 @@ class PromptStylePresetTests(unittest.TestCase):
         payload = json.loads(request.call_args.kwargs["data"].decode("utf-8"))
         self.assertNotIn("thinking", payload)
 
+    def test_ollama_vision_request_disables_thinking_and_uses_json_schema(self):
+        response_format = prompt_plus._image_analysis_response_format(
+            "http://127.0.0.1:11434",
+            service_type="ollama",
+        )
+        response = io.BytesIO(json.dumps({
+            "message": {"role": "assistant", "content": "{\"visual_analysis\": {}}"},
+            "done": True,
+            "done_reason": "stop",
+        }).encode("utf-8"))
+        with mock.patch.object(prompt_plus, "_urlopen", return_value=response), mock.patch.object(
+            prompt_plus.urllib.request, "Request", wraps=prompt_plus.urllib.request.Request
+        ) as request:
+            result = prompt_plus._chat_completion(
+                "http://127.0.0.1:11434",
+                "",
+                "vision-instruct",
+                [{"role": "user", "content": "test"}],
+                0.1,
+                512,
+                service_type="ollama",
+                response_format=response_format,
+            )
+        payload = json.loads(request.call_args.kwargs["data"].decode("utf-8"))
+        self.assertEqual(result, "{\"visual_analysis\": {}}")
+        self.assertFalse(payload["think"])
+        self.assertEqual(payload["format"]["required"], ["visual_analysis"])
+        self.assertFalse(payload["format"]["additionalProperties"])
+        self.assertTrue(request.call_args.args[0].endswith("/api/chat"))
+
+    def test_ollama_empty_content_reports_thinking_and_stop_details(self):
+        response = io.BytesIO(json.dumps({
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "thinking": "reasoning without a final answer",
+            },
+            "done": True,
+            "done_reason": "length",
+            "eval_count": 512,
+        }).encode("utf-8"))
+        with mock.patch.object(prompt_plus, "_urlopen", return_value=response):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"model=thinking-vision.*done_reason=length.*eval_count=512.*thinking_chars=32",
+            ):
+                prompt_plus._chat_completion(
+                    "http://localhost:11434",
+                    "",
+                    "thinking-vision",
+                    [{"role": "user", "content": "test"}],
+                    0.1,
+                    512,
+                    service_type="ollama",
+                )
+
     def test_verified_multimodal_providers_use_native_json_schema(self):
         for url in ("https://ark.cn-beijing.volces.com/api/v3", "https://api.siliconflow.cn/v1"):
             with self.subTest(url=url):

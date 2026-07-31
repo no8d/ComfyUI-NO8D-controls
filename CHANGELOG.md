@@ -6,6 +6,16 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-08-01
+
+### Changed
+
+- Updated native Ollama requests to disable thinking and pass the visual-analysis JSON schema through Ollama's `format` field.
+
+### Fixed
+
+- Added detailed diagnostics when Ollama returns an empty final response, including the model, stop reason, evaluated token count, and thinking-output length.
+
 ## [1.3.1] - 2026-07-29
 
 ### Added
