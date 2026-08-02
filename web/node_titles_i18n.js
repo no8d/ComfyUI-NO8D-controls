@@ -152,6 +152,10 @@ function titleForClass(className) {
     return key ? t(key) : "";
 }
 
+function normalizedComboValue(value) {
+    return String(value ?? "").trim().toLocaleLowerCase().replace(/[\s\-_/]+/g, "");
+}
+
 function scheduleNodeRefresh(node) {
     if (!node || PENDING_REFRESH.has(node)) return;
     PENDING_REFRESH.add(node);
@@ -186,14 +190,26 @@ function applyNodeTitle(node) {
         const entries = comboLabels[widget.name];
         if (!entries) continue;
         const current = String(widget.value ?? "");
-        const entry = entries.find(([, english, chinese]) => current === english || current === chinese);
-        if (entry) widget.value = t(entry[0]);
+        const normalizedCurrent = normalizedComboValue(current);
+        const entry = entries.find(([, english, chinese]) => (
+            normalizedCurrent === normalizedComboValue(english)
+            || normalizedCurrent === normalizedComboValue(chinese)
+        ));
+        const canonicalIndex = 2;
+        if (entry) widget.value = entry[canonicalIndex];
         else if (className === "NO8DImageTitle" && widget.name === "output_size") {
-            widget.value = t(entries[0][0]);
+            widget.value = entries[0][canonicalIndex];
             widget.callback?.(widget.value, app.canvas, node, app.canvas?.graph_mouse);
         }
         widget.options = widget.options || {};
-        widget.options.values = entries.map(([key]) => t(key));
+        widget.options.values = entries.map((entry) => entry[canonicalIndex]);
+        widget.options.getOptionLabel = (value) => {
+            const option = entries.find(([, english, chinese]) => (
+                normalizedComboValue(value) === normalizedComboValue(english)
+                || normalizedComboValue(value) === normalizedComboValue(chinese)
+            ));
+            return option ? t(option[0]) : value;
+        };
         changed = true;
     }
     const inputLabels = INPUT_LABELS[className] || {};

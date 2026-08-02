@@ -6,6 +6,13 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-08-03
+
+### Fixed
+
+- Kept A/B right-click image actions working when ComfyUI exposes graph coordinates through array-like point objects.
+- Kept localized combo labels separate from the canonical values saved in workflows and sent to node backends.
+
 ## [1.4.0] - 2026-08-02
 
 ### Added
