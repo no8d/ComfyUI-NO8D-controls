@@ -279,9 +279,15 @@ function isSecondaryClick(event) {
     return event?.button === 2;
 }
 
+function isPointLike(value) {
+    return value != null
+        && Number.isFinite(Number(value[0]))
+        && Number.isFinite(Number(value[1]));
+}
+
 function selectNativeImageUnderPointer(node, canvas) {
     const graphMouse = canvas?.graph_mouse || app.canvas?.graph_mouse;
-    if (!Array.isArray(graphMouse) || !Array.isArray(node?.pos)) return;
+    if (!isPointLike(graphMouse) || !isPointLike(node?.pos)) return;
     selectNativeImageAt(node, [
         graphMouse[0] - node.pos[0],
         graphMouse[1] - node.pos[1],

@@ -175,6 +175,14 @@ class ImageGridTests(unittest.TestCase):
             ["图外顶部", "图内顶部", "中部", "图内底部", "图外底部"],
         )
 
+    def test_i18n_keeps_combo_values_canonical_and_translates_only_labels(self):
+        source = (
+            pathlib.Path(__file__).resolve().parents[1] / "web" / "node_titles_i18n.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("widget.options.getOptionLabel", source)
+        self.assertIn("widget.value = entry[canonicalIndex]", source)
+        self.assertNotIn("widget.value = t(entry[0])", source)
+
     def test_horizontal_uses_first_image_height(self):
         output = _compose([_image(100, 50, (1, 0, 0)), _image(30, 60, (0, 1, 0))])
         self.assertEqual(tuple(output.shape), (1, 70, 155, 3))
