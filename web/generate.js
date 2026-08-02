@@ -22,8 +22,8 @@ const BRUSH_FEATHER_RADIUS_MULTIPLIER = 2;
 // substitute made 60% feather cover hundreds of pixels and double-expose a
 // large part of the source.  Keep the seam proportional to the canvas while
 // bounding it to a practical blending band.
-const OUTPAINT_FEATHER_MAX_CANVAS_FRACTION = 0.1;
-const MASK_RENDER_VERSION = 3;
+const OUTPAINT_FEATHER_MAX_CANVAS_FRACTION = 0.2;
+const MASK_RENDER_VERSION = 5;
 const MASK_FEATHER_VALUE = 128;
 const EXECUTION_MASK_GRADIENT_STEPS = 32;
 const MASK_DISTANCE_MAX_EDGE = 2048;
@@ -41,6 +41,8 @@ const TRANSFORM_HANDLE_SIZE = 10;
 // handle. This canvas-heavy node benefits from a slightly larger target while
 // retaining the exact same native corner directions and resize behavior.
 const NODE_RESIZE_CORNER_SIZE = 24;
+const AUTO_OUTPUT_PROPERTY = "no8d_generate_auto_output";
+const manualOutputQueueNodes = new Set();
 let activeLocale = "";
 
 function isGenerateNode(node) {
@@ -65,6 +67,29 @@ function migrateGenerateSlots(node) {
 
 function findWidget(node, name) {
     return (node?.widgets || []).find((widget) => widget.name === name);
+}
+
+function ensureGenerateAutoOutputState(node) {
+    if (!node) return true;
+    node.properties = node.properties || {};
+    if (typeof node.properties[AUTO_OUTPUT_PROPERTY] !== "boolean") {
+        const legacyWidget = findWidget(node, "auto_output");
+        node.properties[AUTO_OUTPUT_PROPERTY] = legacyWidget
+            ? Boolean(legacyWidget.value)
+            : true;
+    }
+    return node.properties[AUTO_OUTPUT_PROPERTY];
+}
+
+function generateAutoOutputEnabled(node) {
+    return ensureGenerateAutoOutputState(node);
+}
+
+function setGenerateAutoOutputEnabled(node, value) {
+    if (!node) return;
+    node.properties = node.properties || {};
+    node.properties[AUTO_OUTPUT_PROPERTY] = Boolean(value);
+    setDirty();
 }
 
 function hideToolbarWidgets(node) {
@@ -192,7 +217,6 @@ function createSamplerPanel(node) {
     const denoise = number("denoise", { digits: 2 });
     const seed = number("seed", { onStep: () => lockSeed() });
     seed.style.fontVariantNumeric = "tabular-nums";
-    const autoOutputWidget = () => findWidget(node, "auto_output");
     const autoOutput = document.createElement("button");
     autoOutput.type = "button";
     autoOutput.textContent = "⇥";
@@ -203,9 +227,7 @@ function createSamplerPanel(node) {
     ].join(";");
     autoOutput.style.setProperty("border-radius", "5px", "important");
     autoOutput.addEventListener("click", () => {
-        const widget = autoOutputWidget();
-        if (!widget) return;
-        setNativeWidget(widget, !Boolean(widget.value));
+        setGenerateAutoOutputEnabled(node, !generateAutoOutputEnabled(node));
         sync();
     });
     node._no8dGenerateAutoOutputButton = autoOutput;
@@ -229,7 +251,7 @@ function createSamplerPanel(node) {
         lock.style.setProperty("border-color", locked ? "#60a5fa" : "#666", "important");
         lock.style.setProperty("color", locked ? "#fff" : "#ddd", "important");
         lock.style.boxShadow = locked ? "inset 0 0 0 1px #60a5fa" : "none";
-        const autoEnabled = Boolean(autoOutputWidget()?.value);
+        const autoEnabled = generateAutoOutputEnabled(node);
         autoOutput.title = t("autoOutput");
         autoOutput.setAttribute("aria-label", t("autoOutput"));
         autoOutput.setAttribute("aria-pressed", String(autoEnabled));
@@ -521,6 +543,78 @@ function collectGenerateDownstreamNodeIds(node) {
     return [...result];
 }
 
+function canonicalizeGenerateExecutionInputs(promptNode) {
+    const inputs = promptNode?.inputs;
+    if (!inputs || typeof inputs.canvas !== "string") return;
+    try {
+        const state = JSON.parse(inputs.canvas || "{}");
+        if (state.manual_output_file) {
+            // Compatibility for workflows saved before manual publishing was
+            // routed around this node. A timestamp or other UI state must not
+            // turn the same approved file into a different cache input.
+            inputs.canvas = JSON.stringify({
+                manual_output_file: String(state.manual_output_file),
+            });
+            return;
+        }
+        if (!state.mask_active) {
+            // Canvas geometry, preview dimensions, and feather controls do not
+            // participate in ordinary T2I. Keep its execution signature equal
+            // to the actual native sampler inputs.
+            inputs.canvas = "{}";
+            inputs.mask_feather = 50;
+            return;
+        }
+        // During inpaint/outpaint, serialize only data that the backend reads.
+        // Tool selection, overlay color/opacity, history, editor expansion,
+        // and other presentation state must never invalidate sampling.
+        const executionState = {
+            base_image_file: String(state.base_image_file || ""),
+            source_image_file: String(state.source_image_file || ""),
+            mask_image_file: String(state.mask_image_file || ""),
+            mask_active: true,
+            outpaint_active: Boolean(state.outpaint_active),
+            canvas_width: Number(state.canvas_width) || 0,
+            canvas_height: Number(state.canvas_height) || 0,
+        };
+        if (!executionState.outpaint_active && Array.isArray(state.strokes)) {
+            executionState.strokes = state.strokes;
+        }
+        inputs.canvas = JSON.stringify(executionState);
+    } catch {
+        // Keep malformed state intact so the backend can apply its normal
+        // validation/fallback behavior instead of hiding the original input.
+    }
+}
+
+function installGenerateQueueFilter() {
+    if (app._no8dGenerateQueueFilterInstalled || typeof app.graphToPrompt !== "function") return;
+    const originalGraphToPrompt = app.graphToPrompt.bind(app);
+    app.graphToPrompt = async function () {
+        const prompt = await originalGraphToPrompt(...arguments);
+        const output = prompt?.output;
+        if (!output) return prompt;
+        for (const node of app?.graph?._nodes || []) {
+            if (!isGenerateNode(node)) continue;
+            const nodeId = String(node?.id ?? "");
+            canonicalizeGenerateExecutionInputs(output[String(nodeId)]);
+            if (!nodeId || generateAutoOutputEnabled(node) || manualOutputQueueNodes.has(nodeId)) continue;
+            for (const downstreamId of collectGenerateDownstreamNodeIds(node)) {
+                if (String(downstreamId) !== nodeId) delete output[String(downstreamId)];
+            }
+        }
+        return prompt;
+    };
+    app._no8dGenerateQueueFilterInstalled = true;
+}
+
+function setAllGenerateExecutionActive(active) {
+    for (const node of app?.graph?._nodes || []) {
+        if (!isGenerateNode(node)) continue;
+        node._no8dGenerateCanvas?.setExecutionActive?.(active);
+    }
+}
+
 async function runGenerateQueueHooks(nodeIds, hookName) {
     const targetIds = new Set((nodeIds || []).map(String));
     for (const node of app?.graph?._nodes || []) {
@@ -532,22 +626,79 @@ async function runGenerateQueueHooks(nodeIds, hookName) {
     }
 }
 
-async function queuePublishedGenerateImage(node, widget, filename) {
+function allocateTemporaryPromptNodeId(output) {
+    const numericIds = Object.keys(output || {})
+        .map((id) => Number(id))
+        .filter((id) => Number.isSafeInteger(id) && id >= 0);
+    let candidate = (numericIds.length ? Math.max(...numericIds) : 0) + 1;
+    while (Object.hasOwn(output, String(candidate))) candidate += 1;
+    return String(candidate);
+}
+
+function replacePromptLink(value, sourceNodeId, replacementNodeId) {
+    if (Array.isArray(value)) {
+        if (value.length === 2 && String(value[0]) === sourceNodeId
+            && Number.isInteger(Number(value[1]))) {
+            return [replacementNodeId, Number(value[1])];
+        }
+        return value.map((item) => replacePromptLink(item, sourceNodeId, replacementNodeId));
+    }
+    if (!value || typeof value !== "object") return value;
+    for (const [key, item] of Object.entries(value)) {
+        value[key] = replacePromptLink(item, sourceNodeId, replacementNodeId);
+    }
+    return value;
+}
+
+function routePublishedImageAroundGenerate(prompt, nodeId, filename) {
+    const output = prompt?.output;
+    const sourceNodeId = String(nodeId);
+    if (!output?.[sourceNodeId]) {
+        throw new Error("NO8D-Generate is not present in the queued prompt");
+    }
+    const loadNodeId = allocateTemporaryPromptNodeId(output);
+    output[loadNodeId] = {
+        class_type: "LoadImage",
+        inputs: { image: filename },
+        _meta: { title: "NO8D-Generate published image" },
+    };
+    for (const [promptNodeId, promptNode] of Object.entries(output)) {
+        if (promptNodeId === sourceNodeId || promptNodeId === loadNodeId) continue;
+        if (promptNode?.inputs) {
+            promptNode.inputs = replacePromptLink(
+                promptNode.inputs,
+                sourceNodeId,
+                loadNodeId,
+            );
+        }
+    }
+    // Keep the original Generate node in the submitted prompt. ComfyUI prunes
+    // cached nodes that disappear from a later prompt, so deleting it here
+    // made the next unchanged queue perform sampling again. The downstream
+    // links now read from LoadImage and partial execution targets exclude this
+    // node, therefore it remains cache-visible without being executed.
+    return loadNodeId;
+}
+
+async function queuePublishedGenerateImage(node, filename) {
     if (typeof app.graphToPrompt !== "function" || typeof app.api?.queuePrompt !== "function") {
         throw new Error("ComfyUI queue API is unavailable");
     }
-    const downstreamNodeIds = collectGenerateDownstreamNodeIds(node);
-    await runGenerateQueueHooks(downstreamNodeIds, "beforeQueued");
-    const prompt = await app.graphToPrompt();
-    const generateNode = prompt?.output?.[String(node.id)];
-    if (!generateNode?.inputs) {
-        throw new Error("NO8D-Generate is not present in the queued prompt");
+    const nodeId = String(node.id);
+    const downstreamNodeIds = collectGenerateDownstreamNodeIds(node)
+        .filter((downstreamId) => String(downstreamId) !== nodeId);
+    if (!downstreamNodeIds.length) {
+        throw new Error("NO8D-Generate has no downstream node to publish to");
     }
-    const state = JSON.parse(widget.getValue() || "{}");
-    state.manual_output_file = filename;
-    state.manual_output_seq = Date.now();
-    generateNode.inputs.canvas = JSON.stringify(state);
-    generateNode.inputs.auto_output = false;
+    await runGenerateQueueHooks(downstreamNodeIds, "beforeQueued");
+    manualOutputQueueNodes.add(nodeId);
+    let prompt;
+    try {
+        prompt = await app.graphToPrompt();
+    } finally {
+        manualOutputQueueNodes.delete(nodeId);
+    }
+    routePublishedImageAroundGenerate(prompt, nodeId, filename);
     await app.api.queuePrompt(0, prompt, { partialExecutionTargets: downstreamNodeIds });
     await runGenerateQueueHooks(downstreamNodeIds, "afterQueued");
 }
@@ -932,6 +1083,8 @@ class NO8DGenerateCanvasWidget {
         this.activeEditorAction = null;
         this.flashAction = null;
         this.publishPending = false;
+        this.publishReady = false;
+        this.executionActive = false;
         this.imageHistory = imageRefs(node?.properties?.no8d_generate_history)
             .slice(0, IMAGE_HISTORY_LIMIT)
             .map((ref) => ({ ...ref }));
@@ -948,6 +1101,20 @@ class NO8DGenerateCanvasWidget {
             minHeight: 220,
             maxHeight: 1000000,
         };
+    }
+
+    setExecutionActive(active) {
+        const next = Boolean(active);
+        if (this.executionActive === next) return;
+        this.executionActive = next;
+        if (next) {
+            this.closeActiveEditor();
+            this.transformDrag = null;
+            this.activeStroke = null;
+            this.hoverImagePoint = null;
+            this.releaseTransformCursor();
+        }
+        setDirty();
     }
 
     getValue() {
@@ -998,6 +1165,13 @@ class NO8DGenerateCanvasWidget {
         return this.transformActive && this.hasOutpaintArea();
     }
 
+    disableAutoOutputForEditing() {
+        if (generateAutoOutputEnabled(this.node)) {
+            setGenerateAutoOutputEnabled(this.node, false);
+        }
+        this.node?._no8dGenerateSyncSampler?.();
+    }
+
     editingImage() {
         return this.sourceImage || this.image;
     }
@@ -1032,9 +1206,20 @@ class NO8DGenerateCanvasWidget {
         const sourceShortSide = Math.min(transform.width, transform.height);
         const maximum = Math.min(
             canvasShortSide * OUTPAINT_FEATHER_MAX_CANVAS_FRACTION,
-            sourceShortSide * 0.15,
+            sourceShortSide * 0.3,
         );
         return Math.max(0, maximum) * (this.getFeatherPercent() / 100);
+    }
+
+    outpaintFeatherInsets(transform, amount) {
+        const right = transform.x + transform.width;
+        const bottom = transform.y + transform.height;
+        return {
+            left: transform.x > 0 ? amount : 0,
+            top: transform.y > 0 ? amount : 0,
+            right: right < this.canvasWidth ? amount : 0,
+            bottom: bottom < this.canvasHeight ? amount : 0,
+        };
     }
 
     fitImageTransformToCanvas() {
@@ -1042,17 +1227,12 @@ class NO8DGenerateCanvasWidget {
         if (!image?.naturalWidth || !image?.naturalHeight) return null;
         const imageWidth = image.naturalWidth;
         const imageHeight = image.naturalHeight;
-        let scale;
-        if (imageWidth > imageHeight) {
-            scale = this.canvasWidth / imageWidth;
-        } else if (imageHeight > imageWidth) {
-            scale = this.canvasHeight / imageHeight;
-        } else {
-            scale = Math.min(
-                this.canvasWidth / imageWidth,
-                this.canvasHeight / imageHeight,
-            );
-        }
+        // Ratio changes must expose new canvas area for outpainting, never
+        // crop the existing image. Contain the complete source on both axes.
+        const scale = Math.min(
+            this.canvasWidth / imageWidth,
+            this.canvasHeight / imageHeight,
+        );
         const width = imageWidth * scale;
         const height = imageHeight * scale;
         this.imageTransform = {
@@ -1419,7 +1599,8 @@ class NO8DGenerateCanvasWidget {
 
     async publishCurrentImage() {
         const image = this.image;
-        if (this.publishPending || !image?.naturalWidth || !image?.naturalHeight) return;
+        if (!this.publishReady || this.publishPending
+            || !image?.naturalWidth || !image?.naturalHeight) return;
         this.publishPending = true;
         setDirty();
         try {
@@ -1437,7 +1618,8 @@ class NO8DGenerateCanvasWidget {
                 () => !this.disposed,
             );
             if (!filename || this.disposed) return;
-            await queuePublishedGenerateImage(this.node, this, filename);
+            await queuePublishedGenerateImage(this.node, filename);
+            this.publishReady = false;
             this.flashAction = "publish";
             setTimeout(() => {
                 if (this.flashAction === "publish") this.flashAction = null;
@@ -1523,6 +1705,20 @@ class NO8DGenerateCanvasWidget {
     }
 
     drawMaskPreview(ctx, scale) {
+        if (this.isOutpaintModeActive()) {
+            const preview = this.makeOutpaintPreviewMask(
+                ctx.canvas.width,
+                ctx.canvas.height,
+            );
+            if (!preview) return;
+            this.drawTintedPreviewMask(
+                ctx,
+                preview,
+                Math.min(1, this.maskOpacity),
+            );
+            releasePreviewCanvas(preview);
+            return;
+        }
         const core = this.makePreviewCoreMask(ctx.canvas.width, ctx.canvas.height, scale);
         if (!core) return;
         const percent = this.getFeatherPercent() / 100;
@@ -1545,6 +1741,32 @@ class NO8DGenerateCanvasWidget {
         }
         this.drawTintedPreviewMask(ctx, core, Math.min(1, this.maskOpacity));
         releasePreviewCanvas(core);
+    }
+
+    makeOutpaintPreviewMask(width, height) {
+        const execution = this.renderExecutionMask();
+        if (!execution) return null;
+        const preview = document.createElement("canvas");
+        preview.width = width;
+        preview.height = height;
+        const previewCtx = preview.getContext("2d");
+        previewCtx.drawImage(execution, 0, 0, width, height);
+        const pixels = previewCtx.getImageData(0, 0, width, height);
+        for (let index = 0; index < pixels.data.length; index += 4) {
+            const strength = pixels.data[index];
+            const displayValue = strength >= 254
+                ? 255
+                : strength > 0
+                ? MASK_FEATHER_VALUE
+                : 0;
+            pixels.data[index] = displayValue;
+            pixels.data[index + 1] = displayValue;
+            pixels.data[index + 2] = displayValue;
+            pixels.data[index + 3] = displayValue;
+        }
+        previewCtx.putImageData(pixels, 0, 0);
+        releasePreviewCanvas(execution);
+        return preview;
     }
 
     makePreviewCoreMask(width, height, scale, brushScale = 1) {
@@ -1590,18 +1812,6 @@ class NO8DGenerateCanvasWidget {
     }
 
     makePreviewOuterMask(width, height, scale, percent, coreMask = null) {
-        if (this.isOutpaintModeActive()) {
-            const transform = this.rasterImageTransform();
-            if (!transform) return null;
-            const sourceShortSide = Math.min(transform.width, transform.height);
-            const feather = this.outpaintFeatherWidth(transform);
-            const brushScale = sourceShortSide > 0
-                ? 1 + feather * 2 / sourceShortSide
-                : 1;
-            return this.makePreviewCoreMask(
-                width, height, scale, brushScale,
-            );
-        }
         const core = coreMask || this.makePreviewCoreMask(width, height, scale);
         if (!core) return null;
         const outer = featherMaskFromCore(
@@ -1781,8 +1991,9 @@ class NO8DGenerateCanvasWidget {
         const itemGap = 4;
         const toolWidth = 28;
         const propertyWidth = 28;
-        const toolActive = this.hasActiveTool();
-        const propertyActive = toolActive || this.transformActive;
+        const interactionEnabled = !this.executionActive;
+        const toolActive = interactionEnabled && this.hasActiveTool();
+        const propertyActive = interactionEnabled && (toolActive || this.transformActive);
         const drawGroup = (left, groupWidth) => {
             const rect = [left, y + 8, groupWidth, height - 16];
             ctx.fillStyle = "#232323";
@@ -1809,9 +2020,9 @@ class NO8DGenerateCanvasWidget {
         const editingImageAvailable = Boolean(this.editingImage()?.naturalWidth);
         for (const action of visibleToolActions) {
             const rect = [left, y + 12, toolWidth, height - 24];
-            const enabled = action === "reset"
+            const enabled = interactionEnabled && (action === "reset"
                 ? Boolean(this.editCheckpoint || this.imageHistory.length > 1)
-                : editingImageAvailable;
+                : editingImageAvailable);
             const active = action === "transform"
                 ? this.transformActive
                 : action === "lasso"
@@ -1848,7 +2059,11 @@ class NO8DGenerateCanvasWidget {
             publishWidth,
             height - 16,
         ];
-        const publishEnabled = editingImageAvailable && !this.publishPending;
+        const publishEnabled = interactionEnabled
+            && !generateAutoOutputEnabled(this.node)
+            && this.publishReady
+            && editingImageAvailable
+            && !this.publishPending;
         this.buttons.push({ action: "publish", rect: publishRect, enabled: publishEnabled });
         ctx.fillStyle = publishEnabled ? "#2563eb" : "#303030";
         fillRoundedRect(ctx, publishRect, 6);
@@ -1873,7 +2088,7 @@ class NO8DGenerateCanvasWidget {
     }
 
     drawTransformHandles(ctx) {
-        if (!this.transformActive || this.outpaintResultVisible || !this.contentRect) return;
+        if (this.executionActive || !this.transformActive || this.outpaintResultVisible || !this.contentRect) return;
         const visibleRect = this.visibleTransformRect();
         if (!visibleRect) return;
         const [x, y, width, height] = visibleRect;
@@ -1923,7 +2138,7 @@ class NO8DGenerateCanvasWidget {
     }
 
     drawBrushCursor(ctx) {
-        if (!this.hoverImagePoint || !this.canvasRect?.[4] || this.tool === "lasso" || !["brush", "eraser"].includes(this.tool)) return;
+        if (this.executionActive || !this.hoverImagePoint || !this.canvasRect?.[4] || this.tool === "lasso" || !["brush", "eraser"].includes(this.tool)) return;
         const baseWidth = this.canvasWidth;
         const baseHeight = this.canvasHeight;
         if (!baseWidth || !baseHeight) return;
@@ -2062,14 +2277,25 @@ class NO8DGenerateCanvasWidget {
                 for (let step = 1; step <= EXECUTION_MASK_GRADIENT_STEPS; step += 1) {
                     const progress = step / EXECUTION_MASK_GRADIENT_STEPS;
                     const inset = feather * progress;
-                    const innerWidth = Math.max(0, transform.width - inset * 2);
-                    const innerHeight = Math.max(0, transform.height - inset * 2);
+                    const insets = this.outpaintFeatherInsets(transform, inset);
+                    const innerWidth = Math.max(
+                        0,
+                        transform.width - insets.left - insets.right,
+                    );
+                    const innerHeight = Math.max(
+                        0,
+                        transform.height - insets.top - insets.bottom,
+                    );
                     if (!innerWidth || !innerHeight) break;
-                    const value = Math.round(255 * (1 - progress));
+                    // Smoothstep has zero slope at both ends, so the generated
+                    // border and the preserved source do not meet as two
+                    // visibly separate linear layers.
+                    const smoothProgress = progress * progress * (3 - 2 * progress);
+                    const value = Math.round(255 * (1 - smoothProgress));
                     ctx.fillStyle = `rgb(${value}, ${value}, ${value})`;
                     ctx.fillRect(
-                        transform.x + inset,
-                        transform.y + inset,
+                        transform.x + insets.left,
+                        transform.y + insets.top,
                         innerWidth,
                         innerHeight,
                     );
@@ -2232,6 +2458,7 @@ class NO8DGenerateCanvasWidget {
         this.closeActiveEditor();
         const activating = !this.transformActive;
         if (activating) {
+            this.disableAutoOutputForEditing();
             this.acceptCurrentResultAsEditingBase();
             this.clearInpaintMode();
             this.tool = null;
@@ -2276,6 +2503,7 @@ class NO8DGenerateCanvasWidget {
                 this.clearOutpaintMode();
             }
             if (enteringInpaint) {
+                this.disableAutoOutputForEditing();
                 this.acceptCurrentResultAsEditingBase();
                 this.captureEditCheckpoint("inpaint");
             }
@@ -2414,6 +2642,7 @@ class NO8DGenerateCanvasWidget {
 
     async restoreHistoryImage(ref) {
         if (!ref?.filename) return;
+        this.publishReady = false;
         this.closeActiveEditor();
         this.clearInpaintMode();
         this.clearOutpaintMode();
@@ -2991,7 +3220,7 @@ class NO8DGenerateCanvasWidget {
     }
 
     reopenActiveToolEditor(event, pos) {
-        if (this.activeEditorAction || this.valueEditorClose) return;
+        if (this.executionActive || this.activeEditorAction || this.valueEditorClose) return;
         const button = (this.buttons || []).find((item) => (
             pointInRect(pos, item.rect)
             && (
@@ -3008,6 +3237,10 @@ class NO8DGenerateCanvasWidget {
     }
 
     updateHover(pos, event = null) {
+        if (this.executionActive) {
+            this.clearHover();
+            return;
+        }
         if (this.transformDrag || this.activeStroke) return;
         this.hoverImagePoint = this.imagePoint(pos);
         this.setTransformCursor(
@@ -3025,7 +3258,7 @@ class NO8DGenerateCanvasWidget {
     }
 
     beginTransformDrag(pos) {
-        if (this.outpaintResultVisible || !this.transformActive || !this.contentRect) return false;
+        if (this.executionActive || this.outpaintResultVisible || !this.transformActive || !this.contentRect) return false;
         const hit = this.transformHit(pos);
         if (!hit) return false;
         const pointer = this.canvasPointer(pos);
@@ -3116,6 +3349,10 @@ class NO8DGenerateCanvasWidget {
         if (!this.transformDrag && !this.activeStroke && this.isNodeResizeCorner(nodePos)) {
             this.releaseTransformCursor();
             return false;
+        }
+        if (this.executionActive) {
+            this.clearHover();
+            return pointInRect(nodePos, this.rect);
         }
 
         if (type.includes("move")) {
@@ -3251,6 +3488,7 @@ class NO8DGenerateCanvasWidget {
         this.image = image;
         this.previewImage = preview;
         if (!keepEditingBase) {
+            this.publishReady = false;
             this.outpaintResultVisible = false;
             this.sourceImage = image;
             this.sourcePreviewImage = preview;
@@ -3261,6 +3499,7 @@ class NO8DGenerateCanvasWidget {
             this.imageTransform = null;
             this.fitImageTransformToCanvas();
         } else {
+            if (!options.fromHistory) this.publishReady = true;
             this.outpaintResultVisible = this.isOutpaintModeActive()
                 && image.naturalWidth === this.canvasWidth
                 && image.naturalHeight === this.canvasHeight;
@@ -3403,6 +3642,7 @@ app.registerExtension({
         nodeType.prototype.onConfigure = function (info) {
             originalOnConfigure?.apply(this, arguments);
             migrateGenerateSlots(this);
+            ensureGenerateAutoOutputState(this);
             hideToolbarWidgets(this);
             requestAnimationFrame(() => {
                 createSamplerPanel(this);
@@ -3428,6 +3668,7 @@ app.registerExtension({
     nodeCreated(node) {
         if (!isGenerateNode(node)) return;
         migrateGenerateSlots(node);
+        ensureGenerateAutoOutputState(node);
         suppressNativePreview(node);
         hideToolbarWidgets(node);
         createSamplerPanel(node);
@@ -3439,10 +3680,25 @@ app.registerExtension({
     },
 
     setup() {
+        installGenerateQueueFilter();
         activeLocale = no8dLocale();
         setTimeout(() => refreshAllGenerateLabels(true), 500);
         window.addEventListener("storage", () => refreshAllGenerateLabels(true));
         window.addEventListener("languagechange", () => refreshAllGenerateLabels(true));
+        api.addEventListener("execution_start", () => setAllGenerateExecutionActive(true));
+        for (const eventName of ["execution_success", "execution_error", "execution_interrupted"]) {
+            api.addEventListener(eventName, () => setAllGenerateExecutionActive(false));
+        }
+        api.addEventListener("executing", (event) => {
+            // This is the same native event ComfyUI uses for the green
+            // currently-executing node outline. Some frontend builds deliver
+            // the payload directly while others wrap it in CustomEvent.detail.
+            // A malformed/empty intermediate event must never unlock the
+            // toolbar while the prompt is still running; terminal execution
+            // events below are the single authoritative unlock path.
+            const detail = event?.detail ?? event;
+            if (detail?.node != null) setAllGenerateExecutionActive(true);
+        });
         api.addEventListener("executed", async ({ detail }) => {
             const node = findGenerateNodeForPreviewEvent(detail);
             if (!node) return;

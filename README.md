@@ -129,6 +129,10 @@ Combine ComfyUI sampling controls, image preview, inpainting, and outpainting in
 
 Remove Ostris Krea2 `reference_latents` from conditioning while preserving the prompt, visual-language conditioning, and other metadata.
 
+### NO8D-Match Krea2 Reference Latents
+
+Resize Ostris Krea2 reference-latent grids to match a target latent while preserving the remaining conditioning metadata.
+
 ### NO8D-A/B preview
 
 Compare two image streams with an interactive split preview.

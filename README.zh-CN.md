@@ -134,6 +134,10 @@ Prompt Libraries 专属工作流：[examples/NO8D-Prompt-libraries.json](example
 
 从 Ostris Krea2 conditioning 中移除 `reference_latents`，同时保留提示词、视觉语言条件及其他元数据。
 
+### NO8D-匹配 Krea2 参考 Latents
+
+将 Ostris Krea2 的参考 latent 网格调整为目标 latent 尺寸，同时保留其余 conditioning 元数据。
+
 ### NO8D-A/B 对比
 
 通过可交互分割预览对比两路图像。

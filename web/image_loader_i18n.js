@@ -190,8 +190,16 @@ function updateSelectionUi(node) {
 }
 
 function selectedSet(node) {
-    if (!node._no8dImageLoaderSelected) node._no8dImageLoaderSelected = new Set();
-    return node._no8dImageLoaderSelected;
+    const refs = parseRefs(node);
+    const current = node._no8dImageLoaderSelected instanceof Set
+        ? node._no8dImageLoaderSelected
+        : new Set();
+    const selected = new Set(
+        [...current].filter((index) => Number.isInteger(index) && index >= 0 && index < refs.length),
+    );
+    if (!selected.size && refs.length) selected.add(0);
+    node._no8dImageLoaderSelected = selected;
+    return selected;
 }
 
 function requestScrollToIndex(node, index) {
@@ -231,9 +239,16 @@ function ensureIndexVisible(node, index) {
 }
 
 function syncSelection(node, selected) {
-    node._no8dImageLoaderSelected = selected;
+    const refs = parseRefs(node);
+    const next = new Set(
+        [...selected].filter((index) => Number.isInteger(index) && index >= 0 && index < refs.length),
+    );
+    if (!next.size && refs.length) {
+        for (const index of selectedSet(node)) next.add(index);
+    }
+    node._no8dImageLoaderSelected = next;
     updateSelectionUi(node);
-    if (selected.size === 1) ensureIndexVisible(node, [...selected][0]);
+    if (next.size === 1) ensureIndexVisible(node, [...next][0]);
     node.graph?.setDirtyCanvas?.(true, true);
     app?.canvas?.setDirty?.(true, true);
 }
@@ -242,8 +257,16 @@ function removeSelected(node) {
     const refs = parseRefs(node);
     const selected = selectedSet(node);
     if (!selected.size) return;
+    const firstRemovedIndex = Math.min(...selected);
     const next = refs.filter((_, index) => !selected.has(index));
-    node._no8dImageLoaderSelected = new Set();
+    const nextSelected = new Set();
+    if (next.length) {
+        const nextIndex = firstRemovedIndex > 0 ? firstRemovedIndex - 1 : 0;
+        nextSelected.add(Math.min(nextIndex, next.length - 1));
+        node._no8dImageLoaderAnchor = [...nextSelected][0];
+        requestScrollToIndex(node, [...nextSelected][0]);
+    }
+    node._no8dImageLoaderSelected = nextSelected;
     setImageAndOutputRefs(node, next, []);
 }
 
@@ -530,6 +553,7 @@ function makeThumbItem(node, ref, index, size, selected) {
         if (event.detail > 1) return;
         const refs = parseRefs(node);
         const current = selectedSet(node);
+        item._no8dSelectionBeforeDoubleClick = new Set(current);
         let next = new Set();
         if (event.shiftKey && Number.isInteger(node._no8dImageLoaderAnchor)) {
             const start = Math.max(0, Math.min(node._no8dImageLoaderAnchor, index));
@@ -538,12 +562,11 @@ function makeThumbItem(node, ref, index, size, selected) {
             for (let itemIndex = start; itemIndex <= end; itemIndex += 1) next.add(itemIndex);
         } else if (event.ctrlKey || event.metaKey) {
             next = new Set(current);
-            if (next.has(index)) next.delete(index);
+            if (next.has(index) && next.size > 1) next.delete(index);
             else next.add(index);
             node._no8dImageLoaderAnchor = index;
         } else {
-            if (current.size === 1 && current.has(index)) next.delete(index);
-            else next.add(index);
+            next.add(index);
             node._no8dImageLoaderAnchor = index;
         }
         syncSelection(node, next);
@@ -551,6 +574,9 @@ function makeThumbItem(node, ref, index, size, selected) {
     item.addEventListener("dblclick", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        if (item._no8dSelectionBeforeDoubleClick instanceof Set) {
+            syncSelection(node, new Set(item._no8dSelectionBeforeDoubleClick));
+        }
         openOriginalImage(ref);
     });
 

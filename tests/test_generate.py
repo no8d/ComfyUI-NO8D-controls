@@ -101,7 +101,6 @@ class GenerateExpansionTests(unittest.TestCase):
             "seed": 1,
             "denoise": 1.0,
             "mask_feather": 50,
-            "auto_output": False,
             "prompt": {"2": {"inputs": {"images": ["1", 0]}}},
             "unique_id": "1",
         }
@@ -214,15 +213,107 @@ class GenerateExpansionTests(unittest.TestCase):
         self.assertNotIn("EmptyLatentImage", classes)
         self.assertNotIn("EmptyFlux2LatentImage", classes)
 
-    def test_plain_krea2_inpaint_does_not_apply_identity_reference_patch(self):
+    def test_disabled_krea_lora_record_does_not_misroute_klein_outpaint(self):
+        self.inputs["model"] = ["10", 0]
+        self.inputs["prompt"] = {
+            "10": {
+                "class_type": "NO8DLoraStack",
+                "inputs": {
+                    "unet_name": (
+                        "flux-2-klein-9b-int8-ConvRot-comfyui.safetensors"
+                    ),
+                    "lora_picker": "None",
+                    "stack_json": (
+                        '[{"name":"krea2_identity_edit_v1_2_r64.safetensors",'
+                        '"weight":1,"enabled":false}]'
+                    ),
+                },
+            },
+            "2": {"inputs": {"images": ["1", 0]}},
+        }
+
+        self.assertTrue(self.node._uses_flux2_klein_reference(
+            self.inputs["prompt"], self.inputs["model"],
+        ))
+        self.assertFalse(self.node._uses_krea2_model(
+            self.inputs["prompt"], self.inputs["model"],
+        ))
+        classes = self.expand_classes(
+            '{"base_image_file":"base.png","mask_image_file":"mask.png",'
+            '"mask_active":true,"outpaint_active":true,'
+            '"canvas_width":768,"canvas_height":768}'
+        )
+        self.assertIn("ReferenceLatent", classes)
+        self.assertNotIn("NO8DKrea2ReferenceModel", classes)
+        self.assertNotIn("EmptySD3LatentImage", classes)
+
+    def test_plain_krea2_inpaint_uses_native_edit_reference(self):
         self.use_krea2_model()
         classes = self.expand_classes(
             '{"base_image_file":"base.png","mask_image_file":"mask.png",'
             '"mask_active":true}'
         )
-        self.assertNotIn("NO8DKrea2ReferenceModel", classes)
-        self.assertEqual(classes.count("KSampler"), 1)
-        self.assertNotIn("NO8DConditionalKSampler", classes)
+        self.assertIn("NO8DKrea2ReferenceModel", classes)
+        self.assertNotIn("DifferentialDiffusion", classes)
+
+    def test_plain_krea2_outpaint_uses_native_edit_reference_and_soft_blends(self):
+        self.use_krea2_model()
+        classes = self.expand_classes(
+            '{"base_image_file":"base.png","mask_image_file":"mask.png",'
+            '"mask_active":true,"outpaint_active":true}'
+        )
+        self.assertIn("NO8DKrea2ReferenceModel", classes)
+        self.assertIn("VAEEncodeForInpaint", classes)
+        self.assertIn("SetLatentNoiseMask", classes)
+        self.assertNotIn("EmptySD3LatentImage", classes)
+        self.assertNotIn("DifferentialDiffusion", classes)
+        self.assertEqual(classes.count("ImageCompositeMasked"), 1)
+
+    def test_disabled_krea_edit_lora_does_not_disable_native_edit_reference(self):
+        self.inputs["model"] = ["10", 0]
+        self.inputs["prompt"] = {
+            "10": {
+                "class_type": "NO8DLoraStack",
+                "inputs": {
+                    "unet_name": "krea2_turbo_fp8.safetensors",
+                    "stack_json": (
+                        '[{"name":"future_krea_edit.safetensors",'
+                        '"weight":1,"enabled":false}]'
+                    ),
+                },
+            },
+            "2": {"inputs": {"images": ["1", 0]}},
+        }
+        classes = self.expand_classes(
+            '{"base_image_file":"base.png","mask_image_file":"mask.png",'
+            '"mask_active":true,"outpaint_active":true}'
+        )
+        self.assertIn("NO8DKrea2ReferenceModel", classes)
+        self.assertNotIn("DifferentialDiffusion", classes)
+
+    def test_any_enabled_krea_edit_lora_uses_source_patch(self):
+        self.inputs["model"] = ["10", 0]
+        self.inputs["prompt"] = {
+            "10": {
+                "class_type": "NO8DLoraStack",
+                "inputs": {
+                    "unet_name": "krea2_turbo_fp8.safetensors",
+                    "stack_json": (
+                        '[{"name":"future_krea_outpaint_v3.safetensors",'
+                        '"weight":0.8,"enabled":true}]'
+                    ),
+                },
+            },
+            "2": {"inputs": {"images": ["1", 0]}},
+        }
+        classes = self.expand_classes(
+            '{"base_image_file":"base.png","mask_image_file":"mask.png",'
+            '"mask_active":true,"outpaint_active":true}'
+        )
+        self.assertIn("NO8DKrea2ReferenceModel", classes)
+        self.assertIn("VAEEncodeForInpaint", classes)
+        self.assertIn("SetLatentNoiseMask", classes)
+        self.assertNotIn("EmptySD3LatentImage", classes)
 
     def test_krea2_identity_inpaint_uses_native_local_target(self):
         self.use_krea2_identity_model()
@@ -274,7 +365,7 @@ class GenerateExpansionTests(unittest.TestCase):
         self.assertNotIn("DifferentialDiffusion", classes)
         self.assertEqual(classes.count("ImageCompositeMasked"), 2)
 
-    def test_krea2_identity_outpaint_uses_one_empty_target_prediction(self):
+    def test_krea2_identity_outpaint_uses_one_local_target_prediction(self):
         self.use_krea2_identity_model()
         result = self.node.expand(
             canvas=(
@@ -300,28 +391,21 @@ class GenerateExpansionTests(unittest.TestCase):
         sampler = samplers[0]
         source_id = patch["inputs"]["source_latent"][0]
         self.assertEqual(expanded[source_id]["class_type"], "VAEEncode")
-        masked_reference_id = expanded[source_id]["inputs"]["pixels"][0]
-        masked_reference = expanded[masked_reference_id]
-        self.assertEqual(masked_reference["class_type"], "ImageCompositeMasked")
-        self.assertEqual(
-            expanded[masked_reference["inputs"]["source"][0]]["class_type"],
-            "EmptyImage",
-        )
-        self.assertEqual(
-            expanded[masked_reference["inputs"]["mask"][0]]["class_type"],
-            "LoadImageMask",
-        )
+        base_reference_id = expanded[source_id]["inputs"]["pixels"][0]
+        self.assertEqual(expanded[base_reference_id]["class_type"], "LoadImage")
         self.assertEqual(patch["inputs"]["ref_boost"], 1.0)
         self.assertNotIn("vae", patch["inputs"])
         self.assertNotIn("source_image", patch["inputs"])
         self.assertEqual(sampler["inputs"]["model"], [patch_id, 0])
         target_id = sampler["inputs"]["latent_image"][0]
-        self.assertEqual(expanded[target_id]["class_type"], "EmptySD3LatentImage")
+        self.assertEqual(expanded[target_id]["class_type"], "SetLatentNoiseMask")
+        cleared_id = expanded[target_id]["inputs"]["samples"][0]
+        self.assertEqual(expanded[cleared_id]["class_type"], "VAEEncodeForInpaint")
         self.assertEqual(sampler["inputs"]["denoise"], 1.0)
         classes = [node["class_type"] for node in nodes]
-        self.assertNotIn("VAEEncodeForInpaint", classes)
-        self.assertIn("EmptySD3LatentImage", classes)
-        self.assertNotIn("SetLatentNoiseMask", classes)
+        self.assertIn("VAEEncodeForInpaint", classes)
+        self.assertIn("SetLatentNoiseMask", classes)
+        self.assertNotIn("EmptySD3LatentImage", classes)
         self.assertNotIn("DifferentialDiffusion", classes)
         self.assertEqual(classes.count("ImageCompositeMasked"), 1)
 
@@ -356,20 +440,20 @@ class GenerateExpansionTests(unittest.TestCase):
             [node["inputs"]["text"] for node in grounded],
             [""],
         )
-        source_load_id = next(
+        grounded_source_id = next(
             node_id for node_id, node in expanded.items()
             if node["class_type"] == "LoadImage"
             and node["inputs"]["image"] == "source.png"
         )
         self.assertTrue(all(
-            node["inputs"]["image"] == [source_load_id, 0]
+            node["inputs"]["image"] == [grounded_source_id, 0]
             for node in grounded
         ))
         sampler = next(
             node for node in expanded.values() if node["class_type"] == "KSampler"
         )
         target_id = sampler["inputs"]["latent_image"][0]
-        self.assertEqual(expanded[target_id]["class_type"], "EmptySD3LatentImage")
+        self.assertEqual(expanded[target_id]["class_type"], "SetLatentNoiseMask")
         grounded_id = next(
             node_id for node_id, node in expanded.items()
             if node["class_type"] == "NO8DKrea2GroundedEncode"
@@ -525,7 +609,7 @@ class GenerateExpansionTests(unittest.TestCase):
             "LoadImageMask",
         )
 
-    def test_krea2_identity_outpaint_uses_canvas_reference_and_clean_grounding(self):
+    def test_krea2_identity_outpaint_uses_one_aligned_canvas_reference(self):
         self.use_krea2_identity_model()
         self.inputs["positive"] = ["12", 0]
         self.inputs["prompt"]["12"] = {
@@ -554,21 +638,15 @@ class GenerateExpansionTests(unittest.TestCase):
             if node["class_type"] == "LoadImage"
             and node["inputs"]["image"] == "base.png"
         )
+        source_load_id = next(
+            node_id for node_id, node in expanded.items()
+            if node["class_type"] == "LoadImage"
+            and node["inputs"]["image"] == "source.png"
+        )
         source_latent_id = patch["inputs"]["source_latent"][0]
-        masked_reference_id = expanded[source_latent_id]["inputs"]["pixels"][0]
-        masked_reference = expanded[masked_reference_id]
-        self.assertEqual(masked_reference["class_type"], "ImageCompositeMasked")
         self.assertEqual(
-            masked_reference["inputs"]["destination"],
+            expanded[source_latent_id]["inputs"]["pixels"],
             [base_load_id, 0],
-        )
-        self.assertEqual(
-            expanded[masked_reference["inputs"]["source"][0]]["class_type"],
-            "EmptyImage",
-        )
-        self.assertEqual(
-            expanded[masked_reference["inputs"]["mask"][0]]["class_type"],
-            "LoadImageMask",
         )
         self.assertEqual(patch["inputs"]["ref_boost"], 1.0)
         self.assertNotIn("vae", patch["inputs"])
@@ -578,19 +656,30 @@ class GenerateExpansionTests(unittest.TestCase):
             if node["class_type"] == "NO8DKrea2GroundedEncode"
         ]
         self.assertEqual(len(grounded), 1)
-        source_load_id = next(
-            node_id for node_id, node in expanded.items()
-            if node["class_type"] == "LoadImage"
-            and node["inputs"]["image"] == "source.png"
+        self.assertEqual(
+            grounded[0]["inputs"]["image"],
+            [source_load_id, 0],
         )
-        self.assertEqual(grounded[0]["inputs"]["image"], [source_load_id, 0])
         sampler = next(
             node for node in expanded.values()
             if node["class_type"] == "KSampler"
         )
         self.assertEqual(sampler["inputs"]["model"], [patch_id, 0])
         target_id = sampler["inputs"]["latent_image"][0]
-        self.assertEqual(expanded[target_id]["class_type"], "EmptySD3LatentImage")
+        self.assertEqual(expanded[target_id]["class_type"], "SetLatentNoiseMask")
+        local_target_id = expanded[target_id]["inputs"]["samples"][0]
+        self.assertEqual(
+            expanded[local_target_id]["class_type"],
+            "VAEEncodeForInpaint",
+        )
+        loaded_mask_id = next(
+            node_id for node_id, node in expanded.items()
+            if node["class_type"] == "LoadImageMask"
+        )
+        self.assertEqual(
+            expanded[target_id]["inputs"]["mask"],
+            [loaded_mask_id, 0],
+        )
         self.assertEqual(
             sum(
                 node["class_type"] == "ImageCompositeMasked"
@@ -808,6 +897,7 @@ class GenerateExpansionTests(unittest.TestCase):
         classes = [node["class_type"] for node in nodes]
         self.assertEqual(classes.count("VAEEncode"), 1)
         self.assertEqual(classes.count("ReferenceLatent"), 2)
+        self.assertEqual(classes.count("EmptyFlux2LatentImage"), 1)
         self.assertNotIn("VAEEncodeForInpaint", classes)
         self.assertNotIn("LatentBlend", classes)
         encodes = [
@@ -836,6 +926,7 @@ class GenerateExpansionTests(unittest.TestCase):
         classes = [node["class_type"] for node in nodes]
 
         self.assertEqual(classes.count("ReferenceLatent"), 2)
+        self.assertEqual(classes.count("EmptyFlux2LatentImage"), 1)
         self.assertNotIn("VAEEncodeForInpaint", classes)
         self.assertNotIn("LatentBlend", classes)
         encode_id = next(
@@ -845,7 +936,11 @@ class GenerateExpansionTests(unittest.TestCase):
         masked = next(
             node for node in nodes if node["class_type"] == "SetLatentNoiseMask"
         )
-        self.assertEqual(masked["inputs"]["samples"], [encode_id, 0])
+        target_id = next(
+            node_id for node_id, node in expanded.items()
+            if node["class_type"] == "EmptyFlux2LatentImage"
+        )
+        self.assertEqual(masked["inputs"]["samples"], [target_id, 0])
         references = [
             (node_id, node) for node_id, node in expanded.items()
             if node["class_type"] == "ReferenceLatent"
@@ -867,12 +962,13 @@ class GenerateExpansionTests(unittest.TestCase):
         )
         classes = [node["class_type"] for node in result["expand"].values()]
         self.assertEqual(classes.count("ReferenceLatent"), 2)
+        self.assertEqual(classes.count("EmptyFlux2LatentImage"), 1)
         self.assertNotIn("VAEEncodeForInpaint", classes)
         self.assertNotIn("ConditioningMultiply", classes)
         self.assertNotIn("ConditioningSetMask", classes)
         self.assertNotIn("ConditioningCombine", classes)
 
-    def test_klein_outpaint_reference_uses_composited_canvas_geometry(self):
+    def test_klein_outpaint_reference_uses_clean_source_and_empty_target(self):
         self.use_klein_model()
         result = self.node.expand(
             canvas=(
@@ -884,14 +980,24 @@ class GenerateExpansionTests(unittest.TestCase):
         )
         expanded = result["expand"]
         nodes = list(expanded.values())
-        loads = [node for node in nodes if node["class_type"] == "LoadImage"]
-        self.assertEqual([node["inputs"]["image"] for node in loads], ["base.png"])
+        loads = [
+            (node_id, node) for node_id, node in expanded.items()
+            if node["class_type"] == "LoadImage"
+        ]
+        self.assertEqual(
+            [node["inputs"]["image"] for _, node in loads],
+            ["base.png", "source.png"],
+        )
+        source_load_id = next(
+            node_id for node_id, node in loads
+            if node["inputs"]["image"] == "source.png"
+        )
         encodes = [
             (node_id, node) for node_id, node in expanded.items()
             if node["class_type"] == "VAEEncode"
         ]
         self.assertEqual(len(encodes), 1)
-        self.assertEqual(encodes[0][1]["inputs"]["pixels"], ["2", 0])
+        self.assertEqual(encodes[0][1]["inputs"]["pixels"], [source_load_id, 0])
         references = [
             node for node in nodes if node["class_type"] == "ReferenceLatent"
         ]
@@ -902,7 +1008,14 @@ class GenerateExpansionTests(unittest.TestCase):
         masked = next(
             node for node in nodes if node["class_type"] == "SetLatentNoiseMask"
         )
-        self.assertEqual(masked["inputs"]["samples"], [encodes[0][0], 0])
+        target_id = next(
+            node_id for node_id, node in expanded.items()
+            if node["class_type"] == "EmptyFlux2LatentImage"
+        )
+        self.assertEqual(masked["inputs"]["samples"], [target_id, 0])
+        target = expanded[target_id]
+        self.assertEqual(target["inputs"]["width"], 1536)
+        self.assertEqual(target["inputs"]["height"], 1024)
 
     def test_klein_multi_side_outpaint_uses_one_coherent_reference_pass(self):
         self.use_klein_model()
@@ -920,6 +1033,7 @@ class GenerateExpansionTests(unittest.TestCase):
         self.assertEqual(classes.count("KSampler"), 1)
         self.assertEqual(classes.count("VAEEncode"), 1)
         self.assertEqual(classes.count("ReferenceLatent"), 2)
+        self.assertEqual(classes.count("EmptyFlux2LatentImage"), 1)
         self.assertNotIn("VAEEncodeForInpaint", classes)
         self.assertNotIn("ConditioningMultiply", classes)
 
@@ -1075,9 +1189,9 @@ class GenerateExpansionTests(unittest.TestCase):
         source = (
             pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
         ).read_text(encoding="utf-8")
-        self.assertIn("OUTPAINT_FEATHER_MAX_CANVAS_FRACTION = 0.1", source)
-        self.assertIn("sourceShortSide * 0.15", source)
-        self.assertIn("MASK_RENDER_VERSION = 3", source)
+        self.assertIn("OUTPAINT_FEATHER_MAX_CANVAS_FRACTION = 0.2", source)
+        self.assertIn("sourceShortSide * 0.3", source)
+        self.assertIn("MASK_RENDER_VERSION = 5", source)
         self.assertIn("state.mask_render_version", source)
         self.assertNotIn(
             "this.getFeatherWidth(Math.min(transform.width, transform.height) / 2)",
@@ -1088,9 +1202,12 @@ class GenerateExpansionTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "? 1 + feather * 2 / sourceShortSide",
+            "const execution = this.renderExecutionMask();",
             source,
         )
+        self.assertIn("makeOutpaintPreviewMask(width, height)", source)
+        self.assertIn("strength >= 254", source)
+        self.assertIn("strength > 0", source)
 
     def test_outpaint_execution_mask_avoids_full_canvas_pixel_loops(self):
         source = (
@@ -1099,6 +1216,22 @@ class GenerateExpansionTests(unittest.TestCase):
         self.assertNotIn("ctx.createImageData(width, height)", source)
         self.assertIn(
             "step <= EXECUTION_MASK_GRADIENT_STEPS",
+            source,
+        )
+        self.assertIn(
+            "progress * progress * (3 - 2 * progress)",
+            source,
+        )
+        self.assertIn(
+            "outpaintFeatherInsets(transform, amount)",
+            source,
+        )
+        self.assertIn(
+            "top: transform.y > 0 ? amount : 0",
+            source,
+        )
+        self.assertIn(
+            "bottom: bottom < this.canvasHeight ? amount : 0",
             source,
         )
 
@@ -1185,13 +1318,45 @@ class GenerateExpansionTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            'const enabled = action === "reset"\n'
+            'const enabled = interactionEnabled && (action === "reset"\n'
             "                ? Boolean(this.editCheckpoint || this.imageHistory.length > 1)\n"
-            "                : editingImageAvailable;",
+            "                : editingImageAvailable);",
             source,
         )
         self.assertNotIn(
             'const enabled = action !== "transform"',
+            source,
+        )
+
+    def test_canvas_tools_are_disabled_while_execution_is_running(self):
+        source = (
+            pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("function setAllGenerateExecutionActive(active)", source)
+        self.assertIn("setExecutionActive(active)", source)
+        self.assertIn("const interactionEnabled = !this.executionActive;", source)
+        self.assertIn(
+            'api.addEventListener("execution_start", () => setAllGenerateExecutionActive(true));',
+            source,
+        )
+        self.assertIn(
+            '["execution_success", "execution_error", "execution_interrupted"]',
+            source,
+        )
+        self.assertIn("const detail = event?.detail ?? event;", source)
+        self.assertIn(
+            "if (detail?.node != null) setAllGenerateExecutionActive(true);",
+            source,
+        )
+        self.assertNotIn(
+            "setAllGenerateExecutionActive(detail?.node != null);",
+            source,
+        )
+        self.assertIn(
+            "if (this.executionActive) {\n"
+            "            this.clearHover();\n"
+            "            return pointInRect(nodePos, this.rect);",
             source,
         )
 
@@ -1221,6 +1386,7 @@ class GenerateExpansionTests(unittest.TestCase):
         self.assertIn("clearOutpaintMode() {", source)
         self.assertIn(
             "if (activating) {\n"
+            "            this.disableAutoOutputForEditing();\n"
             "            this.acceptCurrentResultAsEditingBase();\n"
             "            this.clearInpaintMode();",
             source,
@@ -1345,7 +1511,7 @@ class GenerateExpansionTests(unittest.TestCase):
         begin_body = source[begin:update]
         self.assertNotIn("acceptCurrentResultAsEditingBase()", begin_body)
         self.assertIn(
-            "if (this.outpaintResultVisible || !this.transformActive "
+            "if (this.executionActive || this.outpaintResultVisible || !this.transformActive "
             "|| !this.contentRect) return false;",
             begin_body,
         )
@@ -1356,7 +1522,7 @@ class GenerateExpansionTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "if (!this.transformActive || this.outpaintResultVisible "
+            "if (this.executionActive || !this.transformActive || this.outpaintResultVisible "
             "|| !this.contentRect) return;",
             source,
         )
@@ -1409,6 +1575,23 @@ class GenerateExpansionTests(unittest.TestCase):
         self.assertIn("this.image.naturalWidth,", source)
         self.assertIn("this.image.naturalHeight,", source)
         self.assertIn("ctx.drawImage(this.previewImage || this.image, ...this.contentRect);", source)
+
+    def test_outpaint_ratio_change_contains_the_complete_source_image(self):
+        source = (
+            pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
+        ).read_text(encoding="utf-8")
+        start = source.index("    fitImageTransformToCanvas() {")
+        end = source.index("\n    syncCanvasToImageSize(", start)
+        method = source[start:end]
+
+        self.assertIn(
+            "const scale = Math.min(\n"
+            "            this.canvasWidth / imageWidth,\n"
+            "            this.canvasHeight / imageHeight,",
+            method,
+        )
+        self.assertNotIn("imageWidth > imageHeight", method)
+        self.assertNotIn("imageHeight > imageWidth", method)
 
     def test_frontend_accepts_internal_preview_from_node_callback_and_event(self):
         source = (
@@ -1538,26 +1721,22 @@ class GenerateExpansionTests(unittest.TestCase):
             ],
         )
 
-    def test_auto_output_is_off_by_default_and_blocks_downstream(self):
+    def test_auto_output_is_not_a_backend_generation_input(self):
         inputs = self.node.INPUT_TYPES()["required"]
-        self.assertFalse(inputs["auto_output"][1]["default"])
+        self.assertNotIn("auto_output", inputs)
 
-        result = self.node.expand(canvas="{}", **self.inputs)
-
-        self.assertIsInstance(result["result"][0], _ExecutionBlocker)
-        self.assertIsNone(result["result"][0].message)
-        self.assertIn(
-            "PreviewImage",
-            [node["class_type"] for node in result["expand"].values()],
-        )
-
-    def test_auto_output_on_passes_the_generated_image_downstream(self):
-        self.inputs["auto_output"] = True
-
+    def test_linked_generated_image_passes_downstream(self):
         result = self.node.expand(canvas="{}", **self.inputs)
 
         self.assertIsInstance(result["result"][0], list)
-        self.assertNotIsInstance(result["result"][0], _ExecutionBlocker)
+
+    def test_unlinked_generated_image_keeps_the_same_result_shape(self):
+        self.inputs["prompt"] = {
+            "2": {"class_type": "PreviewImage", "inputs": {"images": ["other", 0]}}
+        }
+        result = self.node.expand(canvas="{}", **self.inputs)
+
+        self.assertIsInstance(result["result"][0], list)
 
     def test_manual_output_loads_the_approved_image_without_sampling(self):
         result = self.node.expand(
@@ -1578,7 +1757,26 @@ class GenerateExpansionTests(unittest.TestCase):
             pathlib.Path(__file__).resolve().parents[1] / "web" / "generate.js"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('findWidget(node, "auto_output")', source)
+        self.assertIn('const AUTO_OUTPUT_PROPERTY = "no8d_generate_auto_output";', source)
+        self.assertIn("function installGenerateQueueFilter()", source)
+        self.assertIn("function canonicalizeGenerateExecutionInputs(promptNode)", source)
+        self.assertIn(
+            'if (!state.mask_active) {',
+            source,
+        )
+        self.assertIn('inputs.canvas = "{}";', source)
+        self.assertIn("inputs.mask_feather = 50;", source)
+        self.assertIn("const executionState = {", source)
+        self.assertIn("mask_active: true,", source)
+        self.assertNotIn("mask_opacity: state.mask_opacity", source)
+        self.assertNotIn("mask_color: state.mask_color", source)
+        self.assertIn(
+            "canonicalizeGenerateExecutionInputs(output[String(nodeId)]);",
+            source,
+        )
+        self.assertIn("delete output[String(downstreamId)]", source)
+        self.assertIn("manualOutputQueueNodes.add(nodeId);", source)
+        self.assertNotIn("generateNode.inputs.auto_output", source)
         self.assertIn('autoOutput.textContent = "⇥";', source)
         self.assertIn('autoOutput.setAttribute("aria-pressed", String(autoEnabled));', source)
         self.assertIn(
@@ -1591,10 +1789,32 @@ class GenerateExpansionTests(unittest.TestCase):
             source,
         )
         self.assertIn('this.buttons.push({ action: "publish"', source)
+        self.assertIn("this.publishReady = false;", source)
+        self.assertIn("if (!options.fromHistory) this.publishReady = true;", source)
+        self.assertIn("this.disableAutoOutputForEditing();", source)
+        self.assertIn(
+            "const publishEnabled = interactionEnabled\n"
+            "            && !generateAutoOutputEnabled(this.node)\n"
+            "            && this.publishReady\n"
+            "            && editingImageAvailable",
+            source,
+        )
         self.assertIn('ctx.fillStyle = publishEnabled ? "#2563eb" : "#303030";', source)
         self.assertIn('`${this.canvasWidth} × ${this.canvasHeight}  ⇥`', source)
         self.assertIn("async publishCurrentImage()", source)
-        self.assertIn("state.manual_output_file = filename;", source)
+        self.assertIn("function routePublishedImageAroundGenerate(", source)
+        self.assertIn('class_type: "LoadImage"', source)
+        self.assertNotIn("delete output[sourceNodeId];", source)
+        self.assertIn(
+            ".filter((downstreamId) => String(downstreamId) !== nodeId);",
+            source,
+        )
+        self.assertIn(
+            'throw new Error("NO8D-Generate has no downstream node to publish to")',
+            source,
+        )
+        self.assertNotIn("state.manual_output_file = filename;", source)
+        self.assertNotIn("state.manual_output_seq = Date.now();", source)
         self.assertIn("partialExecutionTargets: downstreamNodeIds", source)
 
     def test_default_mask_color_is_cyan(self):
@@ -1623,7 +1843,12 @@ class GenerateExpansionTests(unittest.TestCase):
         self.assertIn('"border-radius:5px", "cursor:pointer"', source)
         self.assertIn("border-radius:0;padding:2px 7px", source)
         self.assertIn('control.style.setProperty("border-radius", "0", "important");', source)
-        self.assertIn('"background:rgba(0,0,0,.8)"', source)
+        self.assertIn(
+            '"display:flex", "align-items:center", '
+            '"justify-content:space-between", "gap:0"',
+            source,
+        )
+        self.assertIn('"background:transparent", "border:0", "border-radius:0"', source)
         self.assertIn('"border:1px solid #555", "border-radius:6px"', source)
 
     def test_active_inpaint_and_outpaint_editors_reopen_on_hover(self):

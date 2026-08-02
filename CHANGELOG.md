@@ -6,6 +6,22 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-08-02
+
+### Added
+
+- Added `NO8D-Match Krea2 Reference Latents` to align Ostris Krea2 reference-latent grids with a target latent.
+
+### Changed
+
+- Updated `NO8D-Generate` reference routing, local inpaint/outpaint construction, canvas interaction, and downstream output handling.
+- Updated `NO8D-Load-images` selection behavior so a loaded image remains selected while browsing, deleting, or opening originals.
+
+### Fixed
+
+- Prevented disabled Krea2 Edit LoRAs from disabling native Krea2 reference conditioning or misrouting Flux2 Klein edits.
+- Kept Krea2 outpaint references aligned to the local edit canvas and preserved the complete source image when changing canvas ratios.
+
 ## [1.3.2] - 2026-08-01
 
 ### Changed
