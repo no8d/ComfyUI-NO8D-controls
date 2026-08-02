@@ -5,7 +5,6 @@ import math
 
 import comfy.samplers
 import torch.nn.functional as F
-from comfy_execution.graph import ExecutionBlocker
 from comfy_execution.graph_utils import GraphBuilder
 
 OUTPAINT_PROMPT_STRENGTH = 0.35
@@ -57,10 +56,6 @@ class NO8DGenerate:
                 "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
                 "mask_feather": ("INT", {"default": 50, "min": 0, "max": 100, "step": 1}),
                 "canvas": ("NO8D_GENERATE_CANVAS",),
-                "auto_output": (
-                    "BOOLEAN",
-                    {"default": False, "label_on": "on", "label_off": "off"},
-                ),
             },
             "optional": {"negative": ("CONDITIONING",)},
             "hidden": {
@@ -89,13 +84,11 @@ class NO8DGenerate:
         denoise,
         mask_feather,
         canvas,
-        auto_output=False,
         negative=None,
         prompt=None,
         unique_id=None,
     ):
         graph = GraphBuilder()
-        linked_outputs = self._linked_outputs(prompt, unique_id)
 
         try:
             canvas_state = json.loads(canvas) if canvas else {}
@@ -110,18 +103,16 @@ class NO8DGenerate:
         canvas_width = self._canvas_dimension(canvas_state.get("canvas_width"), 1024)
         canvas_height = self._canvas_dimension(canvas_state.get("canvas_height"), 1024)
         use_klein_reference = self._uses_flux2_klein_reference(prompt, model)
-        use_krea2_reference = self._uses_krea2_model(
-            prompt, model,
-        ) and self._model_branch_contains(
-            prompt, model, "identityedit",
-        )
+        uses_krea2_model = self._uses_krea2_model(prompt, model)
+        # Krea2 editing always uses its native source-patch and grounded-image
+        # conditioning. LoRAs may improve edit fidelity, but they must not
+        # decide whether the source image reaches the model at all.
+        use_krea2_reference = uses_krea2_model
 
         if manual_output_file:
             published = graph.node("LoadImage", image=manual_output_file)
             return {
-                "result": (
-                    published.out(0) if 0 in linked_outputs else None,
-                ),
+                "result": (published.out(0),),
                 "expand": graph.finalize(),
             }
 
@@ -130,7 +121,6 @@ class NO8DGenerate:
                 "NO8D-Generate: the painted mask was not saved before execution. "
                 "Please wait for the mask upload to finish and run the workflow again."
             )
-
         if negative is None:
             negative_node = graph.node("ConditioningZeroOut", conditioning=positive)
             negative = negative_node.out(0)
@@ -148,32 +138,35 @@ class NO8DGenerate:
             sample_mask = mask.out(0)
             grounding_image = encode_image
             spatial_reference_image = encode_image
-            # Krea2 Identity Edit supplies its own source-reference patch.
-            # Keep Differential Diffusion off this branch; local edits use
-            # ComfyUI's native latent noise mask on the current canvas instead.
-            if not use_krea2_reference:
+            # Edit-model reference branches have their own native target
+            # latent. Differential Diffusion belongs only to the generic
+            # masked-sampling path.
+            if not use_krea2_reference and not use_klein_reference:
                 differential = graph.node(
                     "DifferentialDiffusion", model=model, strength=1.0,
                 )
                 sample_model = differential.out(0)
             output_mask = mask.out(0)
-            if use_krea2_reference:
-                if source_image_file:
-                    source = graph.node("LoadImage", image=source_image_file)
+            if (uses_krea2_model or use_klein_reference) and source_image_file:
+                source = graph.node("LoadImage", image=source_image_file)
+                if uses_krea2_model:
                     grounding_image = source.out(0)
+                if use_klein_reference:
+                    # Klein's native ReferenceLatent is the clean source image,
+                    # not the transformed target canvas with empty borders.
+                    spatial_reference_image = source.out(0)
+            if use_krea2_reference:
                 if outpaint_active:
-                    # Fade the clean source patch through the same continuous
-                    # mask shown by the canvas. Krea2 still predicts one full
-                    # target frame, but feather now weakens source conditioning
-                    # near the expansion boundary instead of alpha-blending two
-                    # independently aligned RGB images.
-                    spatial_reference_image = self._masked_reference_image(
-                        graph,
-                        encode_image,
-                        sample_mask,
-                        canvas_width,
-                        canvas_height,
-                    )
+                    # The source-patch branch needs the expanded canvas so its
+                    # tokens retain the exact placement used by outpaint.
+                    # Grounded Encode is semantic rather than spatial: keep
+                    # the intact pre-transform source selected above when it
+                    # exists. Feeding the mostly-empty expanded canvas to both
+                    # branches dilutes the visual reference as the outpaint
+                    # area grows and makes large expansions drift away from
+                    # the original scene. This split matches the established
+                    # Krea2 Edit outpaint graph.
+                    spatial_reference_image = encode_image
                 else:
                     # An intact Identity Edit source tells the model to
                     # reconstruct the same masked content. Remove that content
@@ -203,6 +196,7 @@ class NO8DGenerate:
                     # simply reconstructs the old pixels despite a cleared
                     # local target.
                     grounding_image = spatial_reference_image
+            if uses_krea2_model:
                 grounded = self._krea2_grounded_conditioning(
                     graph,
                     prompt,
@@ -237,23 +231,24 @@ class NO8DGenerate:
                     use_krea2_reference=use_krea2_reference,
                     reference_pixels=spatial_reference_image,
                     krea2_ref_boost=1.0,
-                    # Match Krea2 Edit's trained outpaint graph: the expanded
-                    # canvas is the clean frame-1 source patch while frame 0
-                    # starts from an independent empty target latent. The
-                    # native pixel mask below restores the untouched source
-                    # and blends only the transition band.
-                    krea2_local_target=False,
+                    # Keep Krea2's source patch, but sample the target through
+                    # ComfyUI's native local-edit latent. An independent empty
+                    # target lets the model reinterpret the whole composition
+                    # and commonly enlarges the subject outside the preserved
+                    # source rectangle. Clearing only the masked outpaint area
+                    # keeps generated pixels in the source coordinate system.
+                    krea2_local_target=True,
                     krea2_preserve_target=False,
-                    krea2_source_latent_only=use_krea2_reference,
+                    # The aligned expanded-canvas latent is the same source
+                    # patch accepted by Krea2 Edit Model Patch. Avoid a second
+                    # raw-pixel fitting path that can choose a different scale.
+                    krea2_source_latent_only=True,
                 )
-                if use_krea2_reference:
-                    # Krea2 Identity Edit predicts one coherent target frame
-                    # from the expanded source patch. Pixel-compositing the
-                    # original back over that prediction makes displaced
-                    # structures (table edges, limbs, clothing) appear twice
-                    # across the feather band. Keep the trained workflow's
-                    # single decoded frame as the result.
-                    output_mask = None
+                # Keep output_mask active for every model family. The generated
+                # Krea2 frame supplies the empty region, while the original
+                # canvas remains authoritative in the untouched area. The same
+                # continuous mask used for source conditioning performs the
+                # final inward feather instead of creating a hard RGB seam.
             elif inpaint_crop is not None:
                 generated_image = self._sample_cropped_inpaint(
                     graph=graph,
@@ -274,7 +269,7 @@ class NO8DGenerate:
                     use_krea2_reference=use_krea2_reference,
                 )
                 output_mask = None
-            elif use_krea2_reference:
+            elif use_krea2_reference or use_klein_reference:
                 generated_image = self._sample_resized_region(
                     graph=graph,
                     pixels=encode_image,
@@ -291,8 +286,8 @@ class NO8DGenerate:
                     scheduler=scheduler,
                     seed=seed,
                     denoise=denoise,
-                    use_reference=False,
-                    use_krea2_reference=True,
+                    use_reference=use_klein_reference,
+                    use_krea2_reference=use_krea2_reference,
                     reference_pixels=spatial_reference_image,
                     krea2_ref_boost=1.0,
                     # Inpaint needs stricter spatial continuity than Outpaint:
@@ -305,28 +300,21 @@ class NO8DGenerate:
                 )
             else:
                 encoded = graph.node("VAEEncode", pixels=encode_image, vae=vae)
-                if use_klein_reference:
-                    sample_positive, sample_negative = self._reference_conditioning(
-                        graph, positive, negative, encoded.out(0),
-                    )
-                    masked_samples = encoded.out(0)
-                else:
-                    core_mask = graph.node("ThresholdMask", mask=sample_mask, value=0.99)
-                    inpaint_encoded = graph.node(
-                        "VAEEncodeForInpaint",
-                        pixels=encode_image,
-                        vae=vae,
-                        mask=core_mask.out(0),
-                        grow_mask_by=6,
-                    )
-                    masked_samples = inpaint_encoded.out(0)
-                    blended = graph.node(
-                        "LatentBlend",
-                        samples1=encoded.out(0),
-                        samples2=inpaint_encoded.out(0),
-                        blend_factor=self._original_latent_blend(denoise),
-                    )
-                    masked_samples = blended.out(0)
+                core_mask = graph.node("ThresholdMask", mask=sample_mask, value=0.99)
+                inpaint_encoded = graph.node(
+                    "VAEEncodeForInpaint",
+                    pixels=encode_image,
+                    vae=vae,
+                    mask=core_mask.out(0),
+                    grow_mask_by=6,
+                )
+                blended = graph.node(
+                    "LatentBlend",
+                    samples1=encoded.out(0),
+                    samples2=inpaint_encoded.out(0),
+                    blend_factor=self._original_latent_blend(denoise),
+                )
+                masked_samples = blended.out(0)
                 masked_latent = graph.node(
                     "SetLatentNoiseMask",
                     samples=masked_samples,
@@ -388,12 +376,11 @@ class NO8DGenerate:
         graph.node("PreviewImage", images=final_image)
 
         return {
-            "result": (
-                final_image
-                if auto_output and 0 in linked_outputs
-                else ExecutionBlocker(None) if 0 in linked_outputs
-                else None,
-            ),
+            # Keep this node's result independent from whether a downstream
+            # node is present in the queued prompt. The frontend may suppress
+            # downstream nodes while automatic output is disabled, but that
+            # must not change this node's expansion or invalidate its cache.
+            "result": (final_image,),
             "expand": graph.finalize(),
         }
 
@@ -717,9 +704,24 @@ class NO8DGenerate:
                 "VAEEncode", pixels=reference_pixels, vae=vae,
             )
         if use_reference:
-            encoded = graph.node("VAEEncode", pixels=pixels, vae=vae)
+            # Match ComfyUI's official Flux.2 Klein edit graph: the encoded
+            # source is conditioning only, while sampling starts from a
+            # separate empty Flux.2 target latent at the requested output
+            # dimensions. Encoding an expanded black canvas as the target
+            # causes those black borders to be reconstructed unchanged.
+            reference_encoded = graph.node(
+                "VAEEncode",
+                pixels=reference_pixels if reference_pixels is not None else pixels,
+                vae=vae,
+            )
             positive, negative = NO8DGenerate._reference_conditioning(
-                graph, positive, negative, encoded.out(0),
+                graph, positive, negative, reference_encoded.out(0),
+            )
+            encoded = graph.node(
+                "EmptyFlux2LatentImage",
+                width=int(target_width),
+                height=int(target_height),
+                batch_size=1,
             )
         elif use_krea2_reference and krea2_preserve_target:
             encoded = graph.node("VAEEncode", pixels=pixels, vae=vae)
@@ -782,7 +784,7 @@ class NO8DGenerate:
             latent = graph.node(
                 "SetLatentNoiseMask", samples=samples, mask=mask,
             ).out(0)
-            sample_denoise = 1.0 if use_krea2_reference else denoise
+            sample_denoise = 1.0 if (use_reference or use_krea2_reference) else denoise
         sampler = graph.node(
             "KSampler",
             model=model,
@@ -897,57 +899,43 @@ class NO8DGenerate:
 
     @staticmethod
     def _uses_flux2_klein_reference(prompt, model):
-        """Detect Klein from the model's upstream API-prompt branch only."""
-        if not isinstance(prompt, dict):
-            return False
-        if not isinstance(model, (list, tuple)) or len(model) != 2:
-            return False
-
-        pending = [str(model[0])]
-        visited = set()
-        while pending:
-            node_id = pending.pop()
-            if node_id in visited:
-                continue
-            visited.add(node_id)
-            node = prompt.get(node_id)
-            if node is None:
-                try:
-                    node = prompt.get(int(node_id))
-                except (TypeError, ValueError):
-                    node = None
-            if not isinstance(node, dict):
-                continue
-
-            compact = "".join(
-                character for character in json.dumps(
-                    node, ensure_ascii=True, sort_keys=True, default=str,
-                ).lower()
-                if character.isalnum()
-            )
-            if "flux2klein" in compact:
-                return True
-
-            for value in (node.get("inputs") or {}).values():
-                if isinstance(value, (list, tuple)) and len(value) == 2:
-                    upstream_id = str(value[0])
-                    if upstream_id not in visited:
-                        pending.append(upstream_id)
-        return False
+        """Detect Klein from active model-loader fields, not saved UI state."""
+        return NO8DGenerate._model_loader_branch_contains(
+            prompt, model, "flux2klein",
+        )
 
     @staticmethod
     def _uses_krea2_model(prompt, model):
-        """Detect Krea2 only on the MODEL input's upstream prompt branch."""
-        return NO8DGenerate._model_branch_contains(prompt, model, "krea2")
+        """Detect Krea2 from active model-loader fields, not LoRA history."""
+        return NO8DGenerate._model_loader_branch_contains(
+            prompt, model, "krea2",
+        )
 
     @staticmethod
-    def _model_branch_contains(prompt, model, marker):
+    def _model_loader_branch_contains(prompt, model, marker):
+        """Search only fields that select the base diffusion architecture.
+
+        UI nodes may serialize disabled LoRAs, picker history, titles, and other
+        inactive text into the API prompt. Searching the whole node JSON makes
+        a Klein loader look like Krea2 merely because a disabled Krea2 LoRA is
+        still listed in its stack. Model-family routing must follow the active
+        UNet/checkpoint filename instead.
+        """
         if not isinstance(prompt, dict):
             return False
         if not isinstance(model, (list, tuple)) or len(model) != 2:
             return False
 
         marker = "".join(character for character in marker.lower() if character.isalnum())
+        model_name_keys = {
+            "unetname",
+            "ckptname",
+            "checkpointname",
+            "modelname",
+            "modelpath",
+            "diffusionmodel",
+            "diffusionmodelname",
+        }
         pending = [str(model[0])]
         visited = set()
         while pending:
@@ -964,16 +952,26 @@ class NO8DGenerate:
             if not isinstance(node, dict):
                 continue
 
-            compact = "".join(
-                character for character in json.dumps(
-                    node, ensure_ascii=True, sort_keys=True, default=str,
-                ).lower()
+            class_type = str(node.get("class_type") or "")
+            compact_class = "".join(
+                character for character in class_type.lower()
                 if character.isalnum()
             )
-            if marker in compact:
+            if marker in compact_class and "loader" in compact_class:
                 return True
 
-            for value in (node.get("inputs") or {}).values():
+            for key, value in (node.get("inputs") or {}).items():
+                compact_key = "".join(
+                    character for character in str(key).lower()
+                    if character.isalnum()
+                )
+                if compact_key in model_name_keys and isinstance(value, str):
+                    compact_value = "".join(
+                        character for character in value.lower()
+                        if character.isalnum()
+                    )
+                    if marker in compact_value:
+                        return True
                 if isinstance(value, (list, tuple)) and len(value) == 2:
                     upstream_id = str(value[0])
                     if upstream_id not in visited:
@@ -1050,25 +1048,6 @@ class NO8DGenerate:
         if not isinstance(text, (str, list, tuple)):
             return None
         return {"clip": clip, "text": text}
-
-    @staticmethod
-    def _linked_outputs(prompt, unique_id):
-        if not isinstance(prompt, dict) or unique_id is None:
-            return set()
-        node_key = str(unique_id)
-        linked = set()
-        for node in prompt.values():
-            if not isinstance(node, dict):
-                continue
-            for value in (node.get("inputs") or {}).values():
-                if (
-                    isinstance(value, (list, tuple))
-                    and len(value) == 2
-                    and str(value[0]) == node_key
-                    and isinstance(value[1], int)
-                ):
-                    linked.add(value[1])
-        return linked
 
 NODE_CLASS_MAPPINGS = {
     "NO8DGenerate": NO8DGenerate,
