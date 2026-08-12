@@ -60,6 +60,29 @@ class KreaStyleSelectorTests(unittest.TestCase):
         self.assertIn('guideLink.target = "_blank"', source)
         self.assertIn('guideLink.rel = "noopener noreferrer"', source)
 
+    def test_pagination_uses_the_visible_library_instead_of_the_selected_cards_source_library(self):
+        source = WEB_MODULE_PATH.read_text(encoding="utf-8")
+        self.assertIn(
+            "return filteredItems(node, catalog, node._no8dKreaLibrary);",
+            source,
+        )
+        self.assertGreaterEqual(source.count("currentLibraryItems(node, catalog)"), 3)
+        self.assertNotIn(
+            "selected?.library || node._no8dKreaLibrary",
+            source,
+        )
+        self.assertIn("node._no8dKreaStylePage ?? selectedPage", source)
+        self.assertIn("selectPage(node, visiblePage + 1, 1, visibleLocal)", source)
+        self.assertIn("selectPage(node, visiblePage - 1, -1, visibleLocal)", source)
+        self.assertIn(
+            "const cursorName = node._no8dKreaCursorName || styleWidget.value;",
+            source,
+        )
+        self.assertIn(
+            "item.name === node._no8dKreaCursorName ? \" selected\"",
+            source,
+        )
+
     def test_no_library_is_loaded_at_import_time(self):
         self.assertEqual(module._STYLES, ())
 
