@@ -192,6 +192,7 @@ function syncSearchQuery(node) {
 function selectOnly(node, name) {
     node._no8dKreaSelection = name ? new Set([name]) : new Set();
     node._no8dKreaSelectionAnchor = name || null;
+    node._no8dKreaCursorName = name || null;
     node._no8dKreaSelectionCleared = !name;
     syncSelectedStyles(node);
 }
@@ -436,6 +437,10 @@ function filteredItems(node, catalog, library) {
         .some((value) => normalizeSearch(value).includes(query)));
 }
 
+function currentLibraryItems(node, catalog = node._no8dKreaStyleCatalog) {
+    return filteredItems(node, catalog, node._no8dKreaLibrary);
+}
+
 function isRecordLibrary(node, library = node._no8dKreaLibrary) {
     return Boolean(node._no8dKreaStyleCatalog?.virtual_libraries?.includes(library));
 }
@@ -450,8 +455,7 @@ async function refreshCatalog(node, selectName = null, { preservePage = false } 
     const styleWidget = findWidget(node, "style");
     if (selectName) {
         setWidgetValue(styleWidget, selectName);
-        const selected = node._no8dKreaStyleCatalog.styles.find((item) => item.name === selectName);
-        const items = filteredItems(node, node._no8dKreaStyleCatalog, selected?.library || node._no8dKreaLibrary);
+        const items = currentLibraryItems(node);
         const index = items.findIndex((item) => item.name === selectName);
         node._no8dKreaStylePage = index >= 0 ? Math.floor(index / PAGE_SIZE) : 0;
     } else if (!preservePage) {
@@ -627,7 +631,7 @@ function openCardContextMenu(node, item, event, viewLibrary = node._no8dKreaLibr
 }
 
 function currentPageItems(node) {
-    const items = filteredItems(node, node._no8dKreaStyleCatalog, node._no8dKreaLibrary);
+    const items = currentLibraryItems(node);
     const page = Math.max(0, node._no8dKreaStylePage || 0);
     return items.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 }
@@ -1331,8 +1335,7 @@ async function showPage(node, nextPage, direction) {
 function selectPage(node, page, direction, localIndex = 0) {
     const catalog = node._no8dKreaStyleCatalog;
     const styleWidget = findWidget(node, "style");
-    const selected = catalog.styles.find((item) => item.name === styleWidget.value);
-    const items = filteredItems(node, catalog, selected?.library || node._no8dKreaLibrary);
+    const items = currentLibraryItems(node, catalog);
     const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
     const targetPage = Math.max(0, Math.min(page, pageCount - 1));
     const target = items[Math.min(targetPage * PAGE_SIZE + localIndex, items.length - 1)];
@@ -1352,9 +1355,9 @@ function handleGalleryKey(node, event) {
     const catalog = node._no8dKreaStyleCatalog;
     const styleWidget = findWidget(node, "style");
     if (!catalog || !styleWidget) return;
-    const selected = catalog.styles.find((item) => item.name === styleWidget.value);
-    const items = filteredItems(node, catalog, selected?.library || node._no8dKreaLibrary);
-    const index = items.findIndex((item) => item.name === styleWidget.value);
+    const items = currentLibraryItems(node, catalog);
+    const cursorName = node._no8dKreaCursorName || styleWidget.value;
+    const index = items.findIndex((item) => item.name === cursorName);
     if (index < 0) {
         if (items.length) {
             const target = event.key === "End" ? items.at(-1) : items[0];
@@ -1369,9 +1372,11 @@ function handleGalleryKey(node, event) {
         event.stopPropagation();
         return;
     }
-    const page = Math.floor(index / PAGE_SIZE);
+    const selectedPage = Math.floor(index / PAGE_SIZE);
     const local = index % PAGE_SIZE;
     const pageCount = Math.ceil(items.length / PAGE_SIZE);
+    const visiblePage = Math.max(0, Math.min(node._no8dKreaStylePage ?? selectedPage, pageCount - 1));
+    const visibleLocal = selectedPage === visiblePage ? local : 0;
     let next = index;
     let direction = 0;
     if (event.key === "Home") {
@@ -1381,10 +1386,10 @@ function handleGalleryKey(node, event) {
         if (index === items.length - 1) showBoundaryFeedback(node, 1, tr("lastItem"));
         else selectPage(node, pageCount - 1, 1, PAGE_SIZE - 1);
     } else if (event.key === "PageDown") {
-        if (page < pageCount - 1) selectPage(node, page + 1, 1, local);
+        if (visiblePage < pageCount - 1) selectPage(node, visiblePage + 1, 1, visibleLocal);
         else showBoundaryFeedback(node, 1, tr("lastPage"));
     } else if (event.key === "PageUp") {
-        if (page > 0) selectPage(node, page - 1, -1, local);
+        if (visiblePage > 0) selectPage(node, visiblePage - 1, -1, visibleLocal);
         else showBoundaryFeedback(node, -1, tr("firstPage"));
     } else {
         if ((event.key === "ArrowRight" || event.key === "ArrowDown") && local === PAGE_SIZE - 1) next = index + 1;
@@ -1394,7 +1399,7 @@ function handleGalleryKey(node, event) {
         else if (event.key === "ArrowDown" && local < 6) next = index + 3;
         else if (event.key === "ArrowUp" && local >= 3) next = index - 3;
         next = Math.max(0, Math.min(next, items.length - 1));
-        direction = Math.sign(Math.floor(next / PAGE_SIZE) - page);
+        direction = Math.sign(Math.floor(next / PAGE_SIZE) - selectedPage);
         if (next !== index) {
             setWidgetValue(styleWidget, items[next].name);
             selectOnly(node, items[next].name);
@@ -1439,7 +1444,7 @@ function render(node, slideDirection = 0) {
     els.importLibrary.title = tr("importWildcards");
     els.reloadLibraries.title = tr("reload");
     const libraryItems = filteredItems({ ...node, _no8dKreaSearch: "" }, catalog, library);
-    const items = filteredItems(node, catalog, library);
+    const items = currentLibraryItems(node, catalog);
     if (!node._no8dKreaSelectionCleared && !libraryItems.some((item) => item.name === styleWidget.value)) {
         setWidgetValue(styleWidget, libraryItems[0]?.name || "");
     }
@@ -1590,6 +1595,10 @@ function render(node, slideDirection = 0) {
     const page = Math.max(0, Math.min(node._no8dKreaStylePage ?? inferredPage, pageCount - 1));
     node._no8dKreaStylePage = page;
     const pageItems = items.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+    if (!pageItems.some((item) => item.name === node._no8dKreaCursorName)) {
+        const selectedOnPage = pageItems.find((item) => item.name === styleWidget.value);
+        node._no8dKreaCursorName = selectedOnPage?.name || pageItems[0]?.name || null;
+    }
     const pageLayer = makePageLayer();
     if (!pageItems.length) {
         const empty = document.createElement("div");
@@ -1604,7 +1613,7 @@ function render(node, slideDirection = 0) {
         const card = document.createElement("button");
         card.type = "button";
         const multiSelected = node._no8dKreaSelection?.has(item.name) || false;
-        card.className = `no8d-krea-style-card${item.name === styleWidget.value ? " selected" : ""}${multiSelected ? " multi-selected" : ""}`;
+        card.className = `no8d-krea-style-card${item.name === node._no8dKreaCursorName ? " selected" : ""}${multiSelected ? " multi-selected" : ""}`;
         card.dataset.styleName = item.name;
         card.title = displayName(item);
         card.style.cssText = "position:relative;display:flex;flex-direction:column;width:100%;min-width:0;height:auto;box-sizing:border-box;padding:4px;border:1px solid #41454e;border-radius:6px;background:#1b1e23;color:#e4e4e7;cursor:pointer;overflow:hidden;";
@@ -1639,6 +1648,7 @@ function render(node, slideDirection = 0) {
         });
         card.addEventListener("pointerdown", (event) => event.preventDefault());
         card.addEventListener("click", (event) => {
+            node._no8dKreaCursorName = item.name;
             const additive = event.ctrlKey || event.metaKey;
             const range = event.shiftKey && node._no8dKreaSelectionAnchor;
             if (range) {
