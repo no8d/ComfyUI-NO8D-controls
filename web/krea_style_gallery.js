@@ -10,7 +10,7 @@ const MIN_HEIGHT = 560;
 const DEFAULT_WIDTH = 850;
 const DEFAULT_HEIGHT = 1120;
 const PAGE_SIZE = 9;
-const PAGE_NUMBER_WINDOW = 5;
+const PAGE_NUMBER_WINDOW = 10;
 const BASE_PREVIEW_SIZE = 256;
 const BASE_LABEL_FONT_SIZE = 15;
 const BASE_LABEL_HEIGHT = 48;
@@ -1747,14 +1747,42 @@ function render(node, slideDirection = 0) {
     const pageIndicator = document.createElement("span");
     pageIndicator.textContent = tr("pageOf", { page: page + 1, total: pageCount });
     pageIndicator.style.cssText = "min-width:64px;text-align:center;color:#f4f4f5;font:700 15px sans-serif;user-select:none;";
+
+    const pageInput = document.createElement("input");
+    pageInput.type = "number";
+    pageInput.min = "1";
+    pageInput.max = String(pageCount);
+    pageInput.value = String(page + 1);
+    pageInput.title = tr("page", { page: page + 1 });
+    pageInput.style.cssText = "width:60px;height:44px;padding:0 6px;border:1px solid #4b4f58;border-radius:8px;background:#1b1e24;color:#f4f4f5;font:700 18px sans-serif;text-align:center;";
+    const jumpToInput = () => {
+        const parsed = parseInt(pageInput.value, 10);
+        const target = Math.max(1, Math.min(pageCount, Number.isFinite(parsed) ? parsed : page + 1));
+        pageInput.value = String(target);
+        if (target - 1 !== page) selectPage(node, target - 1, Math.sign(target - 1 - page));
+    };
+    pageInput.addEventListener("keydown", (event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") {
+            event.preventDefault();
+            jumpToInput();
+            els.root.focus({ preventScroll: true });
+        }
+    });
+    pageInput.addEventListener("pointerdown", (event) => event.stopPropagation());
+    pageInput.addEventListener("blur", jumpToInput);
+
     els.pagerNav.replaceChildren(
         pageNavButton("‹", tr("previousPage"), page === 0, () => page === 0
             ? showBoundaryFeedback(node, -1, tr("firstPage"))
             : selectPage(node, page - 1, -1)),
+        pageInput,
         pageIndicator,
-        pageNavButton("›", tr("nextPage"), page === pageCount - 1, () => page === pageCount - 1
-            ? showBoundaryFeedback(node, 1, tr("lastPage"))
-            : selectPage(node, page + 1, 1)),
+        pageNavButton("›", tr("nextPage"), pageCount <= 1, () => selectPage(
+            node,
+            page === pageCount - 1 ? 0 : page + 1,
+            page === pageCount - 1 ? -1 : 1,
+        )),
     );
     for (const button of els.pagerNav.children) {
         if (button.dataset.disabled === "true") button.style.opacity = ".35";
