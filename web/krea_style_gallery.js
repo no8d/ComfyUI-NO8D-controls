@@ -1696,20 +1696,79 @@ function render(node, slideDirection = 0) {
     const countLabel = query ? `${items.length} ${tr("results")}` : `${items.length} ${tr("styles")}`;
     els.status.textContent = `${currentItem ? `${tr("selected")}: ${displayName(currentItem)}` : tr("noSelection")}　|　${countLabel}`;
     els.pager.style.visibility = items.length ? "visible" : "hidden";
+    // --- START OF PAGINATION FIX ---
+    const getPagerRange = (current, total) => {
+        if (total <= 7) return Array.from({ length: total }, (_, i) => i);
+        
+        // If we are near the beginning (e.g., pages 1-5)
+        if (current <= 4) return [0, 1, 2, 3, 4, 5, "...", total - 1];
+        
+        // If we are near the end
+        if (current >= total - 5) return [0, "...", total - 6, total - 5, total - 4, total - 3, total - 2, total - 1];
+        
+        // If we are somewhere in the middle
+        return [0, "...", current - 2, current - 1, current, current + 1, current + 2, "...", total - 1];
+    };
+
+    const pageRange = getPagerRange(page, pageCount);
+    const paginationElements = pageRange.map(item => {
+        if (item === "...") {
+            const dots = document.createElement("span");
+            dots.textContent = "...";
+            dots.style.cssText = "color:#9ca3af;font-weight:700;line-height:28px;padding:0 2px;";
+            return dots;
+        }
+        return pageButton(
+            String(item + 1),
+            tr("page", { page: item + 1 }),
+            false,
+            () => selectPage(node, item, Math.sign(item - page))
+        );
+    });
+
+    // Create the jump-to-page input
+    const jumpWrap = document.createElement("div");
+    jumpWrap.style.cssText = "display:flex;align-items:center;gap:6px;margin-left:8px;padding-left:8px;border-left:1px solid #41454e;";
+
+    const jumpInput = document.createElement("input");
+    jumpInput.type = "number";
+    jumpInput.min = 1;
+    jumpInput.max = pageCount;
+    jumpInput.placeholder = page + 1;
+    jumpInput.title = no8dLocale() === "zh" ? "输入页码并按回车跳转" : "Type page number and press Enter";
+    jumpInput.style.cssText = "width:48px;height:28px;padding:0 4px;border:1px solid #4b4f58;border-radius:6px;background:#1b1e23;color:#f4f4f5;font:600 13px sans-serif;text-align:center;box-sizing:border-box;";
+
+    // Handle Enter key to trigger the jump
+    jumpInput.addEventListener("keydown", (event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") {
+            event.preventDefault();
+            let targetPage = parseInt(jumpInput.value, 10);
+            if (!isNaN(targetPage)) {
+                // Clamp the input between 1 and the max page count, then convert to 0-index
+                targetPage = Math.max(1, Math.min(targetPage, pageCount)) - 1;
+                if (targetPage !== page) {
+                    selectPage(node, targetPage, Math.sign(targetPage - page));
+                } else {
+                    jumpInput.value = ""; // Clear if they entered the page they are already on
+                }
+            }
+        }
+    });
+
+    jumpWrap.append(jumpInput);
+
     els.pager.replaceChildren(
         pageButton("‹", tr("previousPage"), page === 0, () => page === 0
             ? showBoundaryFeedback(node, -1, tr("firstPage"))
             : selectPage(node, page - 1, -1)),
-        ...Array.from({ length: pageCount }, (_, index) => pageButton(
-            String(index + 1),
-            tr("page", { page: index + 1 }),
-            false,
-            () => selectPage(node, index, Math.sign(index - page)),
-        )),
+        ...paginationElements,
         pageButton("›", tr("nextPage"), page === pageCount - 1, () => page === pageCount - 1
             ? showBoundaryFeedback(node, 1, tr("lastPage"))
             : selectPage(node, page + 1, 1)),
+        jumpWrap // Append the new input box to the end of the pager
     );
+    // --- END OF PAGINATION FIX ---
     for (const button of els.pager.children) {
         if (button.textContent === String(page + 1)) {
             button.classList.add("selected");
