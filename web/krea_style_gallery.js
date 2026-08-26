@@ -1696,7 +1696,6 @@ function render(node, slideDirection = 0) {
     const countLabel = query ? `${items.length} ${tr("results")}` : `${items.length} ${tr("styles")}`;
     els.status.textContent = `${currentItem ? `${tr("selected")}: ${displayName(currentItem)}` : tr("noSelection")}　|　${countLabel}`;
     els.pager.style.visibility = items.length ? "visible" : "hidden";
-    // --- START OF PAGINATION FIX ---
     const getPagerRange = (current, total) => {
         if (total <= 7) return Array.from({ length: total }, (_, i) => i);
         
@@ -1768,7 +1767,6 @@ function render(node, slideDirection = 0) {
             : selectPage(node, page + 1, 1)),
         jumpWrap // Append the new input box to the end of the pager
     );
-    // --- END OF PAGINATION FIX ---
     for (const button of els.pager.children) {
         if (button.textContent === String(page + 1)) {
             button.classList.add("selected");
