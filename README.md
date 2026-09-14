@@ -146,6 +146,16 @@ Compare two image streams with an interactive split preview.
 
 ![NO8D Image Title and Image Grid](docs/images/image-title-grid-nodes.png)
 
+### NO8D Image Composer
+
+Compose imported images as layers on a freeform canvas. The node shows only a thumbnail and an editor button; images are added inside the editor, including by drag-and-drop or paste.
+
+- Set the canvas aspect ratio and short-side size; use the wheel to zoom and Space-drag to pan. Images remain visible beyond the output canvas while editing.
+- Reorder, hide, lock, multi-select, move, scale, rotate, and flip layers. Scale and rotation also accept exact keyboard values.
+- Use automatic cutout, an optional outline, and an eraser for cutout layers. Cutout requires `rembg` installed in the active ComfyUI environment.
+- The editor keeps 20 undo steps (`Ctrl+Z`) and supports redo (`Ctrl+Shift+Z` or `Ctrl+Y`). Its labels follow ComfyUI's Chinese/English language setting.
+- The final output is clipped to the black canvas and includes width and height outputs.
+
 ### NO8D Image Grid
 
 Combine multiple image inputs or image batches into one image.

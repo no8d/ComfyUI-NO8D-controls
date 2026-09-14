@@ -12,6 +12,7 @@ const NODE_TITLE_KEYS = {
     NO8DSaveImageTextDataset: "saveTitle",
     NO8DEmptyLatent: "emptyLatentTitle",
     NO8DImageGrid: "imageGridTitle",
+    NO8DImageComposer: "imageComposerTitle",
     NO8DImageTitle: "imageTitleTitle",
     NO8DKreaStyleSelector: "kreaStyleTitle",
 };
@@ -19,6 +20,7 @@ const NODE_TITLE_KEYS = {
 const NODE_DESCRIPTION_KEYS = {
     NO8DRemoveKrea2ReferenceLatents: "removeKreaReferenceDescription",
     NO8DImageGrid: "imageGridDescription",
+    NO8DImageComposer: "imageComposerDescription",
     NO8DImageTitle: "imageTitleDescription",
     NO8DKreaStyleSelector: "kreaStyleDescription",
 };
@@ -84,6 +86,14 @@ const COMBO_LABELS = {
 
 const INPUT_LABELS = {
     NO8DImageTitle: { images: "imageTitleImages" },
+};
+
+const OUTPUT_LABELS = {
+    NO8DImageComposer: {
+        image: "imageComposerImage",
+        width: "imageComposerWidth",
+        height: "imageComposerHeight",
+    },
 };
 
 const PERCENT_WIDGETS = new Set(["title_bar_opacity", "title_bar_height"]);
@@ -219,6 +229,15 @@ function applyNodeTitle(node) {
         const label = t(key);
         input.label = label;
         input.localized_name = label;
+        changed = true;
+    }
+    const outputLabels = OUTPUT_LABELS[className] || {};
+    for (const output of node.outputs || []) {
+        const key = outputLabels[output.name];
+        if (!key) continue;
+        const label = t(key);
+        output.label = label;
+        output.localized_name = label;
         changed = true;
     }
     return changed;

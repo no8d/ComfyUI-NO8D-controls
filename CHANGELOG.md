@@ -6,6 +6,10 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Added `NO8D-Image Composer`, a layered freeform canvas editor with automatic cutout, outline, eraser, 20-step undo/redo, node thumbnail preview, and Chinese/English UI labels.
+
 ## [1.4.1] - 2026-08-03
 
 ### Fixed
