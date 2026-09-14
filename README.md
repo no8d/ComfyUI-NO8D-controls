@@ -150,10 +150,15 @@ Compare two image streams with an interactive split preview.
 
 Compose imported images as layers on a freeform canvas. The node shows only a thumbnail and an editor button; images are added inside the editor, including by drag-and-drop or paste.
 
+![NO8D Image Composer editor showing layers, transforms, cutout, and an outline](docs/images/image-composer-editor.png)
+
+To get started, add **NO8D Image Composer** from the `NO8D-control` category, open its editor, choose an aspect ratio and short-side size, then add images by picker, drag-and-drop, or paste. Arrange the layers and click **Save layout**; connect the node's image output to the next node in your workflow.
+
 - Set the canvas aspect ratio and short-side size; use the wheel to zoom and Space-drag to pan. Images remain visible beyond the output canvas while editing.
 - Reorder, hide, lock, multi-select, move, scale, rotate, and flip layers. Scale and rotation also accept exact keyboard values.
-- Use automatic cutout, an optional outline, and an eraser for cutout layers. Cutout requires `rembg` installed in the active ComfyUI environment.
-- The editor keeps 20 undo steps (`Ctrl+Z`) and supports redo (`Ctrl+Shift+Z` or `Ctrl+Y`). Its labels follow ComfyUI's Chinese/English language setting.
+- Use automatic cutout, then optionally enable an outline or erase the current cutout layer. Cutout requires `rembg` installed in ComfyUI's Python environment; the rest of the editor does not.
+- Press `V` to show or hide a layer, `Ctrl+L` to lock or unlock it, and `Delete` to remove unlocked selected layers. Arrow keys nudge by 1 pixel; `Shift`+arrow keys nudge by 10.
+- The editor keeps 20 undo steps (`Ctrl+Z`) and supports redo (`Ctrl+Shift+Z` or `Ctrl+Y`). History lasts only while the editor is open; save the layout to retain the composition in the workflow. Labels follow ComfyUI's Chinese/English language setting.
 - The final output is clipped to the black canvas and includes width and height outputs.
 
 ### NO8D Image Grid
