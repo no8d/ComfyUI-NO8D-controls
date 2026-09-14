@@ -10,6 +10,7 @@ const MIN_HEIGHT = 560;
 const DEFAULT_WIDTH = 850;
 const DEFAULT_HEIGHT = 1120;
 const PAGE_SIZE = 9;
+const PAGE_NUMBER_WINDOW = 10;
 const BASE_PREVIEW_SIZE = 256;
 const BASE_LABEL_FONT_SIZE = 15;
 const BASE_LABEL_HEIGHT = 48;
@@ -97,6 +98,7 @@ const UI_TEXT = {
     previousPage: ["上一页（PageUp）", "Previous page (PageUp)"],
     nextPage: ["下一页（PageDown）", "Next page (PageDown)"],
     page: ["第 {page} 页", "Page {page}"],
+    pageOf: ["第 {page} / {total} 页", "Page {page} / {total}"],
     firstPage: ["已经是第一页", "Already on the first page"],
     lastPage: ["已经是最后一页", "Already on the last page"],
     firstItem: ["已经是第一页第一张", "Already on the first item of the first page"],
@@ -385,9 +387,12 @@ function makeUi(node) {
     const pager = document.createElement("div");
     pager.style.cssText = "display:flex;align-items:center;justify-content:center;gap:8px;flex:0 0 34px;min-height:34px;";
 
-    panel.append(tabs, libraryBar, status, grid, pager);
+    const pagerNav = document.createElement("div");
+    pagerNav.style.cssText = "display:flex;align-items:center;justify-content:center;gap:14px;flex:0 0 52px;min-height:52px;";
+
+    panel.append(tabs, libraryBar, status, grid, pager, pagerNav);
     root.append(panel);
-    node._no8dKreaStyleEls = { root, panel, libraryBar, libraryLabel, importLibrary, reloadLibraries, tabs, searchWrap, searchInput, searchClear, addStyle, manageStyles, outputAll, randomMode, status, grid, pager };
+    node._no8dKreaStyleEls = { root, panel, libraryBar, libraryLabel, importLibrary, reloadLibraries, tabs, searchWrap, searchInput, searchClear, addStyle, manageStyles, outputAll, randomMode, status, grid, pager, pagerNav };
     root.addEventListener("keydown", (event) => handleGalleryKey(node, event));
     if (typeof ResizeObserver !== "undefined") {
         node._no8dKreaResizeObserver = new ResizeObserver(() => {
@@ -1207,6 +1212,19 @@ function pageButton(text, title, disabled, onClick) {
     return button;
 }
 
+function pageNavButton(text, title, disabled, onClick) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = text;
+    button.title = title;
+    button.dataset.disabled = disabled ? "true" : "false";
+    button.setAttribute("aria-disabled", disabled ? "true" : "false");
+    button.style.cssText = "min-width:120px;height:48px;padding:0 18px;border:1px solid #4b4f58;border-radius:8px;background:#26292f;color:#f4f4f5;font:700 26px sans-serif;cursor:pointer;";
+    button.addEventListener("pointerdown", (event) => event.preventDefault());
+    button.addEventListener("click", onClick);
+    return button;
+}
+
 function showBoundaryFeedback(node, direction, message) {
     const els = node._no8dKreaStyleEls;
     const page = els.grid.querySelector(".no8d-krea-style-page");
@@ -1696,25 +1714,77 @@ function render(node, slideDirection = 0) {
     const countLabel = query ? `${items.length} ${tr("results")}` : `${items.length} ${tr("styles")}`;
     els.status.textContent = `${currentItem ? `${tr("selected")}: ${displayName(currentItem)}` : tr("noSelection")}　|　${countLabel}`;
     els.pager.style.visibility = items.length ? "visible" : "hidden";
+    els.pagerNav.style.visibility = items.length ? "visible" : "hidden";
+
+    let windowStart = Math.max(0, Math.min(node._no8dKreaStylePageWindowStart ?? 0, Math.max(0, pageCount - PAGE_NUMBER_WINDOW)));
+    if (page > windowStart + PAGE_NUMBER_WINDOW - 1) {
+        windowStart = page;
+    } else if (page < windowStart) {
+        windowStart = page - PAGE_NUMBER_WINDOW + 1;
+    }
+    windowStart = Math.max(0, Math.min(windowStart, Math.max(0, pageCount - PAGE_NUMBER_WINDOW)));
+    node._no8dKreaStylePageWindowStart = windowStart;
+    const windowEnd = Math.min(pageCount, windowStart + PAGE_NUMBER_WINDOW);
+
     els.pager.replaceChildren(
-        pageButton("‹", tr("previousPage"), page === 0, () => page === 0
-            ? showBoundaryFeedback(node, -1, tr("firstPage"))
-            : selectPage(node, page - 1, -1)),
-        ...Array.from({ length: pageCount }, (_, index) => pageButton(
-            String(index + 1),
-            tr("page", { page: index + 1 }),
-            false,
-            () => selectPage(node, index, Math.sign(index - page)),
-        )),
-        pageButton("›", tr("nextPage"), page === pageCount - 1, () => page === pageCount - 1
-            ? showBoundaryFeedback(node, 1, tr("lastPage"))
-            : selectPage(node, page + 1, 1)),
+        ...Array.from({ length: windowEnd - windowStart }, (_, offset) => {
+            const index = windowStart + offset;
+            return pageButton(
+                String(index + 1),
+                tr("page", { page: index + 1 }),
+                false,
+                () => selectPage(node, index, Math.sign(index - page)),
+            );
+        }),
     );
     for (const button of els.pager.children) {
         if (button.textContent === String(page + 1)) {
             button.classList.add("selected");
             button.setAttribute("aria-current", "page");
         }
+        if (button.dataset.disabled === "true") button.style.opacity = ".35";
+    }
+    const pageIndicator = document.createElement("span");
+    pageIndicator.textContent = tr("pageOf", { page: page + 1, total: pageCount });
+    pageIndicator.style.cssText = "min-width:64px;text-align:center;color:#f4f4f5;font:700 15px sans-serif;user-select:none;";
+
+    const pageInput = document.createElement("input");
+    pageInput.type = "number";
+    pageInput.min = "1";
+    pageInput.max = String(pageCount);
+    pageInput.value = String(page + 1);
+    pageInput.title = tr("page", { page: page + 1 });
+    pageInput.style.cssText = "width:60px;height:44px;padding:0 6px;border:1px solid #4b4f58;border-radius:8px;background:#1b1e24;color:#f4f4f5;font:700 18px sans-serif;text-align:center;";
+    const jumpToInput = () => {
+        const parsed = parseInt(pageInput.value, 10);
+        const target = Math.max(1, Math.min(pageCount, Number.isFinite(parsed) ? parsed : page + 1));
+        pageInput.value = String(target);
+        if (target - 1 !== page) selectPage(node, target - 1, Math.sign(target - 1 - page));
+    };
+    pageInput.addEventListener("keydown", (event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") {
+            event.preventDefault();
+            jumpToInput();
+            els.root.focus({ preventScroll: true });
+        }
+    });
+    pageInput.addEventListener("pointerdown", (event) => event.stopPropagation());
+    pageInput.addEventListener("blur", jumpToInput);
+
+    els.pagerNav.replaceChildren(
+        pageNavButton("‹", tr("previousPage"), page === 0, () => page === 0
+            ? showBoundaryFeedback(node, -1, tr("firstPage"))
+            : selectPage(node, page - 1, -1)),
+        pageInput,
+        pageIndicator,
+        pageNavButton("›", tr("nextPage"), pageCount <= 1, () => selectPage(
+            node,
+            page === pageCount - 1 ? 0 : page + 1,
+            page === pageCount - 1 ? -1 : 1,
+        )),
+    );
+    for (const button of els.pagerNav.children) {
         if (button.dataset.disabled === "true") button.style.opacity = ".35";
     }
     showPage(node, pageLayer, slideDirection);
