@@ -335,6 +335,16 @@ class ImageComposerTests(unittest.TestCase):
         self.assertIn('openEditorRefresh?.()', source)
         self.assertIn('window.addEventListener("languagechange", () => refreshComposerLocale(true))', source)
         self.assertIn('setInterval(() => refreshComposerLocale(), 1000)', source)
+        translations = (
+            Path(__file__).resolve().parents[1] / "web" / "no8d_i18n.js"
+        ).read_text(encoding="utf-8")
+        titles = (
+            Path(__file__).resolve().parents[1] / "web" / "node_titles_i18n.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn('imageComposerTitle: "NO8D-Image Composer"', translations)
+        self.assertIn('imageComposerTitle: "NO8D-图层合成器"', translations)
+        self.assertIn('NO8DImageComposer: "imageComposerTitle"', titles)
+        self.assertIn('NO8DImageComposer: {\n        image: "imageComposerImage"', titles)
 
 
 if __name__ == "__main__":
