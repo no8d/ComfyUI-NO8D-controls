@@ -1,4 +1,5 @@
 import { app } from "../../scripts/app.js";
+import { prepareLegacyCanvas, legacyCanvasPosition, releaseLegacyCanvas } from "./no8d_canvas.js";
 import { api } from "../../scripts/api.js";
 import { shouldPassKeyToComfy } from "./no8d_comfy_events.js";
 import { no8dLocale, t } from "./no8d_i18n.js";
@@ -302,6 +303,9 @@ function createSamplerPanel(node) {
         getValue: () => "",
         setValue: () => {},
     });
+    // A content-sized widget row leaves surplus height to the canvas row.
+    panel.computeLayoutSize = undefined;
+    panel.computeSize = (width) => [width, 96];
     node._no8dGenerateSamplerPanel = panel;
 
     const widgets = node.widgets || [];
@@ -324,7 +328,26 @@ function createSamplerPanel(node) {
     sync();
 }
 
+function generateGraphNodes(graph, seen = new Set()) {
+    if (!graph || seen.has(graph)) return [];
+    seen.add(graph);
+    const nodes = [];
+    for (const node of graph._nodes || []) {
+        nodes.push(node);
+        nodes.push(...generateGraphNodes(node?.subgraph, seen));
+    }
+    return nodes;
+}
+
+function triggerGenerateCanvasDraws() {
+    for (const node of generateGraphNodes(app?.rootGraph || app?.graph)) {
+        if (!isGenerateNode(node)) continue;
+        node._no8dGenerateCanvas?.triggerDraw?.();
+    }
+}
+
 function setDirty() {
+    triggerGenerateCanvasDraws();
     app.graph?.setDirtyCanvas?.(true, true);
 }
 
@@ -349,6 +372,7 @@ function setCursorDirty() {
     cursorFramePending = true;
     requestAnimationFrame(() => {
         cursorFramePending = false;
+        triggerGenerateCanvasDraws();
         app.graph?.setDirtyCanvas?.(true, false);
     });
 }
@@ -1065,6 +1089,11 @@ class NO8DGenerateCanvasWidget {
         this.imageTransform = null;
         this.transformDrag = null;
         this.transformCursorRevision = 0;
+        this.vueHoverCanvas = null;
+        this.vueHoverCanvasMove = null;
+        this.vueHoverCanvasLeave = null;
+        this.vueHoverWidth = 0;
+        this.vueHoverHeight = 0;
         this.baseImageFile = "";
         this.sourceImageFile = "";
         this.maskImageFile = "";
@@ -1096,6 +1125,12 @@ class NO8DGenerateCanvasWidget {
     }
 
     computeLayoutSize() {
+        // Vue measures slots/DOM panels differently from the classic layout.
+        // An unbounded legacy flex height feeds that difference back into the
+        // node height on every draw. Keep this bridge row bounded in Vue mode.
+        if (globalThis.LiteGraph?.vueNodesMode) {
+            return { minWidth: 1, minHeight: 360, maxHeight: 360 };
+        }
         return {
             minWidth: 1,
             minHeight: 220,
@@ -1446,8 +1481,10 @@ class NO8DGenerateCanvasWidget {
 
     dispose() {
         if (this.disposed) return;
+        releaseLegacyCanvas(this);
         this.disposed = true;
         this.setTransformCursor(null);
+        this.detachVueHoverCanvas();
         this.previewLoadToken += 1;
         this.invalidateMaskCommit();
         this.closeActiveEditor();
@@ -2166,7 +2203,11 @@ class NO8DGenerateCanvasWidget {
     }
 
     draw(ctx, node, width, y, height) {
-        const widgetHeight = Math.max(220, Number(this.computedHeight) || Number(height) || 220);
+        let widgetHeight = Math.max(220, Number(this.computedHeight) || Number(height) || 220);
+        width = globalThis.LiteGraph?.vueNodesMode
+            ? prepareLegacyCanvas(ctx, width, widgetHeight, this) : (node.size?.[0] || width);
+        if (globalThis.LiteGraph?.vueNodesMode) widgetHeight = this.renderHeight || widgetHeight;
+        this.bindVueHoverCanvas(ctx?.canvas, width, widgetHeight);
         this.rect = [PAD, y + 4, Math.max(1, width - PAD * 2), widgetHeight - 8];
         this.toolbarRect = [this.rect[0], this.rect[1] + this.rect[3] - TOOLBAR_HEIGHT, this.rect[2], TOOLBAR_HEIGHT];
         const previewRect = [
@@ -2548,6 +2589,20 @@ class NO8DGenerateCanvasWidget {
     }
 
     positionBottomEditor(editor, _event, _nodePos, height = EDITOR_HEIGHT) {
+        if (this.vueHoverCanvas) {
+            const rect = this.vueHoverCanvas.getBoundingClientRect();
+            const toolbar = this.toolbarRect || this.rect;
+            const scale = rect.width / this.vueHoverWidth;
+            editor.style.position = "fixed";
+            editor.style.left = `${rect.left + toolbar[0] * scale}px`;
+            editor.style.top = `${rect.top + (toolbar[1] - height) * scale}px`;
+            editor.style.width = `${toolbar[2]}px`;
+            editor.style.height = `${height}px`;
+            editor.style.transform = `scale(${scale})`;
+            editor.style.transformOrigin = "left top";
+            editor.style.zIndex = "100000";
+            return;
+        }
         const canvas = app.canvas?.canvas;
         const dragScale = app.canvas?.ds;
         if (!canvas || !dragScale || !this.node?.pos) return;
@@ -3190,7 +3245,7 @@ class NO8DGenerateCanvasWidget {
         const revision = ++this.transformCursorRevision;
         const applyCursor = () => {
             if (revision !== this.transformCursorRevision) return;
-            const canvas = app.canvas?.canvas;
+            const canvas = this.vueHoverCanvas || app.canvas?.canvas;
             if (!canvas?.style) return;
             if (cursor) canvas.style.setProperty("cursor", cursor, "important");
             else canvas.style.removeProperty("cursor");
@@ -3204,7 +3259,64 @@ class NO8DGenerateCanvasWidget {
 
     releaseTransformCursor() {
         this.transformCursorRevision += 1;
+        this.vueHoverCanvas?.style?.removeProperty?.("cursor");
         app.canvas?.canvas?.style?.removeProperty("cursor");
+    }
+
+    detachVueHoverCanvas() {
+        const canvas = this.vueHoverCanvas;
+        if (canvas) {
+            canvas.removeEventListener?.("pointermove", this.vueHoverCanvasMove);
+            canvas.removeEventListener?.("pointerleave", this.vueHoverCanvasLeave);
+            canvas.style?.removeProperty?.("cursor");
+        }
+        this.vueHoverCanvas = null;
+        this.vueHoverCanvasMove = null;
+        this.vueHoverCanvasLeave = null;
+        this.vueHoverWidth = 0;
+        this.vueHoverHeight = 0;
+    }
+
+    bindVueHoverCanvas(canvas, width, height) {
+        const isVueCanvas = globalThis.LiteGraph?.vueNodesMode && canvas
+            && canvas !== app.canvas?.canvas
+            && typeof canvas.addEventListener === "function";
+        if (!isVueCanvas) {
+            this.detachVueHoverCanvas();
+            return;
+        }
+        const nextWidth = Math.max(1, Number(width) || 1);
+        const nextHeight = Math.max(1, Number(height) || 1);
+        if (this.vueHoverCanvas === canvas) {
+            this.vueHoverWidth = nextWidth;
+            this.vueHoverHeight = nextHeight;
+            return;
+        }
+        this.detachVueHoverCanvas();
+        const move = (event) => {
+            if (event.buttons !== 0) return;
+            const pos = this.vueHoverCanvasPoint(event);
+            if (!pos) return;
+            this.updateHover(pos, event);
+        };
+        const leave = () => this.clearHover();
+        canvas.addEventListener("pointermove", move);
+        canvas.addEventListener("pointerleave", leave);
+        this.vueHoverCanvas = canvas;
+        this.vueHoverCanvasMove = move;
+        this.vueHoverCanvasLeave = leave;
+        this.vueHoverWidth = nextWidth;
+        this.vueHoverHeight = nextHeight;
+    }
+
+    vueHoverCanvasPoint(event) {
+        const canvas = this.vueHoverCanvas;
+        const rect = canvas?.getBoundingClientRect?.();
+        if (!rect?.width || !rect.height) return null;
+        return [
+            (event.clientX - rect.left) * (this.vueHoverWidth / rect.width),
+            (event.clientY - rect.top) * (this.vueHoverHeight / rect.height),
+        ];
     }
 
     isNodeResizeCorner(pos) {
@@ -3350,7 +3462,7 @@ class NO8DGenerateCanvasWidget {
     mouse(event, pos) {
         // ComfyUI passes custom-widget mouse positions in node-local
         // coordinates and keeps routing an active drag through CanvasPointer.
-        const nodePos = pos;
+        const nodePos = legacyCanvasPosition(this.vueHoverCanvas, event, pos);
         const type = String(event?.type || "");
         if (type.includes("contextmenu") || (type.includes("down") && event.button !== 0)) return false;
         // The custom canvas widget fills nearly the whole node. Never consume

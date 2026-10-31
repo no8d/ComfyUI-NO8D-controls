@@ -1,4 +1,5 @@
 import { app } from "../../scripts/app.js";
+import { prepareLegacyCanvas, legacyCanvasPosition, releaseLegacyCanvas } from "./no8d_canvas.js";
 import { api } from "../../scripts/api.js";
 import { t } from "./no8d_i18n.js";
 
@@ -12,6 +13,11 @@ const BADGE_HEIGHT = 22;
 const BADGE_INSET = 8;
 const BADGE_GAP = 6;
 const FOOTER_HEIGHT = 32;
+
+function refreshPreview(node) {
+    app.graph?.setDirtyCanvas?.(true, true);
+    node?._no8dCompareWidget?.triggerDraw?.();
+}
 
 const legacyDomStyle = document.createElement("style");
 legacyDomStyle.textContent = `
@@ -153,7 +159,7 @@ function loadPreviewImage(node, slot, ref) {
         node._no8dABImages[slot] = reusable;
         releasePreviewEntry(node, slot, oldEntry);
         syncNativeImageState(node);
-        app.graph?.setDirtyCanvas?.(true, false);
+        refreshPreview(node);
         return;
     }
     const img = new Image();
@@ -161,17 +167,17 @@ function loadPreviewImage(node, slot, ref) {
         const entry = node._no8dABImages?.[slot];
         if (entry?.key !== key) return;
         syncNativeImageState(node);
-        app.graph?.setDirtyCanvas?.(true, true);
+        refreshPreview(node);
     };
     img.onerror = () => {
         if (node._no8dABImages?.[slot]?.key === key) {
             node._no8dABImages[slot] = null;
             syncNativeImageState(node);
         }
-        app.graph?.setDirtyCanvas?.(true, true);
+        refreshPreview(node);
     };
-    img.src = makeViewUrl(ref);
     node._no8dABImages[slot] = { key, ref, img };
+    img.src = makeViewUrl(ref);
     releasePreviewEntry(node, slot, oldEntry);
 }
 
@@ -251,7 +257,25 @@ function applyListIndex(node, index) {
     else loadPreviewImage(node, "b", null);
 }
 
+function nodeFromOutputId(id) {
+    let graph = app.rootGraph || app.graph;
+    let node;
+    for (const part of String(id).split(":")) {
+        node = graph?.getNodeById?.(part);
+        graph = node?.subgraph;
+    }
+    return node;
+}
+
 function restorePreviewRefs(node) {
+    if (node?._no8dABImages?.a || node?._no8dABImages?.b) return;
+    for (const [id, output] of Object.entries(app.nodeOutputs || {})) {
+        if (nodeFromOutputId(id) === node
+            && (imageRefsFromMessage(output, "a_images").length || imageRefsFromMessage(output, "b_images").length)) {
+            receivePreviewRefs(node, output);
+            return;
+        }
+    }
     const refs = node?.properties?.no8d_ab_preview;
     if (!refs) return;
     if (refs.a?.filename) loadPreviewImage(node, "a", refs.a);
@@ -309,7 +333,7 @@ function receivePreviewRefs(node, message) {
         if (!bRefs.length && aRefs.length) setPreviousSingleRef(node, aRefs[aRefs.length - 1]);
         else if (!aRefs.length && bRefs.length) setPreviousSingleRef(node, bRefs[bRefs.length - 1]);
         persistPreviewRefs(node);
-        app.graph?.setDirtyCanvas?.(true, true);
+        refreshPreview(node);
         return;
     }
 
@@ -333,7 +357,7 @@ function receivePreviewRefs(node, message) {
         setPreviousSingleRef(node, currentB);
     }
     persistPreviewRefs(node);
-    app.graph?.setDirtyCanvas?.(true, true);
+    refreshPreview(node);
 }
 
 function hasComparableImages(node) {
@@ -352,6 +376,65 @@ function isPrimaryButtonDown(event) {
     return Boolean((event?.buttons ?? 1) & 1);
 }
 
+function canvasPanActive() {
+    return Boolean(app.canvas?.read_only || app.canvas?._spaceKeyHeld);
+}
+
+function comparisonPointerEvent(type, event, buttons = event.buttons) {
+    return new PointerEvent(type, {
+        clientX: event.clientX, clientY: event.clientY, pointerId: event.pointerId,
+        pointerType: event.pointerType, isPrimary: event.isPrimary, buttons,
+        button: 0, bubbles: true, cancelable: true,
+    });
+}
+
+function stopCanvasPanTracking(widget) {
+    for (const type of ["pointermove", "pointerup", "pointercancel"]) {
+        window.removeEventListener(type, widget.resumeSplitDrag, true);
+    }
+    widget.panPointerId = null;
+}
+
+function resumeSplitDrag(event, widget) {
+    if (event.pointerId !== widget.panPointerId) return;
+    if (event.type !== "pointermove" || !isPrimaryButtonDown(event)) {
+        stopCanvasPanTracking(widget);
+        return;
+    }
+    if (canvasPanActive()) return;
+    event.stopImmediatePropagation();
+    event.preventDefault();
+    stopCanvasPanTracking(widget);
+    app.canvas.canvas.dispatchEvent(comparisonPointerEvent("pointerup", event, 0));
+    widget.renderCanvas.dispatchEvent(comparisonPointerEvent("pointerdown", event));
+    if (event.isTrusted) widget.renderCanvas.setPointerCapture(event.pointerId);
+}
+
+function forwardCanvasPan(event, node) {
+    const canvas = app.canvas?.canvas;
+    if (!canvas) return;
+    if (event.type === "pointerdown" && event.button === 0) {
+        // The Vue preview canvas otherwise leaves keyboard focus outside LiteGraph.
+        canvas.focus({ preventScroll: true });
+        event.preventDefault();
+    }
+    if (!canvasPanActive()) return;
+    const switchingDrag = event.type === "pointermove" && isPrimaryButtonDown(event)
+        && Boolean(node?._no8dABDragging || node?._no8dCompareWidget?.dragging);
+    if (!switchingDrag && (event.type !== "pointerdown" || event.button !== 0)) return;
+    stopSplitDrag(node);
+    event.stopImmediatePropagation();
+    event.preventDefault();
+    const widget = node?._no8dCompareWidget;
+    if (widget?.renderCanvas) {
+        widget.panPointerId = event.pointerId;
+        for (const type of ["pointermove", "pointerup", "pointercancel"]) {
+            window.addEventListener(type, widget.resumeSplitDrag, true);
+        }
+    }
+    canvas.dispatchEvent(comparisonPointerEvent("pointerdown", event));
+}
+
 function updateNodeSplit(node, pos) {
     const widget = node?._no8dCompareWidget;
     if (!widget || !hasComparableImages(node)) return false;
@@ -359,6 +442,7 @@ function updateNodeSplit(node, pos) {
 }
 
 function startSplitDrag(node, event, pos) {
+    if (canvasPanActive()) return false;
     const widget = node?._no8dCompareWidget;
     if (!widget || event?.button !== 0 || !pointInRect(pos, widget.rect) || !hasComparableImages(node)) return false;
     node._no8dABDragging = true;
@@ -368,6 +452,10 @@ function startSplitDrag(node, event, pos) {
 }
 
 function continueSplitDrag(node, event, pos) {
+    if (canvasPanActive()) {
+        stopSplitDrag(node);
+        return false;
+    }
     const widget = node?._no8dCompareWidget;
     if (!widget) return false;
     if (!isPrimaryButtonDown(event)) {
@@ -400,17 +488,23 @@ class NO8DCompareWidget {
         this.dragging = false;
         this.rect = [0, 0, MIN_WIDTH, MIN_HEIGHT];
         this.imageRect = null;
+        this.forwardCanvasPan = (event) => forwardCanvasPan(event, this.node);
+        this.resumeSplitDrag = (event) => resumeSplitDrag(event, this);
     }
 
     computeSize(width) {
         return [Math.max(MIN_WIDTH, width), MIN_HEIGHT];
     }
 
+    computeLayoutSize() {
+        return { minWidth: MIN_WIDTH, minHeight: MIN_HEIGHT, maxHeight: MIN_HEIGHT };
+    }
+
     setSplitFromPos(pos) {
         const rect = this.imageRect || this.rect;
         if (!rect?.[2]) return false;
         this.node._no8dSplit = ((pos[0] - rect[0]) / rect[2]) * 100;
-        app.graph?.setDirtyCanvas?.(true, false);
+        refreshPreview(this.node);
         return true;
     }
 
@@ -454,7 +548,12 @@ class NO8DCompareWidget {
     }
 
     mouse(event, pos) {
-        const nodePos = this.nodePosFromEventPos(pos);
+        if (canvasPanActive()) {
+            stopSplitDrag(this.node);
+            return false;
+        }
+        const nodePos = this.renderCanvas && this.renderCanvas !== app.canvas?.canvas
+            ? legacyCanvasPosition(this.renderCanvas, event, pos) : this.nodePosFromEventPos(pos);
         const type = String(event?.type || "");
         if (type.includes("contextmenu") || (type.includes("down") && event.button !== 0)) {
             if (type.includes("contextmenu") || isSecondaryClick(event)) {
@@ -467,7 +566,7 @@ class NO8DCompareWidget {
             if (total > 1) {
                 applyListIndex(this.node, ((Number(this.node._no8dABListIndex) || 0) + 1) % total);
                 persistPreviewRefs(this.node);
-                app.graph?.setDirtyCanvas?.(true, true);
+                refreshPreview(this.node);
                 return true;
             }
         }
@@ -487,9 +586,16 @@ class NO8DCompareWidget {
         return Boolean(this.dragging);
     }
 
-    draw(ctx, node, width, y) {
-        const fullWidth = node.size?.[0] || width;
-        const fullHeight = node.size?.[1] || MIN_HEIGHT;
+    draw(ctx, node, width, y, height) {
+        width = prepareLegacyCanvas(ctx, width, height || MIN_HEIGHT, this);
+        if (this.renderCanvas) {
+            this.renderCanvas.addEventListener("pointerdown", this.forwardCanvasPan, true);
+            this.renderCanvas.addEventListener("pointermove", this.forwardCanvasPan, true);
+        }
+        if (globalThis.LiteGraph?.vueNodesMode) height = this.renderHeight || height;
+        const vueMode = Boolean(globalThis.LiteGraph?.vueNodesMode);
+        const fullWidth = vueMode ? width : (node.size?.[0] || width);
+        const fullHeight = vueMode ? y + (height || MIN_HEIGHT) : (node.size?.[1] || MIN_HEIGHT);
         const rect = [
             EDGE_PAD,
             y + EDGE_PAD,
@@ -609,7 +715,7 @@ function removeLegacyDomWidgets(node) {
     });
 }
 
-function activateNode(node) {
+function activateNode(node, restore = true) {
     if (!isTargetNode(node)) return;
     if (node.properties) delete node.properties.no8d_ab_previous_single;
     suppressNativePreviewWidget(node);
@@ -617,12 +723,17 @@ function activateNode(node) {
     syncWidgetLabels(node);
     installWidget(node);
     orderWidgets(node);
-    restorePreviewRefs(node);
+    if (restore) restorePreviewRefs(node);
     syncNativeImageState(node);
 }
 
 function disposeNode(node) {
     if (!node) return;
+    const widget = node._no8dCompareWidget;
+    if (widget) stopCanvasPanTracking(widget);
+    widget?.renderCanvas?.removeEventListener("pointerdown", widget.forwardCanvasPan, true);
+    widget?.renderCanvas?.removeEventListener("pointermove", widget.forwardCanvasPan, true);
+    releaseLegacyCanvas(node._no8dCompareWidget);
     const images = node._no8dABImages || {};
     for (const entry of new Set([images.a, images.b].filter(Boolean))) {
         releaseUniqueEntry(entry);
@@ -638,6 +749,14 @@ function disposeNode(node) {
 
 app.registerExtension({
     name: "NO8D.Control.ABPreview",
+    onNodeOutputsUpdated(outputs) {
+        for (const [id, output] of Object.entries(outputs || {})) {
+            const node = nodeFromOutputId(id);
+            if (!isTargetNode(node)) continue;
+            activateNode(node, false);
+            receivePreviewRefs(node, output);
+        }
+    },
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name !== NODE_NAME) return;
         const onCreated = nodeType.prototype.onNodeCreated;
@@ -660,7 +779,7 @@ app.registerExtension({
             removeLegacyDomWidgets(this);
             onResize?.apply(this, arguments);
             activateNode(this);
-            app.graph?.setDirtyCanvas?.(true, true);
+            refreshPreview(this);
         };
         const onDrawBackground = nodeType.prototype.onDrawBackground;
         nodeType.prototype.onDrawBackground = function () {
@@ -703,7 +822,7 @@ app.registerExtension({
         nodeType.prototype.onExecuted = function (message) {
             removeLegacyDomWidgets(this);
             if (!isTargetNode(this)) onExecuted?.apply(this, arguments);
-            activateNode(this);
+            activateNode(this, false);
             receivePreviewRefs(this, message);
         };
     },

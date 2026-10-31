@@ -136,18 +136,17 @@ def _center_crop_to_multiple(image, multiple):
         )
         if scale == 0:
             continue
-        retained_area = (
-            min(width, height * ratio_width / ratio_height)
-            * min(height, width * ratio_height / ratio_width)
-        )
+        target_width = ratio_width * ratio_scale_step * scale
+        target_height = ratio_height * ratio_scale_step * scale
+        retained_area = target_width * target_height
         candidates.append((
             retained_area,
-            ratio_width * ratio_scale_step * scale,
-            ratio_height * ratio_scale_step * scale,
+            target_width,
+            target_height,
         ))
     if not candidates:
         raise ValueError(
-            f"NO8D-Load-images: image size {width}x{height} cannot satisfy the nearest "
+            f"NO8D-Load-images: image size {width}x{height} cannot satisfy a "
             f"common aspect ratio with both sides divisible by {multiple}."
         )
     _, target_width, target_height = max(candidates)
@@ -158,12 +157,25 @@ def _center_crop_to_multiple(image, multiple):
     return image.crop((left, top, left + target_width, top + target_height))
 
 
+def _upscale_for_crop(image):
+    width, height = image.size
+    if width * height >= 1_000_000:
+        return image
+    scale = math.sqrt(1_000_000 / (width * height))
+    return image.resize(
+        (math.ceil(width * scale), math.ceil(height * scale)),
+        Image.Resampling.LANCZOS,
+    )
+
+
 def _load_image(path, crop_multiple=None):
     with Image.open(path) as image:
         image = ImageOps.exif_transpose(image)
         if image.mode == "I":
             image = image.point(lambda i: i * (1 / 255))
         image = image.convert("RGB")
+        if crop_multiple is not None:
+            image = _upscale_for_crop(image)
         image = _center_crop_to_multiple(image, crop_multiple)
         arr = np.asarray(image).astype(np.float32) / 255.0
     tensor = torch.from_numpy(arr)[None,]

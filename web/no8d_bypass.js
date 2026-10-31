@@ -110,6 +110,9 @@ export function refreshBypassElements(node) {
     const visual = nodeModeVisual(node);
     for (const element of node._no8dBypassElements || []) {
         if (!element?.classList) continue;
+        const key = `${visual.active}/${visual.alpha}/${visual.color}`;
+        if (element._no8dModeVisual === key) continue;
+        element._no8dModeVisual = key;
         element.classList.toggle("no8d-bypassed-dom", visual.active);
         element.style.setProperty("--no8d-node-mode-alpha", String(visual.alpha));
         element.style.setProperty("--no8d-node-mode-bg", visual.color || "");
@@ -117,6 +120,9 @@ export function refreshBypassElements(node) {
     }
     for (const element of node._no8dBypassFilterElements || []) {
         if (!element?.classList) continue;
+        const key = `${visual.active}/${visual.alpha}`;
+        if (element._no8dModeVisual === key) continue;
+        element._no8dModeVisual = key;
         element.classList.toggle("no8d-bypassed-filter", visual.active);
         element.style.setProperty("--no8d-node-mode-alpha", String(visual.alpha));
     }
@@ -124,6 +130,22 @@ export function refreshBypassElements(node) {
 
 export function wrapBypassRefresh(nodeType, refresh = refreshBypassElements) {
     if (!nodeType?.prototype || nodeType.prototype._no8dBypassRefreshWrapped) return;
+    // Nodes 2.0 does not rely on the canvas foreground hook for DOM updates.
+    // Preserve the native tracked setter and refresh after an actual mode write.
+    let owner = nodeType.prototype;
+    while (owner && !Object.getOwnPropertyDescriptor(owner, "mode")) owner = Object.getPrototypeOf(owner);
+    const mode = owner && Object.getOwnPropertyDescriptor(owner, "mode");
+    if (mode?.get && mode?.set && mode.configurable) {
+        Object.defineProperty(nodeType.prototype, "mode", {
+            configurable: true,
+            enumerable: mode.enumerable,
+            get: mode.get,
+            set(value) {
+                mode.set.call(this, value);
+                refresh(this);
+            },
+        });
+    }
     const original = nodeType.prototype.onDrawForeground;
     nodeType.prototype.onDrawForeground = function () {
         const result = original?.apply(this, arguments);

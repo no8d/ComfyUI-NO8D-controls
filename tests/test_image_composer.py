@@ -245,6 +245,29 @@ class ImageComposerTests(unittest.TestCase):
         self.assertIn('mode: "marquee"', source)
         self.assertIn('input.type = "range"', source)
 
+    def test_frontend_node_preview_expands_with_resizable_node(self):
+        source = (
+            Path(__file__).resolve().parents[1] / "web" / "image_composer.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn(".no8d-composer-node{width:100%;height:100%;min-height:0;", source)
+        self.assertIn(".no8d-composer-node-preview{width:100%;min-height:0;flex:1;", source)
+        self.assertIn(".no8d-composer-node-preview canvas{display:block;width:100%;height:100%;object-fit:contain}", source)
+        self.assertIn("const NODE_PREVIEW_MAX_EDGE = 1024", source)
+        self.assertIn("getMinHeight: () => NODE_WIDGET_MIN_HEIGHT", source)
+        self.assertIn("domWidget.computeLayoutSize = () => ({", source)
+        self.assertIn('Object.defineProperty(domWidget, "width"', source)
+        self.assertIn("return this.node?.width || this.node?.size?.[0] || NODE_MIN_WIDTH", source)
+        self.assertIn("ensureComposerMinimumSize(this); renderNodePreview(this)", source)
+
+    def test_frontend_cleans_up_native_preview_widget(self):
+        source = (
+            Path(__file__).resolve().parents[1] / "web" / "image_composer.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn('const NATIVE_PREVIEW_WIDGET = "$$canvas-image-preview"', source)
+        self.assertIn("function removeNativePreviewWidget(node)", source)
+        self.assertIn("removeNativePreviewWidget(this); renderNodePreview(this)", source)
+        self.assertIn("requestAnimationFrame(() => { removeNativePreviewWidget(this); renderNodePreview(this); })", source)
+
     def test_frontend_selection_uses_visible_alpha_bounds(self):
         source = (
             Path(__file__).resolve().parents[1] / "web" / "image_composer.js"

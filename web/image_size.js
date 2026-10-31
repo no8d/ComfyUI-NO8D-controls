@@ -1,4 +1,5 @@
 import { app } from "../../scripts/app.js";
+import { prepareLegacyCanvas, legacyCanvasPosition, releaseLegacyCanvas } from "./no8d_canvas.js";
 import { api } from "../../scripts/api.js";
 import { t } from "./no8d_i18n.js";
 
@@ -133,7 +134,10 @@ function refreshControls(node) {
     visibilityChanged = setWidgetVisible(fillColor, false) || visibilityChanged;
     visibilityChanged = setVueWidgetExcluded(fillColor, true) || visibilityChanged;
     const canvas = findWidget(node, "crop_canvas");
-    if (canvas) canvas.visible = method !== "stretch";
+    if (canvas) {
+        canvas.visible = method !== "stretch";
+        visibilityChanged = setWidgetVisible(canvas, canvas.visible) || visibilityChanged;
+    }
     node.setSize?.([
         Math.max(MIN_WIDTH, Number(node.size?.[0]) || MIN_WIDTH),
         Math.max(160, Number(node.computeSize?.()[1]) || 160),
@@ -141,6 +145,7 @@ function refreshControls(node) {
     node.graph?.setDirtyCanvas?.(true, true);
     app.canvas?.setDirty?.(true, true);
     if (visibilityChanged) invalidateVueWidgets(node);
+    canvas?.triggerDraw?.();
 }
 
 function nestedCanvasValue(raw) {
@@ -365,10 +370,16 @@ class ImageSizeCanvasWidget {
         this.value = JSON.stringify(states);
         this.node.graph?.setDirtyCanvas?.(true, true);
         app.canvas?.setDirty?.(true, true);
+        this.triggerDraw?.();
     }
 
     computeSize(width) {
         return [Math.max(MIN_WIDTH, width), this.visible ? CANVAS_HEIGHT : -4];
+    }
+
+    computeLayoutSize() {
+        const height = this.visible ? CANVAS_HEIGHT : 0;
+        return { minWidth: MIN_WIDTH, minHeight: height, maxHeight: height };
     }
 
     async setPreview(ref) {
@@ -379,6 +390,7 @@ class ImageSizeCanvasWidget {
         this.image = image;
         syncDimensions(this.node, "short");
         app.canvas?.setDirty?.(true, true);
+        this.triggerDraw?.();
     }
 
     targetSize() {
@@ -468,6 +480,9 @@ class ImageSizeCanvasWidget {
     }
 
     draw(ctx, _node, width, y, height) {
+        width = globalThis.LiteGraph?.vueNodesMode
+            ? prepareLegacyCanvas(ctx, width, height || CANVAS_HEIGHT, this) : (_node.size?.[0] || width);
+        if (globalThis.LiteGraph?.vueNodesMode) height = this.renderHeight || height;
         if (!this.visible) return;
         const widgetHeight = Math.max(CANVAS_HEIGHT, Number(height) || CANVAS_HEIGHT);
         this.rect = [10, y + 4, Math.max(1, width - 20), widgetHeight - 8];
@@ -639,7 +654,8 @@ class ImageSizeCanvasWidget {
 
     mouse(event, pos) {
         if (!this.visible) return false;
-        pos = this.nodePosition(pos);
+        pos = this.renderCanvas && this.renderCanvas !== app.canvas?.canvas
+            ? legacyCanvasPosition(this.renderCanvas, event, pos) : this.nodePosition(pos);
         const eventType = String(event?.type || "");
         if (eventType.includes("down") && event.button === 0 && this.colorButtonRect) {
             const [x, y, width, height] = this.colorButtonRect;
@@ -701,12 +717,24 @@ function activate(node) {
     wrapRefresh(findWidget(node, "long_side"), node, () => syncDimensions(node, "long"));
     syncDimensions(node, "short");
     refreshControls(node);
+    const ref = node.properties?.no8d_image_size_source
+        || app.nodeOutputs?.[node.id]?.source_images?.[0];
+    if (ref && !node._no8dImageSizeCanvas?.image) {
+        node._no8dImageSizeCanvas?.setPreview(ref).catch((error) => {
+            console.warn("[NO8D image size] preview restore failed", error);
+        });
+    }
 }
 
 app.registerExtension({
     name: "NO8D.Control.ImageSizeCanvas",
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name !== NODE_NAME) return;
+        const onRemoved = nodeType.prototype.onRemoved;
+        nodeType.prototype.onRemoved = function () {
+            releaseLegacyCanvas(this._no8dImageSizeCanvas);
+            return onRemoved?.apply(this, arguments);
+        };
         const onCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             onCreated?.apply(this, arguments);
@@ -722,6 +750,10 @@ app.registerExtension({
         nodeType.prototype.onExecuted = function (message) {
             onExecuted?.apply(this, arguments);
             const ref = message?.source_images?.[0];
+            if (ref) {
+                this.properties = this.properties || {};
+                this.properties.no8d_image_size_source = ref;
+            }
             this._no8dImageSizeCanvas?.setPreview(ref).catch((error) => {
                 console.warn("[NO8D image size] preview load failed", error);
             });

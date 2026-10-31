@@ -249,8 +249,10 @@ function ensureSendWidget(node) {
     }
     const widget = node.addWidget("button", t("promptViewSend"), null, () => sendEditedText(node));
     widget._no8dPromptSend = true;
+    widget.serialize = false;
     widget.label = t("promptViewSend");
     widget.options = widget.options || {};
+    widget.options.serialize = false;
     widget.options.label = t("promptViewSend");
     widget.computeSize = (width) => [width, SEND_BUTTON_HEIGHT];
     node._promptViewSendWidget = widget;

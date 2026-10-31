@@ -23,6 +23,17 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Added expression and style prompt-library XLSX collections.
+- Improved Nodes 2.0 canvas sizing, redraws, pointer handling, and cached preview restoration.
+- Improved image-loader crop sizing for images below one megapixel.
+
+### Fixed
+
+- Keep image-list wheel scrolling inside the loader instead of zooming the graph.
+- Preserve native scrollbar interaction and hide internal image-loader values without exposing sockets.
+
 ## [1.4.1] - 2026-08-03
 
 ### Fixed

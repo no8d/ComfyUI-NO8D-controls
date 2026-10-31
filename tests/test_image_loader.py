@@ -52,7 +52,9 @@ class ImageLoaderSelectionTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             Image.fromarray(pixels).save(base / "source.png")
-            with patch.object(image_loader, "_base_directory", return_value=base):
+            with patch.object(image_loader, "_base_directory", return_value=base), patch.object(
+                image_loader, "_upscale_for_crop", side_effect=lambda image: image
+            ):
                 images, = image_loader.NO8DLoadImages().load(
                     "[]", '[{"name":"source.png"}]', "8"
                 )
@@ -61,16 +63,16 @@ class ImageLoaderSelectionTests(unittest.TestCase):
         self.assertTrue(np.allclose(image.numpy()[0, :, :, 0], 1.0))
         self.assertTrue(np.allclose(image.numpy()[0, :, :, 1:], 0.0))
 
-    def test_portrait_and_landscape_images_use_matching_common_ratios(self):
+    def test_small_images_choose_the_common_ratio_with_most_actual_pixels(self):
         portrait = Image.new("RGB", (41, 62), "red")
         landscape = Image.new("RGB", (62, 41), "blue")
         self.assertEqual(
             image_loader._center_crop_to_multiple(portrait, 8).size,
-            (32, 48),
+            (40, 40),
         )
         self.assertEqual(
             image_loader._center_crop_to_multiple(landscape, 8).size,
-            (48, 32),
+            (40, 40),
         )
 
     def test_common_ratio_and_multiple_are_both_exact(self):
@@ -80,6 +82,21 @@ class ImageLoaderSelectionTests(unittest.TestCase):
         self.assertEqual(cropped.width % 64, 0)
         self.assertEqual(cropped.height % 64, 0)
         self.assertEqual(cropped.width * 3, cropped.height * 4)
+
+    def test_small_portrait_uses_actual_aligned_area_instead_of_ideal_ratio_area(self):
+        pixels = np.arange(160 * 125 * 3, dtype=np.uint8).reshape(160, 125, 3)
+        image = Image.fromarray(pixels)
+        cropped = image_loader._center_crop_to_multiple(image, 16)
+        self.assertEqual(cropped.size, (96, 144))
+        np.testing.assert_array_equal(np.asarray(cropped), pixels[8:152, 14:110])
+        # Verify the largest legal area, including the transposed landscape case.
+        for size in [(125, 160), (160, 125), (1280, 720)]:
+            with self.subTest(size=size):
+                result = image_loader._center_crop_to_multiple(Image.new("RGB", size), 16)
+                areas = [w * h for w in range(16, size[0] + 1, 16)
+                         for h in range(16, size[1] + 1, 16)
+                         if any(w * rh == h * rw for rw, rh in image_loader._COMMON_ASPECT_RATIOS)]
+                self.assertEqual(result.width * result.height, max(areas))
 
     def test_all_supported_common_ratios_remain_unchanged_when_aligned(self):
         expected = {
@@ -96,15 +113,28 @@ class ImageLoaderSelectionTests(unittest.TestCase):
                     size,
                 )
 
-    def test_crop_rejects_an_image_smaller_than_the_multiple(self):
+    def test_small_images_are_upscaled_before_multiple_crop(self):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             Image.new("RGB", (32, 63), "red").save(base / "source.png")
             with patch.object(image_loader, "_base_directory", return_value=base):
-                with self.assertRaisesRegex(ValueError, "cannot satisfy.*64"):
-                    image_loader.NO8DLoadImages().load(
-                        "[]", '[{"name":"source.png"}]', "64"
-                    )
+                images, = image_loader.NO8DLoadImages().load(
+                    "[]", '[{"name":"source.png"}]', "64"
+                )
+        height, width = images[0].shape[1:3]
+        self.assertGreater(width * height, 32 * 63)
+        self.assertEqual(width % 64, 0)
+        self.assertEqual(height % 64, 0)
+
+    def test_upscale_threshold_and_aspect_ratio(self):
+        image = Image.new("RGB", (125, 160), "red")
+        enlarged = image_loader._upscale_for_crop(image)
+        self.assertEqual(enlarged.size, (884, 1132))
+        self.assertGreaterEqual(enlarged.width * enlarged.height, 1_000_000)
+        self.assertLess(abs(enlarged.width / enlarged.height - 125 / 160), 0.001)
+        for size in [(1000, 1000), (2000, 1000)]:
+            original = Image.new("RGB", size)
+            self.assertIs(image_loader._upscale_for_crop(original), original)
 
     def test_uses_exact_portrait_ratio_for_small_images(self):
         image = Image.new("RGB", (64, 128), "red")

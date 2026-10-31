@@ -77,9 +77,9 @@ Load a UNET through ComfyUI's native loader, then manage and apply multiple LoRA
 - Merge trigger words from enabled LoRAs into one text output.
 - The UNET controls are inherited from ComfyUI's native loader and follow upstream updates.
 
-### NO8D-Prompt
+### NO8D-Static-Prompt
 
-Expand text, analyze a reference image, or combine both into a complete positive prompt through a configured API.
+Expand text, analyze a reference image, or combine both into a positive still-image prompt through a configured API.
 
 > **Before first use:** This node is an API client and does not include an LLM. Configure an OpenAI-compatible API or a local Ollama service first. See [Prompt API and LLM configuration](#prompt-api-and-llm-configuration).
 
@@ -110,8 +110,10 @@ Load and organize one or more local images as a ComfyUI list output.
 
 - Add images by file picker, drag-and-drop, or clipboard paste.
 - Automatically selects the first image in each newly imported batch.
-- Select, reorder, and preview individual images.
-- Sends only selected images downstream; selecting all outputs all images, while selecting none produces no output.
+- Select, reorder, and preview individual images; double-click preview does not change the selection.
+- Keeps at least one image selected whenever the list is non-empty; restored or copied nodes default to the first image, and deleting selected images selects the nearest remaining image.
+- Choosing 8, 16, 32, or 64 automatically center-crops each selected image to its nearest common aspect ratio while making both sides divisible by that value; the default keeps the original dimensions.
+- Sends only selected images downstream; selecting all outputs all images, while an empty loader produces no output.
 
 ### NO8D-Generate
 
@@ -181,6 +183,7 @@ Add title bars outside the top or bottom edge, or overlay a title across the mid
 - Top and bottom bars increase output height; middle titles preserve the source dimensions.
 - Inner top and inner bottom positions overlay the image edges without changing output dimensions.
 - Title-bar opacity and height use percentages; bar height is relative to the source image height.
+- Resizing uses ComfyUI's native Lanczos scaler before the title bar and text are rendered.
 
 ### NO8D save
 

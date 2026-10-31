@@ -857,6 +857,11 @@ function makeUi(node) {
 
     const preview = document.createElement("div");
     preview.className = "no8d-image-loader-preview";
+    preview.dataset.captureWheel = "true";
+    preview.addEventListener("wheel", (event) => {
+        // Keep native scrolling inside the list without zooming the graph.
+        event.stopPropagation();
+    }, { passive: true });
     preview.tabIndex = 0;
     preview.title = t("imageLoaderPasteHint");
     preview.style.cssText = [
@@ -897,6 +902,9 @@ function makeUi(node) {
 
     let boxStart = null;
     preview.addEventListener("pointerdown", (event) => {
+        // Leave the native scrollbar to the browser instead of starting a box selection.
+        if (event.target === preview
+            && (event.offsetX >= preview.clientWidth || event.offsetY >= preview.clientHeight)) return;
         preview.focus({ preventScroll: true });
         if (event.button !== 0) return;
         if (event.target.closest("[data-index]")) return;
@@ -1131,12 +1139,12 @@ function hideInternalWidgets(node) {
         widget.options = widget.options || {};
         if (!widget.options.hidden) changed = true;
         if (!widget.options.collapsed) changed = true;
-        if (widget.type !== "converted-widget") changed = true;
+        if (widget.type !== "hidden") changed = true;
         if (!widget.hidden) changed = true;
         if (!widget.serialize) changed = true;
         widget.options.hidden = true;
         widget.options.collapsed = true;
-        widget.type = "converted-widget";
+        widget.type = "hidden";
         widget.hidden = true;
         widget.serialize = true;
         widget.computeSize = () => [0, -4];
